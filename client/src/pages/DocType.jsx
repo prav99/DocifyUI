@@ -33,6 +33,7 @@ const SKILL_TEMPLATE = [
 export default function DocType() {
   const { flow, setFlow } = useFlow();
   const [catalog, setCatalog] = useState(null);
+  const [fwOpen, setFwOpen] = useState(null); // doc type id with expanded framework
   useEffect(() => { getCatalog().then(setCatalog); }, []);
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
@@ -108,6 +109,25 @@ export default function DocType() {
                 </div>
                 <p className="helper mt2">{d.desc}</p>
                 {d.standard ? <div className="mt3"><span className="tag tag--outline">{d.standard}</span></div> : null}
+                {d.framework && (
+                  <>
+                    <button className="fwlink" onClick={(e) => { e.stopPropagation(); setFwOpen(fwOpen === d.id ? null : d.id); }}>
+                      {fwOpen === d.id ? 'Hide standard framework' : 'Standard framework →'}
+                    </button>
+                    {fwOpen === d.id && (
+                      <div className="fwpanel" onClick={(e) => e.stopPropagation()}>
+                        <p className="fwrow"><b>Purpose</b> {d.framework.purpose}</p>
+                        <p className="fwrow"><b>Audience</b> {d.framework.audience}</p>
+                        <p className="fwrow"><b>Tone</b> {d.framework.tone}</p>
+                        <p className="fwrow"><b>Outline</b> {d.framework.outline.map((o) => o.name + (o.req ? '' : ' (optional)')).join(' · ')}</p>
+                        <p className="fwrow"><b>Rules</b></p>
+                        <ul className="fwrules">
+                          {d.framework.rules.map((r) => <li key={r}>{r}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             );
           })}

@@ -96,6 +96,8 @@ model Automation {
   enabled Boolean @default(true)
   branch  String  @default("main")
   gate    Int     @default(85)
+  secret  String  @default("") // HMAC webhook secret — generated on first use, rotatable
+  runs    String  @default("[]") // JSON run history (latest 20): trigger, commit, score, gate result
 }
 
 model Waitlist {

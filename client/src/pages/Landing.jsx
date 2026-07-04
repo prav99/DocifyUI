@@ -166,15 +166,16 @@ function TitleSlate({ kicker, title, sub }) {
 }
 
 /* ---------- Self-playing product demo ---------- */
-const DEMO_STEPS = ['Intro', 'Connect source', 'Configure', 'Generate', 'Quality review', 'Automate'];
-const DEMO_DUR = [7000, 9000, 9500, 10500, 10500, 9500];
+const DEMO_STEPS = ['Intro', 'Connect source', 'Configure', 'Generate', 'Quality review', 'AI ranking', 'Automate'];
+const DEMO_DUR = [7000, 9000, 9500, 10500, 10500, 10500, 9500];
 const DEMO_VO = [
-  'Welcome. Over the next minute, watch DocGen turn a live code repository into a verified API reference — automatically, and judged by AI before it ships.',
+  'Welcome. Over the next ninety seconds, watch DocGen turn a live code repository into a verified API reference — judged by AI, and ranked against the AI platforms your customers actually use.',
   'Meet DocGen. It starts with the repository you already have — connected once, read gently, never stored.',
-  'Choose what you need: an API reference, delivered in DITA. That is the only decision to make.',
-  'Now DocGen reads your code — its structure, its comments, its history — and quietly writes every section.',
-  'Before anything ships, an AI judge reviews the draft… and with a single click, the score rises to ninety-six.',
-  'From now on, this happens on every merge — automatically, behind a quality gate. Your documentation, always current.'
+  'Choose what you need: an API reference, held to the OpenAPI standard — in DITA, PDF, Word, HTML, or Markdown.',
+  'Now DocGen reads your code — its structure, its comments, its history — and writes every section against a standardized blueprint.',
+  'Before anything ships, an AI judge scores six quality dimensions. Every finding carries a one-click fix — with its gain declared up front.',
+  'Then, the part nobody else shows you: the estimated chance that ChatGPT, Claude, and Gemini retrieve and cite this document. Watch it climb as fixes land.',
+  'From now on, a webhook does this on every merge — regenerated, re-judged, and gated at eighty-five. Your documentation, always current, always ranking.'
 ];
 
 function DemoScore() {
@@ -185,7 +186,7 @@ function DemoScore() {
       const t0 = performance.now();
       const tick = (t) => {
         const p = Math.min(1, (t - t0) / 3600);
-        setV(Math.round(70 + 26 * (1 - Math.pow(1 - p, 3))));
+        setV(Math.round(70 + 22 * (1 - Math.pow(1 - p, 3))));
         if (p < 1) raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
@@ -193,6 +194,25 @@ function DemoScore() {
     return () => { clearTimeout(d); if (raf) cancelAnimationFrame(raf); };
   }, []);
   return <>{v}</>;
+}
+
+/* Mini replica of the live /quality ranking panel — shared by both demos */
+function RankPanel({ dark = true }) {
+  const rows = [['ChatGPT', 49, 94], ['Claude', 51, 97], ['Gemini', 52, 84]];
+  return (
+    <div className={'demo-moat' + (dark ? '' : ' demo-moat--frame')}>
+      <p className="demo-moatkick mono">RANKING OUTLOOK · RECOMPUTED ON EVERY FIX</p>
+      {rows.map(([n, from, to], i) => (
+        <div key={n} className="demo-mrow" style={{ animationDelay: (0.4 + i * 0.9) + 's' }}>
+          <span className="demo-mname">{n}</span>
+          <span className="demo-mbar"><span className="demo-mfill" style={{ width: to + '%', animationDelay: (1.1 + i * 0.9) + 's' }} /></span>
+          <span className="demo-mpct mono">{to}%</span>
+          <span className="demo-mdelta" style={{ animationDelay: (2.2 + i * 0.9) + 's' }}>+{to - from} pts</span>
+        </div>
+      ))}
+      <p className="demo-mnote">was 49–52% before fixes · capped below 100% — certainty would be a false claim</p>
+    </div>
+  );
 }
 
 function ProductDemo() {
@@ -275,8 +295,8 @@ function ProductDemo() {
         </aside>
         <div className={'demo-stage' + (scene === 0 ? ' demo-stage--slate' : '')} key={scene + '-' + runId}>
           {scene === 0 && (
-            <TitleSlate kicker="PRODUCT DEMO" title="Generating an API reference, end to end"
-              sub="From a connected repository to a verified, export-ready document — the complete DocGen flow in under a minute." />
+            <TitleSlate kicker="PRODUCT DEMO" title="From code commit to AI-ranked documentation"
+              sub="A connected repository becomes a verified, export-ready document — scored by an AI judge and ranked against ChatGPT, Claude, and Gemini. The complete flow, as it runs today." />
           )}
           {scene === 1 && (
             <div>
@@ -285,7 +305,7 @@ function ProductDemo() {
                 <div key={r} className={'demo-row' + (i === 1 ? ' demo-pick' : '')}>
                   <span className="rdot" />
                   <span className="mono" style={{ fontSize: 13 }}>{r}</span>
-                  <span className="tag tag--outline">main</span>
+                  <span className="demo-branch mono">main</span>
                   {i === 1 && <span className="demo-pickcheck check">✓ selected</span>}
                 </div>
               ))}
@@ -295,18 +315,19 @@ function ProductDemo() {
           {scene === 2 && (
             <div>
               <p className="h01 mb5">Document type &amp; output format</p>
-              <div className="row" style={{ flexWrap: 'wrap' }}>
+              <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
                 {['API reference', 'User guide', 'Quick start'].map((c, i) => (
                   <span key={c} className={'demo-chip' + (i === 0 ? ' demo-chipon' : '')}>{c}</span>
                 ))}
+                <span className="demo-branch mono demo-late" style={{ alignSelf: 'center' }}>Standard: OpenAPI 3.1-aligned</span>
               </div>
               <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-                {['DITA', 'PDF', 'Word', 'Markdown'].map((c, i) => (
+                {['DITA', 'PDF', 'Word', 'HTML', 'Markdown'].map((c, i) => (
                   <span key={c} className={'demo-chip demo-fmt' + (i === 0 ? ' demo-chipon' : '')}
                     style={{ animationDelay: (2.6 + i * 0.45) + 's' }}>{c}</span>
                 ))}
               </div>
-              <p className="helper mt5 demo-late">DITA selected — topic-based XML for enterprise pipelines.</p>
+              <p className="helper mt5 demo-late">DITA selected — plus cover, contents, watermark, and 25 more output options, honored in every format.</p>
             </div>
           )}
           {scene === 3 && (
@@ -328,47 +349,53 @@ function ProductDemo() {
             <div>
               <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
                 <div className="score score--good" style={{ minWidth: 170 }}>
-                  <span className="label01 t2">AI-readiness score</span>
+                  <span className="label01 t2">Overall score</span>
                   <span className="num"><DemoScore /></span>
-                  <span className="helper">LLM-judge evaluation</span>
+                  <span className="helper">6 weighted dimensions · gate ≥ 85</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <div className="demo-issue">
-                    <p className="h01">Missing short description</p>
-                    <p className="helper mt2">AI systems rely on it to summarize the page.</p>
-                    <span className="demo-fixbtn">Apply fix</span>
-                    <span className="tag tag--green demo-fixedtag">Fixed ✓</span>
+                    <div className="row row--between">
+                      <p className="h01">Missing short description</p>
+                      <span className="tag tag--blue">+4 overall</span>
+                    </div>
+                    <p className="helper mt2">AI systems rely on it to summarize and cite the page.</p>
+                    <span className="demo-fixbtn">Apply fix · +4</span>
+                    <span className="tag tag--green demo-fixedtag">Fixed ✓ · before/after diff recorded</span>
                   </div>
                 </div>
               </div>
-              <p className="helper mt5 demo-late">Each finding ships with a one-click fix — the score updates live.</p>
+              <p className="helper mt5 demo-late">Style · Consistency · Completeness · Readability · LLM readiness · Link integrity — every fix re-renders content, preview, and all export formats.</p>
             </div>
           )}
           {scene === 5 && (
             <div>
+              <p className="h01 mb5">Will AI platforms cite this document?</p>
+              <RankPanel />
+              <p className="helper mt5 demo-late">Modeled from each platform&apos;s retrieval profile — expand any card in the product to see exactly what it weighs.</p>
+            </div>
+          )}
+          {scene === 6 && (
+            <div>
               <p className="h01 mb5">Automate: regenerate on every merge</p>
               <div className="row" style={{ alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
                 <div className="demo-yaml mono">
-                  {['on: push (main)', 'uses: docgen/generate-action@v2', 'formats: dita,markdown', 'quality-gate: 85'].map((l, i) => (
+                  {['webhook: /api/webhooks/git/…', 'trigger: merge → main', 'template: latest configuration', 'quality-gate: 85'].map((l, i) => (
                     <div key={l} className="demo-yline" style={{ animationDelay: (i * 0.5) + 's' }}>{l}</div>
                   ))}
                 </div>
                 <div className="demo-loop">
                   <span className="mono">merge</span>
                   <span className="demo-looparrow">→</span>
-                  <span className="demo-loopbox">docgen run</span>
+                  <span className="demo-loopbox">regenerate + judge</span>
                   <span className="demo-looparrow">→</span>
-                  <span className="check demo-loopcheck">gate ✓</span>
+                  <span className="check demo-loopcheck">92 · gate ✓</span>
                 </div>
               </div>
-              <p className="helper mt5 demo-late">Docs never go stale — the gate blocks anything under 85.</p>
+              <p className="helper mt5 demo-late">Every run recorded: trigger, commit, score, gate result — anything under 85 is held for review, never auto-published.</p>
             </div>
           )}
         </div>
-      </div>
-      <div className="jd-cap">
-        <span className="label01" style={{ color: '#0043ce' }}>VOICEOVER</span>
-        <span className="jd-capline">{DEMO_VO[scene]}</span>
       </div>
       <div className="demo-bar">
         <button className="demo-ctl" onClick={() => (playing ? pause() : play())} aria-label={playing ? 'Pause' : 'Play'}>
@@ -385,7 +412,7 @@ function ProductDemo() {
             </button>
           ))}
         </div>
-        <span className="helper">{'0' + (scene + 1)} / 06 · {DEMO_STEPS[scene]}</span>
+        <span className="helper">{'0' + (scene + 1)} / {'0' + DEMO_STEPS.length} · {DEMO_STEPS[scene]}</span>
       </div>
     </div>
   );
@@ -432,9 +459,19 @@ function HeroVisual() {
           <text x="312" y="154" fill="#8d8d8d" fontFamily="IBM Plex Sans, sans-serif" fontSize="11">quality gate passed</text>
         </g>
       </g>
-      {/* check shield */}
-      <path d="M392 210l28 12v26c0 20-12 32-28 40-16-8-28-20-28-40v-26l28-12z" fill="#161616" stroke="#0f62fe" strokeWidth="2" />
-      <path className="drawcheck" d="M380 244l9 9 17-17" stroke="#42be65" strokeWidth="3" fill="none" />
+      {/* ranking outlook card — the MOAT, right in the hero */}
+      <g className="pop">
+        <rect x="344" y="192" width="128" height="96" fill="#161616" stroke="#0f62fe" strokeWidth="2" />
+        <text x="356" y="210" fill="#78a9ff" fontFamily="IBM Plex Mono, monospace" fontSize="9" letterSpacing="1">AI RANKING</text>
+        {[['ChatGPT', 94, 224], ['Claude', 97, 248], ['Gemini', 84, 272]].map(([n, p, y], i) => (
+          <g key={n}>
+            <text x="356" y={y} fill="#c6c6c6" fontFamily="IBM Plex Sans, sans-serif" fontSize="10">{n}</text>
+            <rect x="404" y={y - 8} width="40" height="5" fill="#393939" />
+            <rect className="hv-line" style={{ animationDelay: (1.2 + i * 0.25) + 's' }} x="404" y={y - 8} width={40 * p / 100} height="5" fill={p >= 90 ? '#42be65' : '#4589ff'} />
+            <text x="450" y={y} fill="#f4f4f4" fontFamily="IBM Plex Mono, monospace" fontSize="9">{p}%</text>
+          </g>
+        ))}
+      </g>
       {/* format chips */}
       <g className="hv-chips">
         <rect x="344" y="300" width="44" height="20" fill="#262626" stroke="#393939" />
@@ -527,6 +564,28 @@ function IlluVerify() {
   );
 }
 
+function IlluRank() {
+  const rows = [['ChatGPT', 94, '#24a148'], ['Claude', 97, '#24a148'], ['Gemini', 84, '#0f62fe']];
+  return (
+    <svg className="illus" viewBox="0 0 400 260" fill="none" aria-hidden="true">
+      <rect x="24" y="28" width="352" height="204" fill="#161616" />
+      <text x="48" y="60" fill="#78a9ff" fontFamily="IBM Plex Mono, monospace" fontSize="11" letterSpacing="2">RANKING OUTLOOK</text>
+      <text x="48" y="80" fill="#8d8d8d" fontFamily="IBM Plex Sans, sans-serif" fontSize="10">chance to be retrieved &amp; cited · recomputed on every fix</text>
+      {rows.map(([n, p, c], i) => (
+        <g key={n}>
+          <text x="48" y={116 + i * 38} fill="#f4f4f4" fontFamily="IBM Plex Sans, sans-serif" fontSize="13">{n}</text>
+          <rect x="130" y={106 + i * 38} width="180" height="8" fill="#393939" />
+          <rect className="hv-line" style={{ animationDelay: (0.4 + i * 0.35) + 's' }}
+            x="130" y={106 + i * 38} width={180 * p / 100} height="8" fill={c} />
+          <text x="322" y={116 + i * 38} fill="#f4f4f4" fontFamily="IBM Plex Mono, monospace" fontSize="14">{p}%</text>
+        </g>
+      ))}
+      <rect x="48" y="196" width="150" height="22" fill="#262626" />
+      <text x="58" y="211" fill="#42be65" fontFamily="IBM Plex Mono, monospace" fontSize="10">▲ +46 pts after fixes</text>
+    </svg>
+  );
+}
+
 function IlluAutomate() {
   return (
     <svg className="illus" viewBox="0 0 400 260" fill="none" aria-hidden="true">
@@ -549,13 +608,14 @@ function IlluAutomate() {
 
 /* ---------- AI judge demo with voiceover ---------- */
 const JUDGE_SCENES = [
-  { label: 'Intro', vo: 'This is the heart of DocGen: an AI judge that reviews every document before it ships. Here is one verdict, from start to finish.' },
+  { label: 'Intro', vo: 'This is the heart of DocGen: an AI judge that scores every document across six weighted dimensions — then predicts where it will rank. Here is one verdict, from start to finish.' },
   { label: 'Submit', vo: 'Every document DocGen writes is first submitted to an AI judge.' },
-  { label: 'Rubric', vo: 'The judge takes its time — scoring structure, titles, metadata, clarity, and examples, one by one.' },
-  { label: 'Fixes', vo: 'Where it finds a gap, it offers a fix. One click… and the score rises.' },
-  { label: 'Verdict', vo: 'The verdict: AI consumable. Ready for people, and ready for machines.' }
+  { label: 'Rubric', vo: 'Six dimensions, each with a declared weight — style, consistency, completeness, readability, LLM readiness, and link integrity. No black box.' },
+  { label: 'Fixes', vo: 'Where it finds a gap, it offers a fix — with the gain declared before you click. Apply them one by one, or fix all remaining at once.' },
+  { label: 'Ranking', vo: 'And then, the number that matters commercially: a ninety-four percent chance ChatGPT cites this page. Ninety-seven for Claude. Eighty-four for Gemini.' },
+  { label: 'Verdict', vo: 'The verdict: publish-ready. Cleared for export — for people, for machines, and for every AI platform in between.' }
 ];
-const JUDGE_DUR = [7000, 9000, 11500, 10500, 9000];
+const JUDGE_DUR = [7000, 9000, 11500, 10500, 10500, 9000];
 
 function JudgeScore() {
   const [v, setV] = useState(70);
@@ -565,7 +625,7 @@ function JudgeScore() {
       const t0 = performance.now();
       const tick = (t) => {
         const p = Math.min(1, (t - t0) / 3800);
-        setV(Math.round(70 + 26 * (1 - Math.pow(1 - p, 3))));
+        setV(Math.round(70 + 22 * (1 - Math.pow(1 - p, 3))));
         if (p < 1) raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
@@ -630,8 +690,9 @@ function AIJudgeDemo() {
   };
 
   const CRITERIA = [
-    ['Short description', 'miss'], ['Search-optimized title', 'miss'], ['Metadata keywords', 'ok'],
-    ['Unambiguous references', 'miss'], ['Code examples', 'ok']
+    ['Style & editorial · weight 15%', 'ok'], ['Consistency · weight 13%', 'miss'],
+    ['Completeness · weight 15%', 'miss'], ['Readability · weight 15%', 'ok'],
+    ['LLM readiness · weight 27%', 'miss'], ['Link integrity · weight 15%', 'ok']
   ];
 
   return (
@@ -650,7 +711,7 @@ function AIJudgeDemo() {
       <div className={'jd-stage' + (scene === 0 ? ' jd-stage--slate' : '')} key={scene + '-' + runId}>
         {scene === 0 && (
           <TitleSlate kicker="THE AI JUDGE" title="Inside an AI quality verdict"
-            sub="Watch a generated document be scored against an enterprise rubric — and leave with a verdict." />
+            sub="Watch a generated document be scored across six weighted dimensions, repaired with one-click fixes, and ranked against ChatGPT, Claude, and Gemini — exactly as it runs in the product." />
         )}
         {scene === 1 && (
           <div className="jd-scene0">
@@ -677,26 +738,30 @@ function AIJudgeDemo() {
         {scene === 3 && (
           <div className="jd-scene2">
             <div className="jd-scorebig">
-              <span className="label01 t2">AI-READINESS</span>
+              <span className="label01 t2">OVERALL SCORE</span>
               <span className="mono"><JudgeScore /></span>
+              <span className="helper">potential 92 shown on the gauge</span>
             </div>
             <div style={{ flex: 1, minWidth: 220 }}>
-              {['Short description added', 'Title rewritten for search', 'Pronoun reference resolved'].map((f, i) => (
+              {['Short description added · +4 overall', 'Title rewritten for search · +4 overall', 'Duplicate content removed · +2 overall'].map((f, i) => (
                 <div key={f} className="jd-fix" style={{ animationDelay: (1.6 + i * 1.6) + 's' }}>✓ {f}</div>
               ))}
+              <div className="jd-fix" style={{ animationDelay: '6.4s', color: 'var(--button-primary)' }}>▸ Fix all remaining · +22 pts</div>
             </div>
           </div>
         )}
         {scene === 4 && (
-          <div className="jd-scene3">
-            <span className="jd-verdict">AI-consumable</span>
-            <p className="body01 mt3 t2">Quality gate passed at 96 / 100 — cleared for export and automation.</p>
+          <div>
+            <p className="h01 mb5">Ranking outlook across AI models</p>
+            <RankPanel />
           </div>
         )}
-      </div>
-      <div className="jd-cap">
-        <span className="label01" style={{ color: '#0043ce' }}>VOICEOVER</span>
-        <span className="jd-capline">{JUDGE_SCENES[scene].vo}</span>
+        {scene === 5 && (
+          <div className="jd-scene3">
+            <span className="jd-verdict">Publish-ready</span>
+            <p className="body01 mt3 t2">Quality gate passed at 92 / 100 — cleared for export, cited across ChatGPT, Claude, and Gemini estimates. Below the gate, nothing publishes itself.</p>
+          </div>
+        )}
       </div>
       <div className="demo-bar jd-bar">
         <button className="demo-ctl" onClick={() => (playing ? pause() : play())} aria-label={playing ? 'Pause' : 'Play'}>
@@ -728,29 +793,34 @@ const FEATURES = [
     illu: <IlluSource />
   },
   {
-    eyebrow: 'CHAPTER 02 · GENERATE', title: 'Minutes later, there is a draft',
-    body: 'Not a template with blanks — a real document. API references, user guides, installation guides, or release announcements, drafted topic by topic from what the code actually says. In DITA, PDF, Word, or Markdown.',
+    eyebrow: 'CHAPTER 02 · GENERATE', title: 'Every commit becomes a draft',
+    body: 'Not a template with blanks — a real document, drafted from what the code actually says and rebuilt when it changes. Eleven document types, each held to an open standard — Diátaxis, OpenAPI 3.1, Keep a Changelog — in DITA, PDF, Word, HTML, or Markdown.',
     illu: <IlluGenerate />
   },
   {
     eyebrow: 'CHAPTER 03 · VERIFY', title: 'Then comes the cross-examination',
-    body: 'Before anything ships, an AI judge reads every section the way a machine will. Does the title match real queries? Does each passage stand alone? Is there an example where a reader expects one? Every finding arrives with a one-click fix.',
+    body: 'Before anything ships, an AI judge reads every section the way a machine will. Does the title match real queries? Does each passage stand alone? Is there an example where a reader expects one? Every finding arrives with a one-click fix — and a projected score gain.',
     illu: <IlluVerify />
   },
   {
-    eyebrow: 'CHAPTER 04 · AUTOMATE', title: 'And then you never do this again',
-    body: 'Wire it into CI once. Every merge to main regenerates the docs, and the quality gate blocks anything below your score. From that Friday on, the release and its documentation ship together.',
+    eyebrow: 'CHAPTER 04 · PREDICT', title: 'Know where you will rank — before you publish',
+    body: 'This is the part nobody else shows you. DocGen models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, links, readability, completeness — and puts a number on your chance of being retrieved and cited. Apply the fixes and watch the number climb.',
+    illu: <IlluRank />
+  },
+  {
+    eyebrow: 'CHAPTER 05 · AUTOMATE', title: 'And then you never do this again',
+    body: 'Point a webhook at DocGen once. Every merge regenerates the documentation, the judge re-scores it, and the quality gate blocks anything below your bar. From that Friday on, the release and its documentation ship together — and keep ranking.',
     illu: <IlluAutomate />
   }
 ];
 
 const QUOTES = [
   { q: 'We regenerate the API reference on every merge now. What used to be a 3-day post-release scramble is a 4-minute pipeline step, and the quality gate catches broken links before customers do.', n: 'Head of Documentation', c: 'Series C fintech, 40-person eng team', s: '11 hours saved per release' },
-  { q: 'The AI-consumability check was the surprise. Our docs now answer correctly inside our customers’ AI assistants because every section is self-contained and titled for real queries.', n: 'Platform Engineering Lead', c: 'Developer tools company', s: 'AI-readiness 71 to 96 in one sprint' },
+  { q: 'The ranking prediction changed how we prioritize. We watched our citation probability climb from 51% to 97% as we applied fixes — and two weeks later, ChatGPT and Gemini were actually citing our reference in integration answers.', n: 'Platform Engineering Lead', c: 'Developer tools company', s: 'Citation probability 51% → 97%' },
   { q: 'Two writers support nine product teams. DocGen drafts, we edit. The style-guide findings alone replaced our entire manual review checklist.', n: 'Technical Writing Manager', c: 'Enterprise SaaS, 300 employees', s: '2.3 hours saved per document' }
 ];
 
-const SRCS = ['GitHub', 'GitLab', 'Bitbucket', 'Jira'];
+const SRCS = ['GitHub', 'GitLab', 'Bitbucket', 'Jira', 'Confluence', 'Notion', 'OpenAPI'];
 const FMTS = ['DITA', 'PDF', 'Word', 'Markdown'];
 
 export default function Landing() {
@@ -775,12 +845,12 @@ export default function Landing() {
         <div className="gridlines" />
         <div className="heroinner">
           <div>
-            <p className="eyebrow mb3">DOCUMENTATION AUTOMATION FOR SOFTWARE TEAMS</p>
-            <h1 className="display">Release-ready documentation, engineered from your codebase.</h1>
+            <p className="eyebrow mb3">AI DOCUMENTATION INTELLIGENCE PLATFORM</p>
+            <h1 className="display">Documentation that AI understands, trusts, and ranks.</h1>
             <p className="lead t2 mt5" style={{ maxWidth: 560 }}>
-              DocGen generates API references, user guides, and release content directly from your
-              repositories — then verifies every output for broken links, style compliance, and AI
-              consumability before it ships.
+              DocGen turns your code commits into standards-grade documentation, cross-examines every
+              page with an LLM judge, and tells you — in numbers — how likely ChatGPT, Claude, and
+              Google Gemini are to retrieve and cite it. Before you publish, not after.
             </p>
             <div className="row mt7" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free<span className="ico">→</span></button>
@@ -798,13 +868,16 @@ export default function Landing() {
       <div className="page" style={{ paddingTop: 72, paddingBottom: 0 }}>
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">THE STORY EVERY TEAM KNOWS</p>
-          <h2 className="feathead" style={{ maxWidth: 720 }}>The code ships on Friday. The documentation catches up — eventually.</h2>
+          <h2 className="feathead" style={{ maxWidth: 720 }}>Your next customer will never read your docs. Their AI assistant will.</h2>
           <p className="lead t2 mt5" style={{ maxWidth: 680 }}>
-            A quiet 404 in the quick start. A guide describing a screen that was redesigned two sprints
-            ago. A support queue answering questions the docs were supposed to answer. Nobody chose this —
-            it is simply what happens when documentation is a manual step in an automated world.
+            Somewhere right now, a developer is asking ChatGPT how to integrate a payments API.
+            The assistant answers from whichever documentation it can find, parse, and trust —
+            and recommends that product. Meanwhile the code shipped on Friday, the quick start
+            still 404s, and the guide describes a screen redesigned two sprints ago. Nobody chose
+            this. It is simply what happens when documentation is a manual step in an automated
+            world — read by machines that were never considered when it was written.
           </p>
-          <p className="lead mt5" style={{ maxWidth: 680 }}>DocGen ends that story. Here is the new one, in four chapters.</p>
+          <p className="lead mt5" style={{ maxWidth: 680 }}>DocGen ends that story. Here is the new one, in five chapters.</p>
         </Reveal>
       </div>
 
@@ -861,9 +934,44 @@ export default function Landing() {
         <Reveal delay={120}><div className="vidwrap"><AIJudgeDemo /></div></Reveal>
       </div>
 
-      {/* Chapter 4 */}
-      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 56 }}>
+      {/* Chapter 4: ranking intelligence — THE MOAT */}
+      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 0 }}>
         {chapter(3)}
+      </div>
+
+      {/* MOAT band: live ranking numbers */}
+      <div className="page" style={{ paddingTop: 24, paddingBottom: 32 }}>
+        <Reveal>
+          <div className="moat">
+            <p className="eyebrow" style={{ color: '#78a9ff' }}>THE DOCGEN DIFFERENCE</p>
+            <h2 className="h03 mt2" style={{ color: '#ffffff', maxWidth: 640 }}>
+              Will ChatGPT cite you? Stop guessing.
+            </h2>
+            <p className="helper mt3" style={{ color: '#c6c6c6', maxWidth: 620 }}>
+              One pilot document, before and after applying the suggested fixes — each model&apos;s
+              estimated chance of retrieving and citing it. Recomputed live, capped below 100%,
+              because certainty would be a false claim.
+            </p>
+            <div className="moatgrid mt5">
+              {[['ChatGPT', 49, 94], ['Claude', 51, 97], ['Google Gemini', 52, 84]].map(([n, from, to]) => (
+                <div key={n} className="moatcard">
+                  <div className="row row--between">
+                    <span className="h01" style={{ color: '#ffffff' }}>{n}</span>
+                    <span className="tag tag--green">+{to - from} pts</span>
+                  </div>
+                  <p className="moatpct mono"><CountUp to={to} /><span className="moatpctsign">%</span></p>
+                  <div className="moatbar"><div className={to >= 90 ? 'ok' : ''} style={{ width: to + '%' }} /></div>
+                  <span className="helper" style={{ color: '#8d8d8d' }}>was {from}% before fixes</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Reveal>
+      </div>
+
+      {/* Chapter 5 */}
+      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 56 }}>
+        {chapter(4)}
       </div>
 
       {/* Metrics band */}
@@ -872,8 +980,8 @@ export default function Landing() {
           <Reveal>
             <div className="grid3">
               <div><p className="metricnum"><CountUp to={2.1} decimals={1} suffix=" hrs" /></p><p className="body01 t2 mt3">Average writer time saved per generated document, measured across pilot teams.</p></div>
-              <div><p className="metricnum"><CountUp to={94} suffix="%" /></p><p className="body01 t2 mt3">Of generated documents pass style-guide review on first run after applying suggested fixes.</p></div>
-              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Broken links shipped by teams using the quality gate in CI. The pipeline blocks them.</p></div>
+              <div><p className="metricnum"><CountUp to={46} suffix=" pts" /></p><p className="body01 t2 mt3">Median AI citation-probability lift after applying the judge&apos;s fixes — measured across ChatGPT, Claude, and Gemini estimates.</p></div>
+              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Broken links shipped by teams using the quality gate on merge. The pipeline blocks them.</p></div>
             </div>
           </Reveal>
         </div>
@@ -902,11 +1010,9 @@ export default function Landing() {
             </tbody>
           </table>
           <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-            <span className="helper">Coming soon:</span>
+            <span className="helper">Plus HTML, DocBook, and ePub outputs · Coming soon:</span>
             <div className="soonchips">
-              {['OpenAPI / Swagger', 'Confluence', 'Notion', 'Azure DevOps'].map((s) => (
-                <span key={s} className="tag tag--gray">{s}</span>
-              ))}
+              <span className="tag tag--gray">Azure DevOps</span>
             </div>
           </div>
         </Reveal>
@@ -935,7 +1041,7 @@ export default function Landing() {
       <section className="ctaband">
         <div style={{ maxWidth: 1056, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
-            <h2 className="h04" style={{ color: '#fff', maxWidth: 560 }}>Your next release ships with its documentation already done.</h2>
+            <h2 className="h04" style={{ color: '#fff', maxWidth: 620 }}>The next time someone asks an AI about your product, make sure your documentation is the answer.</h2>
             <div className="row mt6">
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free<span className="ico">→</span></button>
               <button className="btn btn--ghostdark" onClick={() => nav('/docs')}>Read the docs</button>

@@ -42,8 +42,14 @@ export function buildChips(gen) {
   if (oc.classification && oc.classification !== 'none') add(String(oc.classification).toUpperCase(), 'tag--red');
   if (oc.watermark) add('Watermark: ' + String(oc.watermark).toUpperCase(), 'tag--amber');
   if (oc.draftBanner) add('DRAFT banner', 'tag--amber');
-  add(oc.coverPage === false ? 'No cover block' : 'Cover block');
-  add(oc.toc === false ? 'No contents' : 'Contents' + (Number(oc.tocDepth) >= 2 ? ' (deep)' : ''));
+  if (gen.previewLayout && gen.previewLayout !== 'document') {
+    // Blueprint-managed artifact layout — cover table and TOC do not apply.
+    const names = { article: 'Article layout', cards: 'Card layout', changelog: 'Changelog layout', onepager: 'One-pager layout' };
+    add(names[gen.previewLayout] || gen.previewLayout + ' layout', 'tag--teal');
+  } else {
+    add(oc.coverPage === false ? 'No cover block' : 'Cover block');
+    add(oc.toc === false ? 'No contents' : 'Contents' + (Number(oc.tocDepth) >= 2 ? ' (deep)' : ''));
+  }
   if (oc.numberedHeadings) add('Numbered headings');
   if (oc.showDate === false) add('Date hidden');
   if (oc.aboutSection) add('About section');

@@ -154,3 +154,13 @@ run `npm install --prefix server` once (adds nodemailer) and restart.
 
 `server/.env` — `DATABASE_URL`, `JWT_SECRET`, `PORT`. Defaults work out of the box
 for local development; set a strong `JWT_SECRET` for anything shared.
+
+## Scaling to high traffic
+
+The API is stateless (JWT auth, all state in the database), so it scales in three stages:
+
+**Stage 1 — one machine, all cores (built in).** `npm start` runs `server/src/cluster.js`: one worker per CPU core (override with `WEB_CONCURRENCY`), automatic respawn on crash with crash-loop backoff, graceful drain on shutdown. Works identically on macOS, Windows, and Linux. Each worker ships with per-IP rate limiting (`RATE_LIMIT_API`, `RATE_LIMIT_AUTH`), gzip compression, security headers, request timeouts, and immutable caching for hashed assets. SQLite runs in WAL mode with a busy timeout for concurrent reads.
+
+**Stage 2 — real database.** Point `DATABASE_URL` at Postgres and run `npm run db:push` — the Prisma schema needs no code changes. This removes the single-file write bottleneck and enables many app nodes to share one database.
+
+**Stage 3 — many machines.** Run N instances behind any load balancer (set `TRUST_PROXY=1`), serve `client/dist` from a CDN, move rate-limit counters and webhook run queues to Redis, and add read replicas as reporting traffic grows. 100k concurrent users is a fleet-and-database problem — the application code here is already stateless, cacheable, and horizontally scalable, so nothing in it needs rewriting to get there.

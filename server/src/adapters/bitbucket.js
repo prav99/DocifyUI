@@ -27,3 +27,13 @@ export async function listRepos(token) {
   }
   return SAMPLE;
 }
+
+// Real branches for a repository ("workspace/slug"). Throws on failure.
+export async function listBranches(token, repo) {
+  const r = await fetch('https://api.bitbucket.org/2.0/repositories/' + repo + '/refs/branches?pagelen=100', {
+    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'DocGen' }
+  });
+  if (!r.ok) throw new Error('Bitbucket branches: HTTP ' + r.status);
+  const d = await r.json();
+  return (d.values || []).map((b) => b.name);
+}

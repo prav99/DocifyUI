@@ -34,3 +34,18 @@ export async function listRepos(token) {
   }
   return SAMPLE;
 }
+
+// Real branches for a repository ("owner/name"). Throws on failure so the
+// caller can fall back honestly instead of inventing branches.
+export async function listBranches(token, repo) {
+  const r = await fetch('https://api.github.com/repos/' + repo + '/branches?per_page=100', {
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'User-Agent': 'DocGen',
+      Accept: 'application/vnd.github+json'
+    }
+  });
+  if (!r.ok) throw new Error('GitHub branches: HTTP ' + r.status);
+  const rows = await r.json();
+  return rows.map((b) => b.name);
+}

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node src/index.js",
-    "start": "node src/index.js",
+    "start": "node src/cluster.js",
     "db:push": "prisma db push",
     "db:reset": "prisma db push --force-reset && node src/seed.js",
     "seed": "node src/seed.js"
@@ -13,6 +13,7 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.7.5",
     "cors": "^2.8.5",
     "docx": "^8.5.0",
     "dotenv": "^16.4.5",

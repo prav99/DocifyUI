@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { prisma } from './db.js';
 import { requireAuth, freshToken } from './auth.js';
 import { SOURCES, DOCTYPES, FORMATS, PLANS, CI_YAML, docTypeName, formatDef } from './catalog.js';
-import { listRepos } from './adapters/github.js';
-import { listProjects as listGitlab } from './adapters/gitlab.js';
-import { listRepos as listBitbucket } from './adapters/bitbucket.js';
+import { listRepos, listBranches as ghBranches } from './adapters/github.js';
+import { listProjects as listGitlab, listBranches as glBranches } from './adapters/gitlab.js';
+import { listRepos as listBitbucket, listBranches as bbBranches } from './adapters/bitbucket.js';
 import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces } from './adapters/atlassian.js';
 import { verifyNotion, listNotion } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
-import { generateDocument, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport } from './adapters/llm.js';
+import { generateDocument, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, FRAMEWORK } from './adapters/llm.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
 
@@ -20,7 +20,15 @@ const j = (s, fb) => { try { return JSON.parse(s); } catch { return fb; } };
 /* ---------- public ---------- */
 
 apiRouter.get('/catalog', (req, res) => {
-  res.json({ sources: SOURCES, doctypes: DOCTYPES, formats: FORMATS, plans: PLANS });
+  // Static product data — cacheable by browsers and CDNs, which removes this
+  // endpoint from the hot path entirely under load.
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  // Every document type ships with its standardized framework: purpose,
+  // audience, tone, section outline, and content rules.
+  const doctypes = Object.fromEntries(Object.entries(DOCTYPES).map(([track, list]) => [
+    track, list.map((d) => ({ ...d, framework: FRAMEWORK[d.id] || null }))
+  ]));
+  res.json({ sources: SOURCES, doctypes, formats: FORMATS, plans: PLANS });
 });
 
 apiRouter.post('/waitlist', async (req, res) => {
@@ -29,6 +37,58 @@ apiRouter.post('/waitlist', async (req, res) => {
   if (!SOURCES.some((s) => s.id === provider && !s.avail)) return res.status(400).json({ error: 'Unknown waitlist source' });
   await prisma.waitlist.create({ data: { email: String(email).trim(), provider } });
   res.json({ ok: true });
+});
+
+/* ---------- Git webhook receiver (public; authenticated by secret) ----------
+   Point GitHub / GitLab / Bitbucket at POST /api/webhooks/git/<hookId>.
+   Accepted credentials, in order of preference:
+     GitHub    — X-Hub-Signature-256: HMAC-SHA256 of the raw body with the secret
+     GitLab    — X-Gitlab-Token: the secret verbatim
+     Bitbucket — append ?token=<secret> to the webhook URL
+   Understands GitHub push and merged-PR payloads, GitLab push, Bitbucket
+   push, and a generic { repo, branch, commit } body for custom CI. */
+apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
+  const auto = await prisma.automation.findUnique({ where: { id: req.params.hookId } });
+  if (!auto || !auto.secret) return res.status(404).json({ error: 'Unknown webhook' });
+
+  const crypto = await import('node:crypto');
+  let authed = false;
+  const sig = req.get('X-Hub-Signature-256');
+  if (sig && req.rawBody) {
+    const want = 'sha256=' + crypto.createHmac('sha256', auto.secret).update(req.rawBody).digest('hex');
+    try { authed = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want)); } catch { authed = false; }
+  }
+  if (!authed && req.get('X-Gitlab-Token') === auto.secret) authed = true;
+  if (!authed && req.query.token === auto.secret) authed = true;
+  if (!authed) return res.status(401).json({ error: 'Signature verification failed' });
+
+  if (!auto.enabled) return res.json({ ok: true, action: 'ignored', reason: 'Automation is disabled' });
+
+  // Normalize the event across providers.
+  const b = req.body || {};
+  let branch = null; let commit = ''; let repo = '';
+  if (b.ref && String(b.ref).startsWith('refs/heads/')) { // GitHub / GitLab push
+    branch = String(b.ref).slice('refs/heads/'.length);
+    commit = (b.head_commit && b.head_commit.id) || b.checkout_sha || b.after || '';
+    repo = (b.repository && b.repository.full_name) || (b.project && b.project.path_with_namespace) || '';
+  } else if (b.pull_request && b.action === 'closed' && b.pull_request.merged) { // GitHub merged PR
+    branch = b.pull_request.base && b.pull_request.base.ref;
+    commit = b.pull_request.merge_commit_sha || '';
+    repo = (b.repository && b.repository.full_name) || '';
+  } else if (b.push && Array.isArray(b.push.changes)) { // Bitbucket push
+    const ch = b.push.changes[0];
+    branch = ch && ch.new && ch.new.name;
+    commit = (ch && ch.new && ch.new.target && ch.new.target.hash) || '';
+    repo = (b.repository && b.repository.full_name) || '';
+  } else if (b.branch) { // generic
+    branch = String(b.branch); commit = String(b.commit || ''); repo = String(b.repo || '');
+  }
+  if (!branch) return res.json({ ok: true, action: 'ignored', reason: 'No branch in payload (event type not handled)' });
+  if (!branchMatches(auto.branch, branch)) {
+    return res.json({ ok: true, action: 'ignored', reason: 'Branch ' + branch + ' does not match watched ' + auto.branch });
+  }
+  const { run } = await triggerRegeneration(auto.userId, auto, { trigger: 'webhook', commit, branch, repo });
+  res.json({ ok: true, action: run.status === 'skipped' ? 'skipped' : 'regenerating', run });
 });
 
 /* ---------- everything below requires auth ---------- */
@@ -108,6 +168,12 @@ function serializeGen(g) {
     status: g.status, step: g.step, steps: j(g.steps, []),
     title: g.title, content: g.content, preview: g.preview || '',
     output: j(g.output, {}), brief: j(g.brief, {}),
+    // The blueprint-selected preview layout, so the UI can label the preview
+    // truthfully for any current or future document type.
+    previewLayout: (() => {
+      const fw = FRAMEWORK[j(g.docTypes, [])[0]];
+      return fw && fw.preview ? fw.preview.layout : 'document';
+    })(),
     score: g.score, createdAt: g.createdAt
   };
 }
@@ -140,7 +206,7 @@ async function runPipeline(genId) {
       skill: gen.skill || '', skillName: gen.skillName || '',
       brief: j(gen.brief, {}), output: j(gen.output, {})
     };
-    const { title, content } = generateDocument(genArgs);
+    const { title, content, structure } = generateDocument(genArgs);
     // Rendered preview for the UI: same engine, HTML target, same options —
     // so the preview shows exactly what the user configured, for every format.
     const previewHtml = gen.format === 'html'
@@ -152,7 +218,9 @@ async function runPipeline(genId) {
         generationId: genId,
         issues: JSON.stringify(report.issues),
         links: JSON.stringify(report.links),
-        style: JSON.stringify(report.style)
+        // Blueprint conformance leads the style checks, so structure shows up
+        // in the same report pipeline for every document type.
+        style: JSON.stringify([...(structure || []), ...report.style])
       }
     });
     await prisma.generation.update({
@@ -386,12 +454,124 @@ apiRouter.post('/team/invite', async (req, res) => {
   res.json({ member: row });
 });
 
-/* Automation */
-apiRouter.get('/automation', async (req, res) => {
-  const row = await prisma.automation.upsert({
-    where: { userId: req.uid }, update: {}, create: { userId: req.uid }
+/* ---------------- Automation: auto-regenerate on merge ----------------
+   End-to-end: a per-user webhook endpoint (HMAC-verified) receives push /
+   merge events from GitHub, GitLab, or Bitbucket, matches the watched
+   branch, clones the user's latest generation config as the template, runs
+   the full pipeline (generate → judge → score), enforces the quality gate,
+   and records every run. "Simulate merge" exercises the identical path. */
+
+async function getAutomation(uid) {
+  let row = await prisma.automation.upsert({
+    where: { userId: uid }, update: {}, create: { userId: uid }
   });
-  res.json({ automation: row, snippet: CI_YAML });
+  if (!row.secret) {
+    const crypto = await import('node:crypto');
+    row = await prisma.automation.update({
+      where: { id: row.id }, data: { secret: crypto.randomBytes(24).toString('hex') }
+    });
+  }
+  return row;
+}
+
+async function latestTemplate(uid) {
+  const rows = await prisma.generation.findMany({
+    where: { userId: uid }, orderBy: { createdAt: 'desc' }, take: 20
+  });
+  return (rows || []).find((g) => g.status === 'complete') || null;
+}
+
+function branchMatches(watched, branch) {
+  if (!branch) return false;
+  if (watched.endsWith('/*')) return branch.startsWith(watched.slice(0, -1));
+  return watched === branch;
+}
+
+function ciSnippet(auto, tpl) {
+  const project = tpl ? (tpl.title || 'documentation').toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'your-project-docs';
+  const formats = tpl ? tpl.format : 'dita,markdown';
+  return [
+    'name: docgen-regenerate',
+    'on:',
+    '  push:',
+    '    branches: [' + auto.branch.replace('/*', '/**') + ']',
+    '',
+    'jobs:',
+    '  regenerate-docs:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '      - name: Regenerate documentation',
+    '        uses: docgen/generate-action@v2',
+    '        with:',
+    '          api-key: ${{ secrets.DOCGEN_API_KEY }}',
+    '          project: ' + project,
+    '          formats: ' + formats,
+    '          quality-gate: ' + auto.gate,
+    '      - name: Upload quality report',
+    '        uses: actions/upload-artifact@v4',
+    '        with:',
+    '          name: docgen-quality-report',
+    '          path: .docgen/report.html'
+  ].join('\n');
+}
+
+async function recordRun(autoId, run) {
+  const row = await prisma.automation.findUnique({ where: { id: autoId } });
+  const runs = j(row.runs, []);
+  const at = runs.findIndex((r) => r.id === run.id);
+  if (at >= 0) runs[at] = { ...runs[at], ...run };
+  else runs.unshift(run);
+  await prisma.automation.update({ where: { id: autoId }, data: { runs: JSON.stringify(runs.slice(0, 20)) } });
+}
+
+// The real regeneration: clone the template config, run the full pipeline,
+// then close out the run record with the score and gate result.
+async function triggerRegeneration(uid, auto, { trigger, commit, branch, repo }) {
+  const tpl = await latestTemplate(uid);
+  const runId = 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const base = {
+    id: runId, at: new Date().toISOString(), trigger,
+    commit: commit || '', branch: branch || auto.branch, repo: repo || (tpl ? tpl.repo : '')
+  };
+  if (!tpl) {
+    await recordRun(auto.id, { ...base, status: 'skipped', note: 'No completed generation to use as a template — generate a document once first.' });
+    return { run: { ...base, status: 'skipped' } };
+  }
+  const steps = ['Merge ' + (commit ? String(commit).slice(0, 7) + ' ' : '') + 'detected on ' + base.branch,
+    ...buildSteps({ provider: 'github', instructions: tpl.instructions, files: j(tpl.files, []), skillName: tpl.skillName || '' })];
+  const gen = await prisma.generation.create({
+    data: {
+      userId: uid, repo: base.repo || tpl.repo, branch: base.branch, track: tpl.track,
+      docTypes: tpl.docTypes, format: tpl.format, instructions: tpl.instructions,
+      files: tpl.files, skillName: tpl.skillName || '', skill: tpl.skill || '',
+      brief: tpl.brief || '{}', output: tpl.output || '{}',
+      status: 'queued', steps: JSON.stringify(steps)
+    }
+  });
+  await recordRun(auto.id, { ...base, status: 'running', genId: gen.id });
+  runPipeline(gen.id).then(async () => {
+    try {
+      const done = await prisma.generation.findUnique({ where: { id: gen.id } });
+      const score = done ? done.score : 0;
+      await recordRun(auto.id, {
+        id: runId, status: done && done.status === 'complete' ? 'complete' : 'failed',
+        score, gatePassed: score >= auto.gate, genId: gen.id
+      });
+    } catch (e) { console.error('run close-out failed', e); }
+  });
+  return { run: { ...base, status: 'running', genId: gen.id } };
+}
+
+apiRouter.get('/automation', async (req, res) => {
+  const row = await getAutomation(req.uid);
+  const tpl = await latestTemplate(req.uid);
+  res.json({
+    automation: { ...row, runs: j(row.runs, []) },
+    snippet: ciSnippet(row, tpl),
+    webhookUrl: '/api/webhooks/git/' + row.id,
+    template: tpl ? { id: tpl.id, title: tpl.title, repo: tpl.repo, track: tpl.track, docTypes: j(tpl.docTypes, []), format: tpl.format, skillName: tpl.skillName || '' } : null
+  });
 });
 
 apiRouter.put('/automation', async (req, res) => {
@@ -400,8 +580,51 @@ apiRouter.put('/automation', async (req, res) => {
   if (typeof enabled === 'boolean') data.enabled = enabled;
   if (typeof branch === 'string' && branch.trim()) data.branch = branch.trim();
   if (Number.isInteger(gate) && gate >= 0 && gate <= 100) data.gate = gate;
-  const row = await prisma.automation.upsert({
-    where: { userId: req.uid }, update: data, create: { userId: req.uid, ...data }
+  await getAutomation(req.uid);
+  const row = await prisma.automation.update({ where: { userId: req.uid }, data });
+  const tpl = await latestTemplate(req.uid);
+  res.json({ automation: { ...row, runs: j(row.runs, []) }, snippet: ciSnippet(row, tpl) });
+});
+
+// Real branches of the template repository, from the connected code host.
+// Falls back to the branches we actually know about (template + default)
+// and says so — no invented branch names.
+const BRANCH_FNS = { github: ghBranches, gitlab: glBranches, bitbucket: bbBranches };
+apiRouter.get('/automation/branches', async (req, res) => {
+  const tpl = await latestTemplate(req.uid);
+  const repo = String(req.query.repo || (tpl ? tpl.repo : '') || '');
+  const fallback = [...new Set([tpl && tpl.branch, 'main'].filter(Boolean))];
+  if (!repo) return res.json({ branches: fallback, repo: '', live: false });
+  const sources = await prisma.source.findMany({ where: { userId: req.uid } });
+  for (const s of sources) {
+    const fn = BRANCH_FNS[s.provider];
+    if (!fn || !s.token) continue;
+    try {
+      const token = await freshToken(s);
+      const branches = await fn(token, repo);
+      if (Array.isArray(branches) && branches.length) {
+        return res.json({ branches, repo, live: true, provider: s.provider });
+      }
+    } catch { /* try the next connected code host */ }
+  }
+  res.json({ branches: fallback, repo, live: false });
+});
+
+apiRouter.post('/automation/rotate-secret', async (req, res) => {
+  await getAutomation(req.uid);
+  const crypto = await import('node:crypto');
+  const row = await prisma.automation.update({
+    where: { userId: req.uid }, data: { secret: crypto.randomBytes(24).toString('hex') }
   });
-  res.json({ automation: row });
+  res.json({ automation: { ...row, runs: j(row.runs, []) } });
+});
+
+// Manual trigger / "Simulate merge" — exercises the exact webhook path.
+apiRouter.post('/automation/run', async (req, res) => {
+  const auto = await getAutomation(req.uid);
+  const { run } = await triggerRegeneration(req.uid, auto, {
+    trigger: req.body && req.body.trigger === 'simulate' ? 'simulate' : 'manual',
+    commit: 'sim' + Date.now().toString(36).slice(-4), branch: auto.branch.replace('/*', '/next')
+  });
+  res.json({ run });
 });

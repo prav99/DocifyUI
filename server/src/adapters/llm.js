@@ -306,6 +306,208 @@ export function templateStandard(id) {
   return TEMPLATES[id] ? TEMPLATES[id].standard : null;
 }
 
+/* ---------------- Unified generation framework ----------------
+   One declarative blueprint per document type — technical AND marketing —
+   so every type is produced, validated, and extended the same way:
+     purpose   what the document is for
+     audience  who it is written for
+     tone      the editorial voice the engine holds it to
+     outline   the standardized section plan (req = must be present)
+     kinds     content the blueprint demands somewhere in the document
+               (code = runnable examples, table = structured data,
+                steps = numbered procedure, bullets = scannable lists)
+     rules     the content-generation rules the engine applies
+   Adding a future document type = one TEMPLATES entry + one BLUEPRINTS
+   entry; the pipeline, validation, preview, quality scoring, and every
+   output format then work for it automatically. */
+export const BLUEPRINTS = {
+  /* ---- Technical ---- */
+  api: {
+    purpose: 'Complete contract of endpoints, authentication, and errors',
+    audience: 'Developers integrating against the API',
+    tone: 'Precise, reference-grade, no marketing language',
+    outline: [
+      { name: 'Overview', req: true }, { name: 'Authentication', req: true },
+      { name: 'Errors', req: true }, { name: 'Endpoint reference', req: true },
+      { name: 'Rate limits', req: true }
+    ],
+    kinds: { code: true, table: true },
+    rules: ['Every endpoint documents parameters, request, and response', 'Error semantics live in one table', 'All examples are runnable as-is'],
+    preview: { layout: 'document' }
+  },
+  userguide: {
+    purpose: 'Get real tasks done, one goal per section',
+    audience: 'End users of the product',
+    tone: 'Direct, second person, goal-first',
+    outline: [
+      { name: 'About this guide', req: true }, { name: 'Before you begin', req: true },
+      { name: 'Task sections', req: true }, { name: 'Verify your work', req: true },
+      { name: 'Troubleshooting', req: true }
+    ],
+    kinds: { code: true, steps: true, bullets: true },
+    rules: ['Task-oriented headings — the reader starts at the task, not page one', 'Prerequisites appear before any task', 'Every task ends in a verifiable state'],
+    preview: { layout: 'document' }
+  },
+  install: {
+    purpose: 'From nothing to a verified working installation',
+    audience: 'Developers and operators setting up the product',
+    tone: 'Imperative, one action per step',
+    outline: [
+      { name: 'Prerequisites', req: true }, { name: 'Install', req: true },
+      { name: 'Configure', req: true }, { name: 'Verify the installation', req: true },
+      { name: 'Upgrade and uninstall', req: false }, { name: 'Troubleshooting', req: true }
+    ],
+    kinds: { code: true, table: true },
+    rules: ['Prerequisites as a checkable table with verification commands', 'Per-platform install commands', 'Verification with expected output shown'],
+    preview: { layout: 'document' }
+  },
+  quickstart: {
+    purpose: 'First successful call in minutes',
+    audience: 'New developers evaluating the product',
+    tone: 'Encouraging, concrete, zero detours',
+    outline: [
+      { name: 'What you will build', req: true }, { name: 'Numbered steps', req: true },
+      { name: 'Where to go next', req: true }
+    ],
+    kinds: { code: true, bullets: true },
+    rules: ['States the outcome and time budget up front', 'Each step shows the exact command or click', 'Ends with three concrete next actions'],
+    preview: { layout: 'document' }
+  },
+  troubleshoot: {
+    purpose: 'Symptom to resolution in one lookup',
+    audience: 'Users hitting an error right now',
+    tone: 'Calm, diagnostic, no blame',
+    outline: [
+      { name: 'How to use this page', req: true }, { name: 'Symptom entries', req: true },
+      { name: 'Frequently asked questions', req: true }
+    ],
+    kinds: {},
+    rules: ['Every entry follows Symptom → Cause → Resolution', 'Symptoms are written as the user sees them', 'FAQ covers questions that are not failures'],
+    preview: { layout: 'cards', card: 'symptom' }
+  },
+  relnotes: {
+    purpose: 'Every notable change, per version, machine-scannable',
+    audience: 'Developers upgrading between versions',
+    tone: 'Factual, one change per line',
+    outline: [
+      { name: 'About this changelog', req: true }, { name: '[Unreleased]', req: false },
+      { name: 'Versioned entries', req: true }
+    ],
+    kinds: { bullets: true },
+    rules: ['Keep a Changelog categories: Added / Changed / Fixed / Security', 'Versions follow SemVer and carry ISO dates', 'Newest changes first'],
+    preview: { layout: 'changelog' }
+  },
+  admin: {
+    purpose: 'Authoritative configuration and operations reference',
+    audience: 'Administrators and platform teams',
+    tone: 'Exhaustive, tabular, defaults always stated',
+    outline: [
+      { name: 'Configuration reference', req: true }, { name: 'Roles and permissions', req: true },
+      { name: 'Deployment', req: true }, { name: 'Backup and audit', req: true }
+    ],
+    kinds: { table: true },
+    rules: ['Every variable documents its default', 'Permissions expressed as a role matrix', 'Retention and audit obligations stated explicitly'],
+    preview: { layout: 'document' }
+  },
+  /* ---- Marketing ---- */
+  announce: {
+    purpose: 'Announce a release so the value lands in the first line',
+    audience: 'Customers, press, and the broader market',
+    tone: 'Benefit-led, plain language, no jargon',
+    outline: [
+      { name: 'TL;DR', req: true }, { name: 'What is new', req: true },
+      { name: 'Why it matters', req: true }, { name: 'Availability', req: true },
+      { name: 'Get started', req: true }
+    ],
+    kinds: { bullets: true },
+    rules: ['Inverted pyramid — most important fact first', 'Every feature stated as a customer benefit', 'Ends with one clear action'],
+    preview: { layout: 'article', furniture: 'none' }
+  },
+  onepager: {
+    purpose: 'One page from problem to proof to action',
+    audience: 'Buyers and decision makers',
+    tone: 'Confident, quantified, benefit-led',
+    outline: [
+      { name: 'The problem', req: true }, { name: 'The solution', req: true },
+      { name: 'How it works', req: true }, { name: 'Proof', req: true },
+      { name: 'Call to action', req: true }
+    ],
+    kinds: { steps: true, table: true },
+    rules: ['Problem stated in the customer\'s words', 'Proof is quantified before/after data', 'Exactly one call to action'],
+    preview: { layout: 'onepager', furniture: 'none' }
+  },
+  social: {
+    purpose: 'Ready-to-post launch copy per channel',
+    audience: 'Followers per channel; engineering and product teams',
+    tone: 'Channel-native — tight for short-form, narrative for LinkedIn',
+    outline: [
+      { name: 'Short post (280 characters)', req: true }, { name: 'LinkedIn post', req: true },
+      { name: 'Community / Slack announcement', req: true }, { name: 'Usage notes', req: true }
+    ],
+    kinds: { bullets: true },
+    rules: ['Short post fits the 280-character limit', 'Each variant is written for its channel, never copy-pasted across', 'Usage notes state tone, audience, and publish order'],
+    preview: { layout: 'cards', card: 'channel', furniture: 'none' }
+  },
+  custlog: {
+    purpose: 'What changed, in the customer\'s language',
+    audience: 'Non-technical customers',
+    tone: 'Plain words, customer impact first',
+    outline: [
+      { name: 'Dated entries', req: true }, { name: 'How we write these notes', req: false }
+    ],
+    kinds: { bullets: true },
+    rules: ['Grouped as New / Improved / Fixed', 'No internal jargon or ticket numbers', 'Impact before mechanism in every line'],
+    preview: { layout: 'changelog', furniture: 'none' }
+  }
+};
+
+// The framework summary served through /api/catalog, so the UI and any
+// integration can see the standardized plan behind every document type.
+export const FRAMEWORK = Object.fromEntries(Object.keys(BLUEPRINTS).map((id) => [id, {
+  standard: TEMPLATES[id] ? TEMPLATES[id].standard : null,
+  ...BLUEPRINTS[id]
+}]));
+
+// Validates a generated document against its blueprint. Returns entries in
+// the same shape as the style checks, so conformance shows up in the quality
+// report like every other check. A skill outline replaces the blueprint —
+// that is reported, not failed.
+export function validateStructure({ docType, sections, content, skillName = '' }) {
+  const bp = BLUEPRINTS[docType];
+  if (!bp) return [];
+  const std = TEMPLATES[docType] ? TEMPLATES[docType].standard : docType;
+  if (skillName) {
+    return [{
+      t: 'Structure — custom outline (skill: ' + skillName + ')',
+      d: 'The uploaded skill governs the section plan for this document; the ' + std + ' blueprint applies to tone and formatting only.',
+      pass: true
+    }];
+  }
+  const reqCount = bp.outline.filter((o) => o.req).length;
+  const checks = [{
+    t: 'Structure — blueprint sections (' + std + ')',
+    d: sections.length + ' sections rendered against the standardized outline (minimum ' + reqCount + ' required).',
+    pass: sections.length >= reqCount
+  }];
+  const kindProbe = {
+    code: { re: /```/, t: 'Runnable examples', d: 'Blueprint requires executable examples; fenced code present.' },
+    table: { re: /^\|/m, t: 'Structured data as tables', d: 'Blueprint requires tabular reference data; tables present.' },
+    steps: { re: /^\d+\.\s/m, t: 'Procedural steps', d: 'Blueprint requires numbered procedures; steps present.' },
+    bullets: { re: /^-\s/m, t: 'Scannable lists', d: 'Blueprint requires scannable lists; bullet lists present.' }
+  };
+  for (const [kind, probe] of Object.entries(kindProbe)) {
+    if (!bp.kinds[kind]) continue;
+    const pass = probe.re.test(content);
+    checks.push({ t: 'Structure — ' + probe.t.toLowerCase(), d: pass ? probe.d : 'Blueprint requires this content kind but none was found.', pass });
+  }
+  checks.push({
+    t: 'Structure — uniform hierarchy',
+    d: 'Single H1 title, every section at H2, consistent metadata head and legal tail — enforced by the shared composition engine.',
+    pass: true
+  });
+  return checks;
+}
+
 function skillSectionBody(name, sk) {
   let body = 'Drafted from repository analysis for "' + name + '".';
   if (sk.rules.length) body += ' Written to comply with ' + sk.rules.length + ' skill rule' + (sk.rules.length > 1 ? 's' : '') + '.';
@@ -539,6 +741,134 @@ function applyFixes({ title, sections, fx }) {
   return { title: t, sections: secs };
 }
 
+/* ---------------- Type-specific preview layouts ----------------
+   Metadata-driven renderer: each blueprint's `preview` schema selects one of
+   these layouts, so every document type previews as the artifact it really
+   is — article, channel cards, changelog timeline, split one-pager — instead
+   of one generic document shell. New layouts are added here; new document
+   types just reference them from their blueprint. */
+function renderPreviewLayout({ layout, card, title, sections, oc, org, std, dateStr, docRows = [] }) {
+  const accent = oc.accentColor || '#0f62fe';
+  const chips = [];
+  if (std) chips.push('<span class="chip">' + escX(std) + '</span>');
+  if (org) chips.push('<span class="chip">' + escX(org) + '</span>');
+  if (oc.author && oc.author.trim()) chips.push('<span class="chip">' + escX(oc.author.trim()) + '</span>');
+  if (oc.showDate) chips.push('<span class="chip">' + escX(dateStr) + '</span>');
+  if (oc.classification !== 'none') chips.push('<span class="chip chip--red">' + escX(String(oc.classification).toUpperCase()) + '</span>');
+  const byline = '<div class="byline">' + chips.join('') + '</div>';
+
+  const footBits = [];
+  if (oc.disclaimer && oc.disclaimer.trim()) footBits.push('<em>' + escX(oc.disclaimer.trim()) + '</em>');
+  const cr = (oc.copyright && oc.copyright.trim())
+    ? oc.copyright.trim()
+    : (org ? '© ' + new Date().getFullYear() + ' ' + org + '. All rights reserved.' : '');
+  if (cr) footBits.push(escX(cr));
+  if (oc.footerText && oc.footerText.trim()) footBits.push(escX(oc.footerText.trim()));
+  // Document identity table — always at the bottom, in every layout.
+  const docTable = docRows.length
+    ? '<table class="docmeta"><thead><tr><th>Document</th><th></th></tr></thead><tbody>' +
+      docRows.map(([k, v]) => '<tr><td>' + escX(k) + '</td><td>' + escX(String(v).replace(/[`*]/g, '')) + '</td></tr>').join('') +
+      '</tbody></table>'
+    : '';
+  const foot = docTable + (footBits.length ? '<div class="foot">' + footBits.join(' · ') + '</div>' : '');
+
+  // Keep a Changelog category headings become colored pills.
+  const pillify = (html) => html.replace(/<h3( id="[^"]*")?>([^<]+)<\/h3>/g, (m, _id, txt) => {
+    const map = { added: 'g', new: 'g', changed: 'b', improved: 'b', fixed: 'p', security: 'r', deprecated: 'a', removed: 'a' };
+    return '<h3 class="pill pill--' + (map[txt.trim().toLowerCase()] || 'b') + '">' + txt + '</h3>';
+  });
+  const head = '<p class="eyebrow">' + escX(std || '') + '</p><h1>' + escX(title) + '</h1>' + byline;
+
+  let body = '';
+  if (layout === 'article') {
+    const [first, ...rest] = sections;
+    body = head +
+      (first ? '<div class="stand"><span class="standlab">' + escX(first[0]) + '</span>' + mdToHtml(first[1]) + '</div>' : '') +
+      rest.map(([h, b]) => '<h2>' + escX(h) + '</h2>' + mdToHtml(b)).join('') + foot;
+  } else if (layout === 'cards') {
+    body = head + '<div class="cardgrid">' +
+      sections.map(([h, b]) => {
+        let extra = '';
+        if (card === 'channel' && /280/.test(h)) {
+          const n = String(b).replace(/^>\s?/gm, '').replace(/[*`_#]/g, '').trim().length;
+          extra = '<span class="cnt' + (n <= 280 ? ' ok' : ' over') + '">' + n + ' / 280</span>';
+        }
+        return '<div class="card"><div class="lab"><span>' + escX(h) + '</span>' + extra + '</div><div class="post">' + mdToHtml(b) + '</div></div>';
+      }).join('') + '</div>' + foot;
+  } else if (layout === 'changelog') {
+    body = head + '<div class="rail">' +
+      sections.map(([h, b]) => '<div class="entry"><span class="ver">' + escX(h) + '</span>' + pillify(mdToHtml(b)) + '</div>').join('') +
+      '</div>' + foot;
+  } else if (layout === 'onepager') {
+    const [p1, p2, ...rest] = sections;
+    const cta = rest.length ? rest[rest.length - 1] : null;
+    const mid = cta ? rest.slice(0, -1) : rest;
+    body = head +
+      '<div class="hero">' + [p1, p2].filter(Boolean).map(([h, b], i) =>
+        '<div class="half' + (i ? ' half--accent' : '') + '"><h2>' + escX(h) + '</h2>' + mdToHtml(b) + '</div>').join('') + '</div>' +
+      mid.map(([h, b]) => '<h2>' + escX(h) + '</h2>' + mdToHtml(b)).join('') +
+      (cta ? '<div class="cta"><h2>' + escX(cta[0]) + '</h2>' + mdToHtml(cta[1]) + '</div>' : '') + foot;
+  } else {
+    body = head + sections.map(([h, b]) => '<h2>' + escX(h) + '</h2>' + mdToHtml(b)).join('') + foot;
+  }
+
+  const css = [
+    "*{box-sizing:border-box}body{margin:0;background:#f4f4f4;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#161616;line-height:1.55;font-size:14.5px}",
+    '.wrap{max-width:840px;margin:0 auto;padding:28px 24px 56px;position:relative;z-index:1}',
+    '.draftbn{background:#fff8e1;border-bottom:1px solid #f1c21b;color:#684e00;font-size:12px;letter-spacing:.32px;padding:8px 16px;text-align:center}',
+    '.wm{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2}',
+    '.wm span{transform:rotate(-30deg);font-size:96px;color:rgba(22,22,22,.05);font-weight:600;letter-spacing:8px;white-space:nowrap}',
+    '.pagehead{border-bottom:1px solid #e0e0e0;padding:10px 24px;font-size:12px;color:#525252;letter-spacing:.32px;background:#fff}',
+    '.eyebrow{font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:' + accent + ';font-weight:600;margin:0 0 4px}',
+    'h1{font-size:36px;font-weight:400;margin:0;letter-spacing:0}',
+    'h2{font-size:19px;font-weight:600;margin:28px 0 8px}',
+    '.byline{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 20px}',
+    '.chip{border:1px solid #d0d0d0;border-radius:999px;padding:3px 12px;background:#fff;font-size:12px;color:#525252}',
+    '.chip--red{border-color:#da1e28;color:#da1e28;font-weight:600}',
+    "code{font-family:'IBM Plex Mono',monospace;background:#f0f0f0;padding:1px 5px;font-size:.9em}",
+    'pre{background:#161616;color:#f4f4f4;padding:14px 16px;overflow:auto;font-size:13px}pre code{background:none;padding:0}',
+    'table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #e0e0e0;text-align:left;padding:8px 12px;font-size:13.5px}th{background:#f4f4f4}',
+    'a{color:' + accent + '}blockquote{border-left:3px solid ' + accent + ';margin:12px 0;padding:8px 16px;background:#edf5ff}',
+    'ul,ol{padding-left:22px}li{margin:4px 0}',
+    '.foot{margin-top:20px;border-top:1px solid #e0e0e0;padding-top:14px;font-size:12px;color:#525252}',
+    '.docmeta{margin-top:44px}',
+    // article
+    '.stand{background:#fff;border-left:4px solid ' + accent + ';padding:18px 24px;font-size:17px;color:#393939;margin:4px 0 8px}',
+    '.stand p{margin:6px 0 0}.standlab{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:#525252;font-weight:600}',
+    // cards
+    '.cardgrid{display:grid;gap:14px;margin-top:4px}',
+    '.card{background:#fff;border:1px solid #e0e0e0;padding:18px 24px}',
+    '.card .lab{display:flex;justify-content:space-between;align-items:center;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#525252;font-weight:600}',
+    '.card .post{margin-top:8px;font-size:15px}.card .post blockquote{background:#f4f4f4;border-left:3px solid ' + accent + '}',
+    '.cnt{font-family:monospace;font-size:11px;padding:2px 8px;border-radius:999px}.cnt.ok{background:#defbe6;color:#0e6027}.cnt.over{background:#fff1f1;color:#a2191f}',
+    // changelog
+    '.rail{border-left:2px solid #d0d0d0;margin:8px 0 0 6px;padding:4px 0 4px 20px}',
+    '.entry{position:relative;background:#fff;border:1px solid #e0e0e0;padding:16px 24px;margin-bottom:14px}',
+    '.entry:before{content:"";position:absolute;left:-26px;top:22px;width:9px;height:9px;background:' + accent + ';border-radius:50%}',
+    ".entry .ver{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px}",
+    '.pill{display:inline-block;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;padding:3px 10px;border-radius:999px;margin:12px 0 2px;font-weight:600}',
+    '.pill--g{background:#defbe6;color:#0e6027}.pill--b{background:#edf5ff;color:#0043ce}.pill--p{background:#f6f2ff;color:#6929c4}.pill--r{background:#fff1f1;color:#a2191f}.pill--a{background:#fff8e1;color:#684e00}',
+    // one-pager
+    '.hero{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px}@media(max-width:640px){.hero{grid-template-columns:1fr}}',
+    '.half{background:#fff;border:1px solid #e0e0e0;padding:18px 24px}.half h2{margin-top:0}',
+    '.half--accent{border-top:3px solid ' + accent + ';background:#edf5ff}',
+    '.cta{background:#161616;color:#fff;padding:22px 28px;margin-top:28px}.cta h2{margin-top:0;color:#fff}.cta a{color:#78a9ff}'
+  ].join('\n');
+
+  return [
+    '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>',
+    '<meta name="viewport" content="width=device-width, initial-scale=1"/>',
+    '<meta name="generator" content="DocGen"/>',
+    (std ? '<meta name="doc-standard" content="' + escX(std) + '"/>' : ''),
+    '<title>' + escX(title) + '</title><style>' + css + '</style></head><body>',
+    (oc.draftBanner ? '<div class="draftbn">DRAFT — not for distribution</div>' : ''),
+    (oc.watermark && oc.watermark.trim() ? '<div class="wm"><span>' + escX(oc.watermark.trim().toUpperCase()) + '</span></div>' : ''),
+    (oc.headerText && oc.headerText.trim() ? '<div class="pagehead">' + escX(oc.headerText.trim()) + '</div>' : ''),
+    '<div class="wrap">', body, '</div>',
+    '</body></html>'
+  ].filter(Boolean).join('\n');
+}
+
 /* ---------------- Document generation ---------------- */
 export function generateDocument({ track, docTypes, format, repo, instructions, skill = '', skillName = '', brief = null, output = null, fixes = [] }) {
   const id = docTypes[0];
@@ -599,24 +929,31 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
 
   // ---- Assemble ----
   const parts = [];
+  // The blueprint's preview schema also decides the document furniture:
+  // marketing artifacts (announcement, one-pager, social pack, customer
+  // changelog) never carry a version cover table or a table of contents.
+  const pv = (BLUEPRINTS[id] && BLUEPRINTS[id].preview) || { layout: 'document' };
+  const noFurniture = pv.furniture === 'none';
   if (oc.draftBanner) parts.push('> **DRAFT** — not for distribution', '');
   parts.push('# ' + title, '');
   if (oc.watermark && oc.watermark.trim()) {
     parts.push('> Watermark: **' + oc.watermark.trim().toUpperCase() + '** — applied to every page', '');
   }
-  if (oc.coverPage) {
-    if (oc.subtitle && oc.subtitle.trim()) parts.push('*' + oc.subtitle.trim() + '*', '');
-    const rows = [];
-    if (org) rows.push(['Organization', org]);
-    if (oc.author && oc.author.trim()) rows.push(['Author', oc.author.trim()]);
-    rows.push(['Version', (oc.version && oc.version.trim()) || c.version]);
-    if (oc.docId && oc.docId.trim()) rows.push(['Document ID', '`' + oc.docId.trim() + '`']);
-    if (oc.classification !== 'none') rows.push(['Classification', '**' + String(oc.classification).toUpperCase() + '**']);
-    if (oc.showDate) rows.push(['Date', fmtDate(oc)]);
-    parts.push(table(['Document', ' '], rows), '');
-  }
+  // Document identity block: the subtitle stays with the title, but the
+  // Document / Version / Date table now renders at the BOTTOM of every
+  // output, for every document type and format.
+  if (oc.coverPage && oc.subtitle && oc.subtitle.trim()) parts.push('*' + oc.subtitle.trim() + '*', '');
+  const coverRows = [];
+  if (org) coverRows.push(['Organization', org]);
+  if (oc.author && oc.author.trim()) coverRows.push(['Author', oc.author.trim()]);
+  coverRows.push(['Version', (oc.version && oc.version.trim()) || c.version]);
+  if (oc.docId && oc.docId.trim()) coverRows.push(['Document ID', '`' + oc.docId.trim() + '`']);
+  if (oc.classification !== 'none') coverRows.push(['Classification', '**' + String(oc.classification).toUpperCase() + '**']);
+  if (oc.showDate) coverRows.push(['Date', fmtDate(oc)]);
   parts.push('> Standard: ' + (tpl ? tpl.standard : 'DocGen default') + ' · Source: `' + repo + '`' + (oc.showDate ? ' · ' + fmtDate(oc) : ''));
-  parts.push('', 'The ' + c.product + ' lets you create, capture, and refund charges programmatically.');
+  if (!noFurniture) {
+    parts.push('', 'The ' + c.product + ' lets you create, capture, and refund charges programmatically.');
+  }
   if (fxSet.has('shortdesc')) {
     parts.push('', '**Short description.** The ' + c.product + ' lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling.');
   }
@@ -635,7 +972,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   if (instructions && instructions.trim()) {
     parts.push('', '> Customization applied: ' + instructions.trim().slice(0, 140));
   }
-  if (oc.toc) {
+  if (oc.toc && !noFurniture) {
     parts.push('', '## Contents', '');
     sections.forEach(([h, body], idx) => {
       parts.push('- [' + h + '](#' + anchors[idx] + ')');
@@ -648,6 +985,8 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
     parts.push('', '## ' + h, '', body);
   }
   const tail = [];
+  // Document identity table — always at the end of the document.
+  if (oc.coverPage && coverRows.length) tail.push('', '---', '', table(['Document', ' '], coverRows));
   if (oc.disclaimer && oc.disclaimer.trim()) tail.push('', '---', '', '*' + oc.disclaimer.trim() + '*');
   const copyrightLine = (oc.copyright && oc.copyright.trim())
     ? oc.copyright.trim()
@@ -683,6 +1022,15 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
     }
     dita.push('  </body>', '</topic>');
     content = dita.join('\n');
+  } else if (format === 'html' && pv.layout && pv.layout !== 'document') {
+    // Type-specific layout from the blueprint's preview schema: the document
+    // renders as the artifact it really is (article, channel cards, changelog
+    // timeline, split one-pager) — driven entirely by configuration.
+    content = renderPreviewLayout({
+      layout: pv.layout, card: pv.card, title, sections, oc, org,
+      std: tpl ? tpl.standard : null, dateStr: fmtDate(oc),
+      docRows: oc.coverPage ? coverRows : []
+    });
   } else if (format === 'html') {
     // Standalone Web Help page — semantic HTML5, self-contained styling,
     // honoring branding, watermark, header, and footer output options.
@@ -782,7 +1130,10 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
     // paper size, header/footer, page numbers, and watermark for real.
     content = md;
   }
-  return { title, content };
+  // Blueprint conformance for the quality report — same framework for every
+  // technical and marketing document type.
+  const structure = validateStructure({ docType: id, sections, content: md, skillName });
+  return { title, content, structure };
 }
 
 /* ---------------- Quality model: dimensions, weights, assistants ----------------
