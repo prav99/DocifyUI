@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from './db.js';
-import { requireAuth } from './auth.js';
+import { requireAuth, freshToken } from './auth.js';
 import { SOURCES, DOCTYPES, FORMATS, PLANS, CI_YAML, docTypeName, formatDef } from './catalog.js';
 import { listRepos } from './adapters/github.js';
 import { listProjects as listGitlab } from './adapters/gitlab.js';
@@ -40,34 +40,62 @@ apiRouter.get('/sources', async (req, res) => {
 });
 
 apiRouter.post('/sources', async (req, res) => {
-  const { provider, detail = '', token = '' } = req.body || {};
+  const { provider, detail = '', token = '', email = '' } = req.body || {};
   const cat = SOURCES.find((s) => s.id === provider);
   if (!cat) return res.status(400).json({ error: 'Unknown source' });
   if (!cat.avail) return res.status(400).json({ error: cat.name + ' is not available yet — join the waitlist' });
-  if ((provider === 'jira' || provider === 'confluence') && (!detail.trim() || !token.trim())) {
-    return res.status(400).json({ error: cat.name + ' needs an instance URL and an API token' });
+
+  let storedToken = token;
+  let info = null;
+  try {
+    if (provider === 'jira' || provider === 'confluence') {
+      if (!detail.trim() || !token.trim() || !email.trim()) {
+        return res.status(400).json({ error: cat.name + ' needs the site URL, your Atlassian account email, and an API token' });
+      }
+      const cred = email.trim() + ':' + token.trim();
+      if (provider === 'jira') await verifyJira(detail, cred);
+      else await verifyConfluence(detail, cred);
+      storedToken = cred; // Basic-auth credential; encrypt at rest in production
+    } else if (provider === 'notion') {
+      if (!token.trim()) return res.status(400).json({ error: 'Notion needs an internal integration token' });
+      await verifyNotion(token.trim());
+    } else if (provider === 'openapi') {
+      if (!detail.trim()) return res.status(400).json({ error: 'Provide the URL of your OpenAPI / Swagger spec' });
+      info = await inspectSpec(detail);
+    }
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
   }
-  if (provider === 'notion' && !token.trim()) {
-    return res.status(400).json({ error: 'Notion needs an internal integration token' });
-  }
-  if (provider === 'openapi' && !detail.trim()) {
-    return res.status(400).json({ error: 'Provide the URL of your OpenAPI / Swagger spec' });
-  }
+
   const existing = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
-  const data = { userId: req.uid, provider, detail: detail || 'OAuth read-only (contents + commit history)', token: token || (existing ? existing.token : '') };
+  const data = {
+    userId: req.uid, provider,
+    detail: detail || 'OAuth read-only (contents + commit history)',
+    token: storedToken || (existing ? existing.token : '')
+  };
   const row = existing
     ? await prisma.source.update({ where: { id: existing.id }, data })
     : await prisma.source.create({ data });
-  res.json({ source: row });
+  res.json({ source: row, info });
 });
 
 apiRouter.get('/repos', async (req, res) => {
   const provider = String(req.query.provider || 'github');
   const src = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
-  const token = src ? src.token : '';
-  if (provider === 'gitlab') return res.json({ repos: await listGitlab(token) });
-  if (provider === 'bitbucket') return res.json({ repos: await listBitbucket(token) });
-  res.json({ repos: await listRepos(token) });
+  try {
+    // For OAuth sources, silently renew the access token if it has expired.
+    const token = ['github', 'gitlab', 'bitbucket'].includes(provider)
+      ? await freshToken(src)
+      : (src ? src.token : '');
+    if (provider === 'gitlab') return res.json({ repos: await listGitlab(token) });
+    if (provider === 'bitbucket') return res.json({ repos: await listBitbucket(token) });
+    if (provider === 'jira') return res.json({ repos: src ? await listJiraProjects(src.detail, token) : [] });
+    if (provider === 'confluence') return res.json({ repos: src ? await listConfluenceSpaces(src.detail, token) : [] });
+    if (provider === 'notion') return res.json({ repos: token ? await listNotion(token) : [] });
+    return res.json({ repos: await listRepos(token) });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
 });
 
 /* Generations */

@@ -26,9 +26,60 @@ export const IcInfo = () => (
   <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#0043ce" /><path fill="#fff" d="M7.25 6.5h1.5V12h-1.5zM8 3.5A1 1 0 1 1 8 5.5 1 1 0 0 1 8 3.5z" /></svg>
 );
 
+/* Real source marks — flat, single-weight, sized to the 2px grid (Carbon-style). */
+const BRAND = {
+  github: (
+    <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true">
+      <path fill="#161616" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  ),
+  gitlab: (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path fill="#E24329" d="M12 21 8.4 11.2h7.2L12 21z" />
+      <path fill="#FC6D26" d="M12 21 4.5 11.2h3.9L12 21zM12 21l7.5-9.8h-3.9L12 21z" />
+      <path fill="#FCA326" d="M4.5 11.2 6.1 6a.33.33 0 0 1 .63 0l1.66 5.2H4.5zM19.5 11.2 17.9 6a.33.33 0 0 0-.63 0l-1.66 5.2h3.89z" />
+    </svg>
+  ),
+  bitbucket: (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path fill="#2684FF" d="M3.42 4.5a.75.75 0 0 0-.74.87l2.6 14.06c.07.38.4.66.79.66h11.9c.29 0 .54-.2.6-.49l2.61-14.22a.75.75 0 0 0-.74-.88H3.42zm11.06 10.35H9.56L8.4 9.15h7.2l-1.12 5.7z" />
+    </svg>
+  ),
+  jira: (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path fill="#2684FF" d="M12 2 5.9 8.1a1.55 1.55 0 0 0 0 2.2l6.1 6.1 6.1-6.1a1.55 1.55 0 0 0 0-2.2L12 2z" />
+      <path fill="#0052CC" d="M12 8.9 8.9 12l3.1 3.1 3.1-3.1L12 8.9z" />
+      <path fill="#2684FF" d="M12 16.2 9.2 19l2.8 3 2.8-3-2.8-2.8z" opacity=".85" />
+    </svg>
+  ),
+  confluence: (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path fill="#2684FF" d="M3.6 16.9c3-4.9 6.9-5.2 12-2.7l3.6 1.7 1.7-3.8-4-1.9C10.3 7.1 5.5 8.4 1.9 14.2l1.7 2.7z" />
+      <path fill="#0052CC" d="M20.4 7.1c-3 4.9-6.9 5.2-12 2.7L4.8 8.1 3.1 11.9l4 1.9c6.6 3.1 11.4 1.8 15-4l-1.7-2.7z" opacity=".92" />
+    </svg>
+  ),
+  notion: (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <rect x="4" y="3.5" width="16" height="17" fill="#ffffff" stroke="#161616" strokeWidth="1.6" />
+      <path d="M8.6 17V7.5l6.8 9.5V7.5" stroke="#161616" strokeWidth="1.9" fill="none" />
+    </svg>
+  ),
+  openapi: (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.6" fill="#6BA539" />
+      <path d="M12 12V3.4a8.6 8.6 0 0 1 6.1 2.5L12 12z" fill="#93C954" />
+      <circle cx="12" cy="12" r="2.6" fill="#ffffff" />
+    </svg>
+  ),
+  azdo: (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path fill="#0078D7" d="M21 6v12l-4.9 1.8-8-2.8v2.7L3 17l.05-10.3 4.6 1.5V5.9L16.1 3 21 6zM7.65 9.4v5.2l8.4 1.5V7.7l-8.4 1.7z" />
+    </svg>
+  )
+};
+
 export function SrcMark({ id }) {
-  const letters = { github: 'GH', gitlab: 'GL', bitbucket: 'BB', jira: 'JI', openapi: 'OA', confluence: 'CF', notion: 'NO', azdo: 'AZ' };
-  return <span className="srcmark">{letters[id] || '??'}</span>;
+  return <span className="srcmark">{BRAND[id] || <span className="mono" style={{ fontSize: 12 }}>?</span>}</span>;
 }
 
 export function ScoreTag({ n }) {

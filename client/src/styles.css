@@ -246,7 +246,8 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .check{color:var(--support-success);font-weight:600}
 .linkbtn{background:none;border:none;color:var(--link-primary);cursor:pointer;font-family:inherit;font-size:14px;padding:0}
 .linkbtn:hover{color:var(--link-hover);text-decoration:underline}
-.srcmark{display:inline-flex;width:32px;height:32px;background:var(--inverse-02);color:#fff;align-items:center;justify-content:center;font-size:12px;flex:none;font-family:'IBM Plex Mono',monospace}
+.srcmark{display:inline-flex;width:36px;height:36px;background:var(--background);border:1px solid var(--border-subtle);align-items:center;justify-content:center;flex:none}
+.srcmark svg{display:block}
 
 /* ============ Landing marketing sections ============ */
 .heroband{background:#161616;color:#f4f4f4;position:relative;overflow:hidden}

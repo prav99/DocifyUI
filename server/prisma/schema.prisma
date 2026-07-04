@@ -28,10 +28,12 @@ model Source {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider  String
-  detail    String   @default("")
-  token     String   @default("") // OAuth access token or API token. Encrypt at rest in production.
-  status    String   @default("connected")
+  provider     String
+  detail       String    @default("")
+  token        String    @default("") // OAuth access token or API token. Encrypt at rest in production.
+  refreshToken String    @default("") // For providers with expiring tokens (GitLab, Bitbucket).
+  expiresAt    DateTime? // Access-token expiry; null = non-expiring (GitHub, API tokens).
+  status       String    @default("connected")
   createdAt DateTime @default(now())
 }
 

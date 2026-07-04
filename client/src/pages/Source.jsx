@@ -10,6 +10,9 @@ const KIND = {
   openapi: 'url', jira: 'tokenurl', confluence: 'tokenurl', notion: 'token'
 };
 const PICKER_LABEL = { github: 'Repository', gitlab: 'Project', bitbucket: 'Repository' };
+// After a token connect, these sources offer a real pick-list from their API.
+const PICK_AFTER = { jira: 'Project', confluence: 'Space', notion: 'Database or page' };
+const NEEDS_EMAIL = { jira: true, confluence: true };
 
 export default function Source() {
   const nav = useNavigate();
@@ -26,17 +29,34 @@ export default function Source() {
 
   useEffect(() => { getCatalog().then(setCatalog); }, []);
 
-  // Lazily load pick-lists for every selected code source.
+  // The provider chosen at sign-in is already authorized — pre-select it once,
+  // so the user lands here with only the repository dropdown left to fill.
+  useEffect(() => {
+    if (user && user.oauthProvider && !flow.autoSrc) {
+      setFlow((f) => ({
+        autoSrc: true,
+        sources: (f.sources || []).includes(user.oauthProvider)
+          ? f.sources
+          : [...(f.sources || []), user.oauthProvider]
+      }));
+    }
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lazily load pick-lists: code hosts immediately, token sources once connected.
   useEffect(() => {
     sources
-      .filter((p) => KIND[p] === 'picker' && lists[p] === undefined)
+      .filter((p) => lists[p] === undefined &&
+        (KIND[p] === 'picker' || (PICK_AFTER[p] && (cfg[p] || {}).connected)))
       .forEach((p) => {
         setLists((l) => ({ ...l, [p]: null })); // mark loading
         api('/repos?provider=' + p)
           .then((d) => setLists((l) => ({ ...l, [p]: d.repos })))
-          .catch(() => setLists((l) => ({ ...l, [p]: [] })));
+          .catch((e) => {
+            setLists((l) => ({ ...l, [p]: [] }));
+            toast('error', 'Could not load list', e.message);
+          });
       });
-  }, [sources]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sources, cfg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
@@ -60,22 +80,44 @@ export default function Source() {
   const isReady = (id) => {
     const c = cfg[id] || {};
     if (KIND[id] === 'picker') return !!c.sel;
-    if (KIND[id] === 'url') return /^https?:\/\/.+/.test(c.url || '');
-    return !!c.connected;
+    if (KIND[id] === 'url') return !!c.verified;
+    return !!c.connected && (PICK_AFTER[id] ? !!c.sel : true);
   };
 
   async function connectToken(id) {
     const c = cfg[id] || {};
     const needsUrl = KIND[id] === 'tokenurl';
-    if ((needsUrl && !(c.url || '').trim()) || !(c.token || '').trim()) {
-      return toast('error', 'Missing details', needsUrl ? 'Instance URL and API token are both required' : 'A token is required');
+    if ((needsUrl && !(c.url || '').trim()) || !(c.token || '').trim() || (NEEDS_EMAIL[id] && !(c.email || '').trim())) {
+      return toast('error', 'Missing details',
+        NEEDS_EMAIL[id] ? 'Site URL, account email, and API token are all required' : 'A token is required');
     }
     setBusy(true);
     try {
-      await api('/sources', { method: 'POST', body: { provider: id, detail: (c.url || '').trim(), token: (c.token || '').trim() } });
+      // The server verifies these credentials against the provider's API before saving.
+      await api('/sources', {
+        method: 'POST',
+        body: { provider: id, detail: (c.url || '').trim(), token: (c.token || '').trim(), email: (c.email || '').trim() }
+      });
       setCfg(id, { connected: true, token: '' }); // never keep the token in browser state
-      toast('success', byId(id).name + ' connected', c.url || 'Token accepted');
+      toast('success', byId(id).name + ' connected', 'Credentials verified' + (c.url ? ' against ' + c.url : ''));
     } catch (e) { toast('error', 'Connection failed', e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function validateSpec(id) {
+    const c = cfg[id] || {};
+    if (!/^https?:\/\/.+/.test((c.url || '').trim())) {
+      return toast('error', 'Enter a spec URL', 'A full https:// address to your OpenAPI or Swagger JSON');
+    }
+    setBusy(true);
+    try {
+      const d = await api('/sources', { method: 'POST', body: { provider: id, detail: c.url.trim() } });
+      setCfg(id, { verified: true, info: d.info });
+      toast('success', 'Spec verified', d.info ? d.info.title + ' · ' + d.info.endpoints + ' endpoints' : c.url);
+    } catch (e) {
+      setCfg(id, { verified: false, info: null });
+      toast('error', 'Spec validation failed', e.message);
+    }
     finally { setBusy(false); }
   }
 
@@ -88,8 +130,8 @@ export default function Source() {
     try {
       for (const id of sources) {
         const c = cfg[id] || {};
+        // Token and spec sources were already saved (and verified) at connect time.
         if (KIND[id] === 'picker') await api('/sources', { method: 'POST', body: { provider: id, detail: c.sel } });
-        if (KIND[id] === 'url') await api('/sources', { method: 'POST', body: { provider: id, detail: (c.url || '').trim() } });
       }
       const pc = cfg[primary] || {};
       setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null });
@@ -179,7 +221,7 @@ export default function Source() {
                             </option>
                             {(lists[id] || []).map((r) => (
                               <option key={r.name} value={r.name}>
-                                {r.name} · {r.branch}{r.updated ? ' · updated ' + r.updated : ''}
+                                {[r.name, r.branch, r.updated ? 'updated ' + r.updated : ''].filter(Boolean).join(' · ')}
                               </option>
                             ))}
                           </select>
@@ -187,26 +229,63 @@ export default function Source() {
                       )}
 
                       {KIND[id] === 'url' && (
-                        <div className="field" style={{ maxWidth: 520, marginBottom: 0 }}>
-                          <label htmlFor={'url-' + id}>Spec URL</label>
-                          <input id={'url-' + id} className="input" placeholder="https://api.acme.dev/openapi.json"
-                            value={c.url || ''} onChange={(e) => setCfg(id, { url: e.target.value })} />
-                        </div>
+                        c.verified ? (
+                          <div className="row" style={{ flexWrap: 'wrap' }}>
+                            <IcCheck />
+                            <span className="body01">
+                              {c.info ? c.info.title + (c.info.version ? ' v' + c.info.version : '') + ' · ' + c.info.endpoints + ' endpoints' : 'Spec verified'}
+                            </span>
+                            <button className="linkbtn" onClick={() => setCfg(id, { verified: false, info: null })}>Change</button>
+                          </div>
+                        ) : (
+                          <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+                            <div className="field" style={{ flex: '1 1 300px', marginBottom: 0 }}>
+                              <label htmlFor={'url-' + id}>Spec URL</label>
+                              <input id={'url-' + id} className="input" placeholder="https://api.acme.dev/openapi.json"
+                                value={c.url || ''} onChange={(e) => setCfg(id, { url: e.target.value })} />
+                            </div>
+                            <button className="btn btn--tertiary btn--field" disabled={busy} onClick={() => validateSpec(id)}>Validate spec</button>
+                          </div>
+                        )
                       )}
 
                       {(KIND[id] === 'tokenurl' || KIND[id] === 'token') && (
                         c.connected ? (
-                          <div className="row"><IcCheck /><span className="body01">Connected{c.url ? ' to ' + c.url : ''}</span></div>
+                          <div>
+                            <div className="row"><IcCheck /><span className="body01">Credentials verified{c.url ? ' · ' + c.url : ''}</span></div>
+                            <div className="field mt5" style={{ maxWidth: 520, marginBottom: 0 }}>
+                              <label htmlFor={'pick-' + id}>{PICK_AFTER[id]}</label>
+                              <select id={'pick-' + id} className="select" value={c.sel || ''} onChange={(e) => setCfg(id, { sel: e.target.value })}>
+                                <option value="" disabled>
+                                  {lists[id] === null || lists[id] === undefined ? 'Loading from ' + s.name + '…'
+                                    : (lists[id] || []).length === 0 ? 'Nothing found — check permissions'
+                                    : 'Choose a ' + PICK_AFTER[id].toLowerCase() + '…'}
+                                </option>
+                                {(lists[id] || []).map((r) => (
+                                  <option key={r.name} value={r.name}>
+                                    {[r.name, r.updated ? 'updated ' + r.updated : ''].filter(Boolean).join(' · ')}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
                         ) : (
                           <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
                             {KIND[id] === 'tokenurl' && (
-                              <div className="field" style={{ flex: '1 1 240px', marginBottom: 0 }}>
-                                <label htmlFor={'iu-' + id}>Instance URL</label>
+                              <div className="field" style={{ flex: '1 1 220px', marginBottom: 0 }}>
+                                <label htmlFor={'iu-' + id}>Site URL</label>
                                 <input id={'iu-' + id} className="input" placeholder="https://yourteam.atlassian.net"
                                   value={c.url || ''} onChange={(e) => setCfg(id, { url: e.target.value })} />
                               </div>
                             )}
-                            <div className="field" style={{ flex: '1 1 200px', marginBottom: 0 }}>
+                            {NEEDS_EMAIL[id] && (
+                              <div className="field" style={{ flex: '1 1 200px', marginBottom: 0 }}>
+                                <label htmlFor={'em-' + id}>Account email</label>
+                                <input id={'em-' + id} className="input" type="email" placeholder="you@company.com"
+                                  value={c.email || ''} onChange={(e) => setCfg(id, { email: e.target.value })} />
+                              </div>
+                            )}
+                            <div className="field" style={{ flex: '1 1 180px', marginBottom: 0 }}>
                               <label htmlFor={'tk-' + id}>{id === 'notion' ? 'Integration token' : 'API token'}</label>
                               <input id={'tk-' + id} className="input" type="password" placeholder="Paste token"
                                 value={c.token || ''} onChange={(e) => setCfg(id, { token: e.target.value })} />

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, setToken } from '../api.js';
-import { useAuth, toast } from '../store.jsx';
-import { IcCheck } from '../ui.jsx';
+import { useAuth, useFlow, toast } from '../store.jsx';
+import { IcCheck, SrcMark } from '../ui.jsx';
 
 // Detect which providers have REAL OAuth configured on the server.
 function useProviders() {
@@ -28,6 +28,7 @@ const VALUE_POINTS = [
 export function Signup() {
   const nav = useNavigate();
   const { login } = useAuth();
+  const { setFlow } = useFlow();
   const [mode, setMode] = useState('oauth');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,6 +53,11 @@ export function Signup() {
     try {
       const d = await api('/auth/signup', { method: 'POST', body: { provider } });
       login(d.token, d.user);
+      // Carry the clicked provider straight into the source page, pre-selected.
+      setFlow((f) => ({
+        autoSrc: true,
+        sources: (f.sources || []).includes(provider) ? f.sources : [...(f.sources || []), provider]
+      }));
       toast('success', 'Account created', provider.charAt(0).toUpperCase() + provider.slice(1) + ' connected as a source');
       nav('/source');
     } catch (e) { toast('error', 'Signup failed', e.message); }
@@ -116,7 +122,7 @@ export function Signup() {
           <div className="stack mt6">
             {PROVIDERS.map((p) => (
               <button key={p.id} className="provbtn" disabled={busy} onClick={() => oauth(p.id)}>
-                <span className="pm">{p.mark}</span>
+                <SrcMark id={p.id} />
                 <span>
                   <span className="h01" style={{ display: 'block' }}>{p.name}</span>
                   <span className="helper">{p.sub}</span>
@@ -178,6 +184,7 @@ export function Signup() {
 export function OAuthComplete() {
   const nav = useNavigate();
   const { login } = useAuth();
+  const { setFlow } = useFlow();
   const [err, setErr] = useState('');
   useEffect(() => {
     const h = new URLSearchParams(window.location.hash.slice(1));
@@ -192,6 +199,10 @@ export function OAuthComplete() {
     api('/auth/me')
       .then((d) => {
         login(token, d.user);
+        setFlow((f) => ({
+          autoSrc: true,
+          sources: (f.sources || []).includes(prov) ? f.sources : [...(f.sources || []), prov]
+        }));
         toast('success', provName + ' connected', 'Authorized as a read-only source');
         nav('/source');
       })

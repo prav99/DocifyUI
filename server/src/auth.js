@@ -41,15 +41,20 @@ async function exchangeCode(provider, code) {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ client_id: cfg.id, client_secret: cfg.secret, code })
     });
-    return (await r.json()).access_token;
+    return r.json();
   }
   if (provider === 'gitlab') {
+    // Form-encoded: the safest content type for GitLab's token endpoint.
+    const form = new URLSearchParams({
+      client_id: cfg.id, client_secret: cfg.secret, code,
+      grant_type: 'authorization_code', redirect_uri: cbUrl(provider)
+    });
     const r = await fetch('https://gitlab.com/oauth/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: cfg.id, client_secret: cfg.secret, code, grant_type: 'authorization_code', redirect_uri: cbUrl(provider) })
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString()
     });
-    return (await r.json()).access_token;
+    return r.json();
   }
   const r = await fetch('https://bitbucket.org/site/oauth2/access_token', {
     method: 'POST',
@@ -59,7 +64,66 @@ async function exchangeCode(provider, code) {
     },
     body: 'grant_type=authorization_code&code=' + encodeURIComponent(code)
   });
-  return (await r.json()).access_token;
+  return r.json();
+}
+
+// Exchange a refresh token for a fresh access token (GitLab / Bitbucket / expiring GitHub).
+async function refreshExchange(provider, refreshToken) {
+  const cfg = OAUTH[provider];
+  if (provider === 'gitlab') {
+    const form = new URLSearchParams({
+      client_id: cfg.id, client_secret: cfg.secret,
+      refresh_token: refreshToken, grant_type: 'refresh_token', redirect_uri: cbUrl(provider)
+    });
+    const r = await fetch('https://gitlab.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString()
+    });
+    return r.json();
+  }
+  if (provider === 'bitbucket') {
+    const r = await fetch('https://bitbucket.org/site/oauth2/access_token', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(cfg.id + ':' + cfg.secret).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refreshToken)
+    });
+    return r.json();
+  }
+  const r = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ client_id: cfg.id, client_secret: cfg.secret, refresh_token: refreshToken, grant_type: 'refresh_token' })
+  });
+  return r.json();
+}
+
+const expiryDate = (tok) => (tok.expires_in ? new Date(Date.now() + (Number(tok.expires_in) - 60) * 1000) : null);
+
+// Return a valid access token for a Source, silently renewing it if expired.
+// Throws with a reconnect message when renewal is impossible.
+export async function freshToken(src) {
+  if (!src) return '';
+  if (!src.expiresAt || new Date(src.expiresAt) > new Date()) return src.token;
+  if (!src.refreshToken) {
+    throw new Error(src.provider + ' session expired — reconnect it from the source page');
+  }
+  const tok = await refreshExchange(src.provider, src.refreshToken);
+  if (!tok || !tok.access_token) {
+    throw new Error(src.provider + ' session expired — reconnect it from the source page');
+  }
+  await prisma.source.update({
+    where: { id: src.id },
+    data: {
+      token: tok.access_token,
+      refreshToken: tok.refresh_token || src.refreshToken, // GitLab rotates; keep old if absent
+      expiresAt: expiryDate(tok)
+    }
+  });
+  return tok.access_token;
 }
 
 async function fetchProfile(provider, token) {
@@ -147,6 +211,9 @@ authRouter.post('/signup', async (req, res) => {
         passwordHash: provider ? null : await bcrypt.hash(String(password), 10)
       }
     });
+  } else if (provider && user.oauthProvider !== provider) {
+    // Re-signup through a different code host: follow the latest choice.
+    user = await prisma.user.update({ where: { id: user.id }, data: { oauthProvider: provider } });
   }
   if (provider) {
     const existing = await prisma.source.findFirst({ where: { userId: user.id, provider } });
@@ -198,8 +265,9 @@ authRouter.get('/:provider(github|gitlab|bitbucket)/callback', async (req, res) 
     const { code, state } = req.query;
     const st = jwt.verify(String(state || ''), SECRET); // CSRF protection
     if (st.p !== provider) throw new Error('State mismatch');
-    const accessToken = await exchangeCode(provider, code);
-    if (!accessToken) throw new Error('Token exchange failed');
+    const tok = await exchangeCode(provider, code);
+    const accessToken = tok && tok.access_token;
+    if (!accessToken) throw new Error((tok && tok.error_description) || 'Token exchange failed');
     const prof = await fetchProfile(provider, accessToken);
     const email = String(prof.email).toLowerCase();
     let user = await prisma.user.findUnique({ where: { email } });
@@ -211,7 +279,9 @@ authRouter.get('/:provider(github|gitlab|bitbucket)/callback', async (req, res) 
     const data = {
       userId: user.id, provider,
       detail: 'OAuth read-only (as ' + prof.handle + ')',
-      token: accessToken
+      token: accessToken,
+      refreshToken: tok.refresh_token || '',
+      expiresAt: expiryDate(tok)
     };
     const existing = await prisma.source.findFirst({ where: { userId: user.id, provider } });
     if (existing) await prisma.source.update({ where: { id: existing.id }, data });
