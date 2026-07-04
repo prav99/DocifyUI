@@ -2,14 +2,35 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth, toast } from '../store.jsx';
-import { NavBar } from '../ui.jsx';
+import { IcCheck } from '../ui.jsx';
+
+const PROVIDERS = [
+  { id: 'github', mark: 'GH', name: 'Continue with GitHub', sub: 'Most teams start here' },
+  { id: 'gitlab', mark: 'GL', name: 'Continue with GitLab', sub: 'Cloud or self-managed' },
+  { id: 'bitbucket', mark: 'BB', name: 'Continue with Bitbucket', sub: 'Atlassian workspaces' }
+];
+
+const VALUE_POINTS = [
+  'One authorization — sign-in and source access in a single step',
+  'Read-only scope: repository contents and commit history, nothing more',
+  'Your source code is never stored'
+];
 
 export function Signup() {
   const nav = useNavigate();
   const { login } = useAuth();
+  const [mode, setMode] = useState('oauth');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const validEmail = /.+@.+\..+/.test(email);
+  const strength =
+    (password.length >= 8 ? 1 : 0) +
+    (/[A-Z]/.test(password) && /[a-z]/.test(password) ? 1 : 0) +
+    (/\d|[^A-Za-z0-9]/.test(password) ? 1 : 0);
+  const strengthLabel = password.length === 0 ? '' : strength <= 1 ? 'Weak' : strength === 2 ? 'Good' : 'Strong';
+  const canSubmit = validEmail && password.length >= 8 && !busy;
 
   async function oauth(provider) {
     setBusy(true);
@@ -23,8 +44,7 @@ export function Signup() {
   }
 
   async function emailSignup() {
-    if (!email.includes('@')) return toast('error', 'Enter a valid email', 'A work email is required to create an account');
-    if (password.length < 8) return toast('error', 'Password too short', 'Use at least 8 characters');
+    if (!canSubmit) return;
     setBusy(true);
     try {
       const d = await api('/auth/signup', { method: 'POST', body: { email, password } });
@@ -36,52 +56,106 @@ export function Signup() {
   }
 
   return (
-    <>
-      <div className="page">
-        <h1 className="h04">Create your account</h1>
-        <p className="body01 t2 mt3" style={{ maxWidth: 620 }}>
-          Using GitHub, GitLab, or Bitbucket to sign in also authorizes that source — one step instead of two.
-        </p>
-        <div className="grid2 mt7" style={{ alignItems: 'start' }}>
-          <div className="tile tile--white" style={{ padding: 24 }}>
-            <div className="row row--between">
-              <h2 className="h02">Continue with your code host</h2>
-              <span className="tag tag--blue">Fastest — connects your source too</span>
-            </div>
-            <div className="stack mt6">
-              <button className="btn btn--secondary btn--center" style={{ width: '100%' }} disabled={busy} onClick={() => oauth('github')}>Continue with GitHub</button>
-              <button className="btn btn--secondary btn--center" style={{ width: '100%' }} disabled={busy} onClick={() => oauth('gitlab')}>Continue with GitLab</button>
-              <button className="btn btn--secondary btn--center" style={{ width: '100%' }} disabled={busy} onClick={() => oauth('bitbucket')}>Continue with Bitbucket</button>
-            </div>
-            <p className="helper mt6">We only request read access to repository contents and commit history. We never store your source code.</p>
+    <div className="authsplit">
+      <aside className="authleft">
+        <div className="gridlines" />
+        <div style={{ position: 'relative' }}>
+          <p className="eyebrow mb3">START FREE</p>
+          <h1 className="h03" style={{ color: '#fff', maxWidth: 380 }}>
+            Your first verified document is about three minutes away.
+          </h1>
+          <div className="stack mt7" style={{ maxWidth: 400 }}>
+            {VALUE_POINTS.map((v) => (
+              <div key={v} className="row" style={{ alignItems: 'flex-start' }}>
+                <span style={{ marginTop: 2 }}><IcCheck c="#42be65" /></span>
+                <span className="body01 t2">{v}</span>
+              </div>
+            ))}
           </div>
+          <div className="termlog mt7" style={{ maxWidth: 400 }}>
+            <div style={{ animationDelay: '.2s' }}>$ docgen generate --repo acme/payments-api</div>
+            <div style={{ animationDelay: '.9s' }}><span className="okmark">✓</span> parsed 214 files</div>
+            <div style={{ animationDelay: '1.6s' }}><span className="okmark">✓</span> drafted 6 sections</div>
+            <div style={{ animationDelay: '2.3s' }}><span className="okmark">✓</span> quality gate passed — 96/100</div>
+            <div style={{ animationDelay: '3s' }}>→ api-reference.dita ready</div>
+          </div>
+        </div>
+      </aside>
 
-          <div className="tile tile--white" style={{ padding: 24 }}>
-            <div className="row row--between">
-              <h2 className="h02">Sign up with email</h2>
-              <span className="tag tag--gray">Confluence, Notion, Azure DevOps</span>
-            </div>
-            <p className="body01 t2 mt3">If your source is not in the OAuth row, start here — you can connect any source afterward.</p>
-            <div className="field mt6">
+      <section className="authright">
+        <h2 className="h04">Create your account</h2>
+        <p className="body01 t2 mt3">
+          Signing in with a code host also authorizes that source — one step instead of two.
+        </p>
+
+        <div className="seg mt6" role="tablist">
+          <button role="tab" className={mode === 'oauth' ? 'on' : ''} onClick={() => setMode('oauth')}>
+            With a code host
+          </button>
+          <button role="tab" className={mode === 'email' ? 'on' : ''} onClick={() => setMode('email')}>
+            With email
+          </button>
+        </div>
+
+        {mode === 'oauth' ? (
+          <div className="stack mt6">
+            {PROVIDERS.map((p) => (
+              <button key={p.id} className="provbtn" disabled={busy} onClick={() => oauth(p.id)}>
+                <span className="pm">{p.mark}</span>
+                <span>
+                  <span className="h01" style={{ display: 'block' }}>{p.name}</span>
+                  <span className="helper">{p.sub}</span>
+                </span>
+                <span className="parrow">→</span>
+              </button>
+            ))}
+            <p className="helper">
+              We only request read access to repository contents and commit history. We never store your source code.
+            </p>
+          </div>
+        ) : (
+          <div className="mt6">
+            <div className="field">
               <label htmlFor="suEmail">Work email</label>
-              <input id="suEmail" className="input" type="email" placeholder="you@company.com"
-                value={email} onChange={(e) => setEmail(e.target.value)} />
+              <div className="fieldwrap">
+                <input id="suEmail" className="input" type="email" placeholder="you@company.com"
+                  value={email} onChange={(e) => setEmail(e.target.value)} />
+                {validEmail && <span className="vico"><IcCheck /></span>}
+              </div>
             </div>
             <div className="field">
               <label htmlFor="suPass">Password (8+ characters)</label>
-              <input id="suPass" className="input" type="password" placeholder="••••••••"
-                value={password} onChange={(e) => setPassword(e.target.value)} />
+              <div className="fieldwrap">
+                <input id="suPass" className="input" type="password" placeholder="••••••••"
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && emailSignup()} />
+                {password.length >= 8 && <span className="vico"><IcCheck /></span>}
+              </div>
+              <div className="strength" aria-hidden="true">
+                <span className={strength >= 1 ? 's' + strength : ''} />
+                <span className={strength >= 2 ? 's' + strength : ''} />
+                <span className={strength >= 3 ? 's' + strength : ''} />
+              </div>
+              {strengthLabel && <p className="helper mt2">Password strength: {strengthLabel}</p>}
             </div>
-            <button className="btn btn--primary" style={{ width: '100%' }} disabled={busy} onClick={emailSignup}>
+            <button className="btn btn--primary" style={{ width: '100%' }} disabled={!canSubmit} onClick={emailSignup}>
               Create account with email<span className="ico">→</span>
             </button>
-            <p className="helper mt5">Free plan, no credit card.</p>
+            <p className="helper mt5">
+              On Confluence, Notion, or Azure DevOps? Start here — you can connect any source afterward.
+            </p>
           </div>
-        </div>
-        <p className="body01 mt6">Already have an account? <a onClick={() => nav('/login')}>Log in</a></p>
-      </div>
-      <NavBar back="/" />
-    </>
+        )}
+
+        <div className="divider" style={{ margin: '32px 0 16px' }} />
+        <p className="body01">
+          Already have an account? <a onClick={() => nav('/login')}>Log in</a>
+          {' · '}
+          <a onClick={() => nav('/')}>Back to home</a>
+        </p>
+        <p className="helper mt3">Free plan, no credit card required.</p>
+      </section>
+    </div>
   );
 }
 

@@ -47,7 +47,8 @@ export function Score({ label, num, helper, kind = 'good' }) {
 }
 
 /* ---------- Top bar ---------- */
-const SEQ = ['/', '/signup', '/source', '/doctype', '/format', '/generate', '/quality', '/export', '/pricing', '/checkout', '/dashboard', '/automation', '/settings'];
+// The step counter only tracks the actual document workflow, not marketing/account pages.
+const STEPS = ['/source', '/doctype', '/format', '/generate', '/quality', '/export'];
 const CRUMBS = {
   '/': 'docgen / home', '/signup': 'docgen / onboarding / signup', '/login': 'docgen / login',
   '/source': 'docgen / onboarding / source-select', '/doctype': 'docgen / onboarding / document-type',
@@ -63,8 +64,8 @@ export function TopBar() {
   const nav = useNavigate();
   const { user } = useAuth();
   const path = '/' + (loc.pathname.split('/')[1] || '');
-  const idx = SEQ.indexOf(path);
-  const marketing = ['/features', '/integrations', '/customers', '/docs'];
+  const idx = STEPS.indexOf(path);
+  const marketing = ['/pricing', '/docs'];
   return (
     <header className="topbar">
       <span className="logo" onClick={() => nav('/')}><span className="mark">D</span>DocGen</span>
@@ -79,8 +80,8 @@ export function TopBar() {
       <span className="spacer" />
       {idx >= 0 && (
         <div className="stepwrap">
-          <span className="steplabel">Step {idx + 1} of {SEQ.length}</span>
-          <div className="stepbar"><div style={{ width: Math.round(((idx + 1) / SEQ.length) * 100) + '%' }} /></div>
+          <span className="steplabel">Step {idx + 1} of {STEPS.length}</span>
+          <div className="stepbar"><div style={{ width: Math.round(((idx + 1) / STEPS.length) * 100) + '%' }} /></div>
         </div>
       )}
       <div className="topbar-actions">

@@ -49,7 +49,7 @@ DocifyUI/
 │       ├── api.js      # fetch wrapper, JWT header, authenticated downloads
 │       ├── store.jsx   # auth context, flow state, toast system
 │       ├── ui.jsx      # Carbon-styled shared components (TopBar, NavBar, Modal…)
-│       ├── styles.css  # IBM Carbon design tokens + components (White theme)
+│       ├── styles.css  # enterprise design tokens + components (white theme)
 │       └── pages/      # one file per screen
 └── server/             # Express REST API (ESM)
     ├── prisma/schema.prisma   # User, Source, Generation, QualityReport, TeamMember, Automation, Waitlist

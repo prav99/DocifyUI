@@ -17,7 +17,7 @@ import Checkout from './pages/Checkout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Automation from './pages/Automation.jsx';
 import Settings from './pages/Settings.jsx';
-import { Features, Integrations, Customers, Docs } from './pages/Marketing.jsx';
+import { Docs } from './pages/Marketing.jsx';
 
 function RequireAuth({ children }) {
   const { user, ready } = useAuth();
@@ -56,9 +56,6 @@ function App() {
               <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
               <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
               <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-              <Route path="/features" element={<Features />} />
-              <Route path="/integrations" element={<Integrations />} />
-              <Route path="/customers" element={<Customers />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

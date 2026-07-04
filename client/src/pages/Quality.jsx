@@ -33,7 +33,7 @@ export default function Quality() {
     try {
       const d = await api('/quality/' + report.id + '/recheck', { method: 'POST' });
       setReport(d.report);
-      toast('info', 'AI judge re-confirmed', 'Score verified at ' + d.report.aiScore + ' / 100 against IBM Docs guidelines');
+      toast('info', 'AI judge re-confirmed', 'Score verified at ' + d.report.aiScore + ' / 100 against the enterprise guideline set');
     } catch (e) { toast('error', 'Re-check failed', e.message); }
     finally { setChecking(false); }
   }
@@ -102,7 +102,7 @@ export default function Quality() {
 
         {tab === 'style' && (
           <>
-            <p className="body01 t2 mb5">Checked against your default style profile (IBM Style-derived). {report.style.filter((s) => !s.pass).length} findings need review, {report.style.filter((s) => s.pass).length} checks pass.</p>
+            <p className="body01 t2 mb5">Checked against your default style profile (enterprise editorial rules). {report.style.filter((s) => !s.pass).length} findings need review, {report.style.filter((s) => s.pass).length} checks pass.</p>
             {report.style.map((r) => (
               <div key={r.t} className="issue" style={{ borderLeftColor: r.pass ? 'var(--support-success)' : 'var(--support-warning)' }}>
                 <div className="row row--between">
@@ -126,7 +126,7 @@ export default function Quality() {
             <div className="row row--between mt7" style={{ flexWrap: 'wrap', gap: 12 }}>
               <div className="row">
                 <IcInfo />
-                <span className="body01">Evaluated by LLM judge, aligned to IBM Docs guidelines</span>
+                <span className="body01">Evaluated by LLM judge, aligned to enterprise documentation guidelines</span>
                 <span className={'tag ' + verdict[1]}>{verdict[0]}</span>
               </div>
               <button className="btn btn--tertiary btn--field" disabled={checking} onClick={recheck}>
