@@ -599,6 +599,20 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .vid-postertxt{color:#fff;font-size:13px;letter-spacing:.32px}
 .demo-ctl--wide{width:auto;padding:0 10px;font-size:12px;white-space:nowrap}
 
+/* ============ Output options accordion ============ */
+.acc{border-top:1px solid var(--border-subtle)}
+.acc-item{border-bottom:1px solid var(--border-subtle)}
+.acc-btn{width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:none;padding:14px 8px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;color:var(--text-primary);text-align:left}
+.acc-btn:hover{background:var(--layer-01)}
+.acc-btn:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.acc-chev{transition:transform .15s var(--ease);color:var(--text-secondary)}
+.acc-item.open .acc-chev{transform:rotate(180deg)}
+.acc-body{padding:8px 8px 28px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px 24px}
+.optrow{display:flex;flex-direction:column;gap:8px}
+.optrow .input,.optrow .select{height:40px}
+.colorchip{width:24px;height:24px;border:1px solid var(--border-subtle);cursor:pointer;padding:0}
+.colorchip.on{outline:2px solid var(--focus);outline-offset:2px}
+
 /* ============ Multi-source configuration cards ============ */
 .srccard{background:var(--layer-01);padding:20px 24px;border-left:3px solid var(--border-subtle);transition:border-color .15s var(--ease)}
 

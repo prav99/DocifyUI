@@ -70,6 +70,7 @@ const defaultFlow = {
   briefAudience: '', briefEmphasis: '', briefTone: 'Plain & direct',
   instructions: '', files: [],
   skillName: '', skillContent: '',
+  outputCfg: {},
   format: 'dita',
   genId: null,
   billing: 'annual', plan: 'team'

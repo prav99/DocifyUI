@@ -347,7 +347,10 @@ export function mdToHtml(md) {
       continue;
     }
     const hm = l.match(/^(#{1,6})\s+(.*)$/);
-    if (hm) { out.push('<h' + hm[1].length + '>' + inlineHtml(hm[2]) + '</h' + hm[1].length + '>'); i++; continue; }
+    if (hm) {
+      out.push('<h' + hm[1].length + ' id="' + slug(hm[2]) + '">' + inlineHtml(hm[2]) + '</h' + hm[1].length + '>');
+      i++; continue;
+    }
     if (/^>\s?/.test(l)) {
       const buf = [];
       while (i < lines.length && /^>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, '')); i++; }
@@ -532,8 +535,8 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
         ['Webhook', 'HTTPS callback the platform sends on events']
       ])]];
   }
-  const anchors = sections.map(([h]) => slug(h));
   if (oc.numberedHeadings) sections = sections.map(([h, b], idx) => [(idx + 1) + '. ' + h, b]);
+  const anchors = sections.map(([h]) => slug(h)); // matches the ids mdToHtml emits
 
   // ---- Assemble ----
   const parts = [];
@@ -686,14 +689,14 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
     content = [
       '<!-- DocGen landing snippet · ' + escX(title) + ' -->',
       '<section style="font-family:\'IBM Plex Sans\',system-ui,sans-serif;color:#161616;max-width:720px;margin:0 auto;padding:32px 16px;line-height:1.55">',
-      mdToHtml(md).replace(/<h1>/g, '<h1 style="font-size:30px;font-weight:400">').replace(/<h2>/g, '<h2 style="font-size:20px;font-weight:600;margin-top:32px">'),
+      mdToHtml(md).replace(/<h1 /g, '<h1 style="font-size:30px;font-weight:400" ').replace(/<h2 /g, '<h2 style="font-size:20px;font-weight:600;margin-top:32px" '),
       '</section>'
     ].join('\n');
   } else if (format === 'email') {
     // Email-safe HTML: single column, inline styles, 600px, no external CSS.
     const inner = mdToHtml(md)
-      .replace(/<h1>/g, '<h1 style="font-size:26px;font-weight:400;margin:0 0 16px">')
-      .replace(/<h2>/g, '<h2 style="font-size:18px;font-weight:600;margin:28px 0 8px">')
+      .replace(/<h1 /g, '<h1 style="font-size:26px;font-weight:400;margin:0 0 16px" ')
+      .replace(/<h2 /g, '<h2 style="font-size:18px;font-weight:600;margin:28px 0 8px" ')
       .replace(/<p>/g, '<p style="margin:0 0 14px;line-height:1.55">')
       .replace(/<blockquote>/g, '<blockquote style="border-left:3px solid #0f62fe;margin:0 0 14px;padding:8px 16px;background:#edf5ff">');
     content = [
