@@ -339,7 +339,11 @@ export function Signup() {
           {' · '}
           <a onClick={() => nav('/')}>Back to home</a>
         </p>
-        <p className="helper mt3">Free plan, no credit card required.</p>
+        <p className="helper mt3">
+          Free plan, no credit card required. By creating an account you agree to the{' '}
+          <a onClick={() => nav('/legal/terms')}>Terms of Service</a> and{' '}
+          <a onClick={() => nav('/legal/privacy')}>Privacy Policy</a>.
+        </p>
           </>
         )}
       </section>

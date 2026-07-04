@@ -657,6 +657,13 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .blendrow{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-secondary);margin-top:7px}
 .blendbar{flex:1;height:4px;background:var(--border-subtle);min-width:40px}
 .blendbar>div{height:4px;background:var(--button-primary);transition:width .6s var(--ease)}
+/* ============ Site footer ============ */
+.sitefoot{border-top:1px solid var(--border-subtle);background:var(--layer-01)}
+.sitefoot-inner{max-width:1056px;margin:0 auto;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.sitefoot-links{display:flex;gap:20px;flex-wrap:wrap}
+.sitefoot-links a{font-size:13px;color:var(--text-secondary);cursor:pointer;text-decoration:none}
+.sitefoot-links a:hover{color:var(--button-primary);text-decoration:underline}
+
 /* ============ Account menu ============ */
 .usermenu{position:relative}
 .userchip--btn{cursor:pointer;font-family:inherit;transition:border-color .11s var(--ease)}
