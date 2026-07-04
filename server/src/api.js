@@ -134,7 +134,8 @@ async function runPipeline(genId) {
     const { title, content } = generateDocument({
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
       repo: gen.repo, instructions: gen.instructions,
-      skill: gen.skill || '', skillName: gen.skillName || ''
+      skill: gen.skill || '', skillName: gen.skillName || '',
+      brief: j(gen.brief, {}), output: j(gen.output, {})
     });
     const report = judge();
     await prisma.qualityReport.create({
@@ -155,7 +156,7 @@ async function runPipeline(genId) {
 }
 
 apiRouter.post('/generations', async (req, res) => {
-  const { repo, branch = 'main', track, docTypes, format, instructions = '', files = [], provider = 'github', skillName = '', skill = '' } = req.body || {};
+  const { repo, branch = 'main', track, docTypes, format, instructions = '', files = [], provider = 'github', skillName = '', skill = '', brief = null, output = null } = req.body || {};
   if (String(skill).length > 60000) return res.status(400).json({ error: 'SKILL.md is too large (60 KB max)' });
   if (track !== 'technical' && track !== 'marketing') return res.status(400).json({ error: 'Invalid track' });
   if (!Array.isArray(docTypes) || docTypes.length === 0) return res.status(400).json({ error: 'Select at least one document type' });
@@ -168,6 +169,8 @@ apiRouter.post('/generations', async (req, res) => {
       userId: req.uid, repo: repo || provider, branch, track,
       docTypes: JSON.stringify(docTypes), format, instructions,
       files: JSON.stringify(files), skillName: String(skillName), skill: String(skill),
+      brief: JSON.stringify(brief || {}),
+      output: JSON.stringify(output || {}),
       status: 'queued', steps: JSON.stringify(steps)
     }
   });
@@ -199,8 +202,12 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.send(rep ? JSON.stringify({ issues: j(rep.issues, []), links: j(rep.links, []), style: j(rep.style, []), fixed: j(rep.fixedIds, []) }, null, 2) : '{}');
   }
+  const ct = fmt.ext.endsWith('.xhtml') ? 'application/xhtml+xml; charset=utf-8'
+    : fmt.ext.endsWith('.html') ? 'text/html; charset=utf-8'
+    : fmt.ext.endsWith('.xml') || fmt.ext.endsWith('.dita') ? 'application/xml; charset=utf-8'
+    : 'text/plain; charset=utf-8';
   res.setHeader('Content-Disposition', 'attachment; filename="' + base + fmt.ext + '"');
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Type', ct);
   res.send(g.content);
 });
 

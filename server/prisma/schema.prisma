@@ -50,6 +50,8 @@ model Generation {
   files        String         @default("[]") // JSON array of filenames
   skillName    String         @default("") // Uploaded SKILL.md filename
   skill        String         @default("") // SKILL.md content — parsed and applied at generation time
+  brief        String         @default("{}") // Marketing brief JSON: audience, emphasis, tone
+  output       String         @default("{}") // Output options JSON: cover, TOC, watermark, legal, branding…
   status       String         @default("queued") // queued | running | complete | failed
   step         Int            @default(0)
   steps        String         @default("[]") // JSON array of step labels

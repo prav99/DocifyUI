@@ -107,6 +107,7 @@ export default function DocType() {
                   {d.common ? <span className="tag tag--blue">Most common</span> : null}
                 </div>
                 <p className="helper mt2">{d.desc}</p>
+                {d.standard ? <div className="mt3"><span className="tag tag--outline">{d.standard}</span></div> : null}
               </div>
             );
           })}
