@@ -264,7 +264,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 @media(max-width:900px){.featrow{grid-template-columns:1fr;gap:24px}}
 .illuwrap{background:var(--layer-01);padding:24px}
 .illus{width:100%;height:auto;display:block}
-.metricband{background:var(--layer-01);padding:48px 0}
+.metricband{background:var(--layer-01);padding:72px 0}
 .ctaband{background:#161616;color:#fff;padding:64px 0}
 .soonchips{display:flex;flex-wrap:wrap;gap:8px}
 
@@ -311,3 +311,109 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .okmark{color:#42be65}
 .fieldwrap{position:relative}
 .fieldwrap .vico{position:absolute;right:14px;top:50%;transform:translateY(-50%)}
+
+/* ============ Feature sections scale-up v2 + living illustrations ============ */
+.feathead{font-size:32px;line-height:1.25}
+.featrow{padding:72px 0;gap:64px}
+.illuwrap{padding:32px}
+.eyebrow--blue{font-size:13px;letter-spacing:1px}
+.featrow .lead{font-size:19px;line-height:1.6}
+@keyframes dashflow{to{stroke-dashoffset:-40}}
+.flowline{animation:dashflow 1.8s linear infinite}
+@keyframes slidearrowx{0%,100%{transform:translateX(0)}50%{transform:translateX(6px)}}
+.slidearrow{animation:slidearrowx 1.6s ease-in-out infinite}
+@keyframes shimmer{0%,100%{opacity:1}50%{opacity:.4}}
+.shim{animation:shimmer 2.6s ease-in-out infinite}
+.sd2{animation-delay:.4s}.sd3{animation-delay:.8s}
+.gaugearc{stroke-dasharray:120;stroke-dashoffset:0}
+.illuwrap:hover .gaugearc{animation:drawarc 1s var(--ease)}
+@keyframes drawarc{from{stroke-dashoffset:120}to{stroke-dashoffset:0}}
+.fixchip{transition:fill .11s var(--ease)}
+.illuwrap:hover .fixchip{fill:#0353e9}
+.illuwrap:hover .lockpulse{animation:pulse 1.4s var(--ease) infinite}
+.gatecheck{stroke-dasharray:50;stroke-dashoffset:0}
+.illuwrap:hover .gatecheck{animation:drawcheck2 .8s var(--ease)}
+@keyframes drawcheck2{from{stroke-dashoffset:50}to{stroke-dashoffset:0}}
+
+/* ============ Landing v3: scroll reveals + hero choreography + hover sequences ============ */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.reveal--on{opacity:1;transform:translateY(0)}
+@keyframes popin{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:scale(1)}}
+.checkpop{opacity:0;display:inline-block}
+.reveal--on .checkpop{animation:popin .45s var(--ease) both}
+.quotecard{transition:transform .15s var(--ease),box-shadow .15s var(--ease)}
+.quotecard:hover{transform:translateY(-6px);box-shadow:0 12px 28px rgba(22,22,22,.14)}
+.featlist>.reveal:last-child .featrow{border-bottom:none}
+/* hero load choreography */
+@keyframes drawy{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.hv-rail{transform-box:fill-box;transform-origin:center top;animation:drawy .8s var(--ease) both}
+@keyframes slidein{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+.hv-card{animation:slidein .6s var(--ease) .25s both}
+@keyframes fadeup{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.hv-doc{animation:fadeup .7s var(--ease) .45s both}
+.hv-chips{animation:fadeup .6s var(--ease) 1.15s both}
+@keyframes popscale{0%{opacity:0;transform:scale(.5)}70%{transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}
+.pop{transform-box:fill-box;transform-origin:center;animation:popscale .5s var(--ease) .9s both}
+@keyframes growx{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.hv-line{transform-box:fill-box;transform-origin:left center;animation:growx .6s var(--ease) both}
+/* hover: illustrations replay their full sequence, faster */
+.hgrow{transform-box:fill-box;transform-origin:left center}
+.illuwrap:hover .hgrow{animation:growx .7s var(--ease) both}
+.herovis:hover .flowline,.illuwrap:hover .flowline{animation-duration:.5s}
+.herovis:hover .pulse,.illuwrap:hover .pulse{animation-duration:.9s}
+.illuwrap:hover .slidearrow{animation-duration:.7s}
+.illuwrap:hover .shim{animation-duration:1s}
+@media(prefers-reduced-motion:reduce){
+  .reveal{opacity:1;transform:none;transition:none}
+  .hv-rail,.hv-card,.hv-doc,.hv-chips,.pop,.hv-line,.pulse,.floaty,.flowline,.slidearrow,.shim,.drawcheck{animation:none!important}
+}
+
+/* ============ Self-playing product demo ============ */
+.demo-window{margin-top:40px;border:1px solid var(--border-subtle);background:var(--background);box-shadow:0 16px 40px rgba(22,22,22,.12)}
+.demo-chrome{display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;background:var(--layer-01);border-bottom:1px solid var(--border-subtle)}
+.demo-dot{width:10px;height:10px;border-radius:50%;background:#c6c6c6}
+.demo-url{font-size:12px;color:var(--text-secondary);margin-left:8px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.demo-body{display:grid;grid-template-columns:220px 1fr;min-height:300px}
+.demo-rail{display:flex;flex-direction:column;border-right:1px solid var(--border-subtle);background:var(--layer-01);padding:8px 0}
+@media(max-width:800px){.demo-body{grid-template-columns:1fr}.demo-rail{flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--border-subtle)}}
+.demo-step{display:flex;gap:10px;align-items:center;padding:12px 16px;border:none;background:none;font-family:inherit;font-size:13px;color:var(--text-secondary);cursor:pointer;text-align:left;border-left:3px solid transparent;white-space:nowrap}
+.demo-step .mono{font-size:11px;color:var(--text-placeholder)}
+.demo-step:hover{background:var(--layer-hover)}
+.demo-step.on{color:var(--text-primary);font-weight:600;border-left-color:var(--button-primary);background:var(--background)}
+.demo-step.done{color:var(--support-success)}
+.demo-stage{padding:24px;animation:fadeup .4s var(--ease)}
+.demo-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid var(--border-subtle);margin-bottom:8px;animation:fadeup .4s var(--ease) both}
+.demo-row:nth-child(2){animation-delay:.1s}
+.demo-row:nth-child(3){animation-delay:.2s}
+.demo-row:nth-child(4){animation-delay:.3s}
+.demo-pick{animation:fadeup .4s var(--ease) .1s both,pickrow .5s var(--ease) 1.1s both}
+@keyframes pickrow{to{outline:2px solid var(--button-primary);outline-offset:-2px;background:#edf5ff}}
+.demo-pickcheck{opacity:0;margin-left:auto;font-size:12px;animation:lgin .3s var(--ease) 1.6s forwards}
+.demo-late{opacity:0;animation:lgin .5s var(--ease) 2.3s forwards}
+.demo-chip{display:inline-flex;height:32px;align-items:center;padding:0 16px;background:var(--layer-01);font-size:13px;animation:fadeup .35s var(--ease) both}
+.demo-chip:nth-child(1){animation-delay:.1s}.demo-chip:nth-child(2){animation-delay:.25s}.demo-chip:nth-child(3){animation-delay:.4s}
+.demo-chipon{animation:fadeup .35s var(--ease) .1s both,chipon .4s var(--ease) .9s both}
+@keyframes chipon{to{background:var(--inverse-02);color:#fff}}
+.demo-fmt.demo-chipon{animation:fadeup .35s var(--ease) .9s both,chipon .4s var(--ease) 1.7s both}
+.demo-pipe{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-subtle);font-size:14px;opacity:0;animation:lgin .3s var(--ease) forwards}
+.demo-pipecheck{opacity:0;animation:popin .3s var(--ease) forwards}
+.demo-scorebox{display:flex;flex-direction:column;gap:8px;background:var(--layer-01);border-top:2px solid var(--support-success);padding:16px;min-width:150px}
+.demo-scorenum{font-size:36px}
+.demo-issue{background:var(--layer-01);border-left:3px solid var(--support-warning);padding:16px;animation:fadeup .4s var(--ease) .3s both}
+.demo-fixbtn{display:inline-flex;margin-top:12px;background:var(--button-primary);color:#fff;padding:8px 16px;font-size:13px;animation:fixgone .5s var(--ease) 1.6s forwards}
+@keyframes fixgone{0%{opacity:1}60%{transform:scale(.94)}100%{opacity:0}}
+.demo-fixedtag{opacity:0;margin-left:12px;margin-top:12px;animation:lgin .3s var(--ease) 2.1s forwards}
+.demo-yaml{background:var(--code-bg);color:var(--code-text);padding:16px;font-size:12px;line-height:1.9;flex:1;min-width:220px}
+.demo-yline{opacity:0;animation:lgin .35s var(--ease) forwards}
+.demo-loop{display:flex;align-items:center;gap:10px;font-size:13px;padding-top:8px;flex-wrap:wrap}
+.demo-loopbox{background:#161616;color:#fff;padding:8px 12px;font-family:'IBM Plex Mono',monospace;font-size:12px}
+.demo-looparrow{color:var(--button-primary);animation:slidearrowx 1.4s ease-in-out infinite;display:inline-block}
+.demo-loopcheck{opacity:0;animation:popin .4s var(--ease) 2s forwards}
+.demo-bar{display:flex;align-items:center;gap:12px;border-top:1px solid var(--border-subtle);padding:10px 16px;background:var(--layer-01)}
+.demo-ctl{width:32px;height:32px;border:1px solid var(--border-subtle);background:var(--background);cursor:pointer;font-size:12px;color:var(--text-primary)}
+.demo-ctl:hover{border-color:var(--button-primary);color:var(--button-primary)}
+.demo-track{display:flex;gap:6px;flex:1}
+.demo-seg{position:relative;flex:1;height:4px;background:var(--border-subtle);border:none;cursor:pointer;padding:0;overflow:hidden}
+.demo-segfill{position:absolute;inset:0;background:var(--button-primary);transform-origin:left;animation:segfill linear both}
+@keyframes segfill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.demo-segdone{position:absolute;inset:0;background:var(--button-primary)}
