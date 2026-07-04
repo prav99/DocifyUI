@@ -50,9 +50,11 @@ const TEMPLATES = {
     sections: (c) => [
       ['Overview',
         'The ' + c.product + ' lets you create, capture, and refund charges programmatically. ' +
-        'Base URL: `https://api.acme.dev/v1`. All responses are JSON; all timestamps are ISO 8601.'],
+        'Base URL: `https://api.acme.dev/v1`. All responses are JSON; all timestamps are ISO 8601. ' +
+        'You can experiment in test mode before going live.'],
       ['Authentication',
-        'Authenticate every request with an API key in the `Authorization` header.\n\n' +
+        'Authenticate every request with an API key in the `Authorization` header. ' +
+        'The signing secret is issued per project. It must be rotated every 90 days.\n\n' +
         F + 'bash\ncurl https://api.acme.dev/v1/charges \\\n  -H "Authorization: Bearer $API_KEY"\n' + F],
       ['Errors',
         'The API uses conventional HTTP status codes.\n\n' +
@@ -78,7 +80,7 @@ const TEMPLATES = {
       ['GET /v1/charges/{id}',
         'Retrieves an existing charge by identifier. Returns `404` if the charge does not exist.'],
       ['Rate limits',
-        'Default limit: 100 requests per second per API key. The `X-RateLimit-Remaining` header reports your remaining budget; on `429`, honor `Retry-After`.']
+        'Default limit: 100 requests per second per API key. The `X-RateLimit-Remaining` header reports your remaining budget; on `429`, honor `Retry-After`. It must be rotated every 90 days.']
     ]
   },
 
@@ -488,8 +490,57 @@ function stripExamples(body) {
   return String(body).replace(/```[\s\S]*?```/g, '*Example omitted by output settings.*');
 }
 
+/* ---------------- Fix engine: applied fixes genuinely transform the document ---------------- */
+// Each fix ID performs a real, deterministic repair on the content. The same
+// list is used at every regeneration, so all formats and the preview stay in
+// sync with what the user has fixed. Fully configurable: add or change
+// transforms here and the whole product follows.
+function applyFixes({ title, sections, fx }) {
+  let t = title;
+  if (fx.has('title') && !/—/.test(t)) {
+    t = t + ' — endpoints, authentication, and errors';
+  }
+  const rep = (b) => {
+    let x = String(b);
+    if (fx.has('term')) x = x.replace(/test mode/gi, 'sandbox');
+    if (fx.has('pronoun')) x = x.replace(/It must be rotated every 90 days\./g, 'The API signing secret must be rotated every 90 days.');
+    if (fx.has('longsent')) x = x.replace('All responses are JSON; all timestamps are ISO 8601.', 'All responses are JSON. All timestamps are ISO 8601.');
+    return x;
+  };
+  let secs = sections.map(([h, b]) => [h, rep(b)]);
+  if (fx.has('dupe')) {
+    let seen = false;
+    secs = secs.map(([h, b]) => {
+      if (/must be rotated every 90 days/.test(b)) {
+        if (!seen) { seen = true; return [h, b]; }
+        return [h, b.replace(/ ?(It|The API signing secret) must be rotated every 90 days\./g, '').trimEnd() + ' See Authentication for the rotation policy.'];
+      }
+      return [h, b];
+    });
+  }
+  if (fx.has('prereq') && !secs.some(([h]) => /before you begin|prerequisites/i.test(h))) {
+    secs = [['Before you begin', bullets([
+      'An active account with an API key from the developer console.',
+      'The base URL for your environment (`https://api.acme.dev/v1`).',
+      'curl 8+ or an HTTP client of your choice.'
+    ])], ...secs];
+  }
+  if (fx.has('limitations') && !secs.some(([h]) => /limitations/i.test(h))) {
+    secs = [...secs, ['Limitations', bullets([
+      'Rate limit: 100 requests per second per API key.',
+      'Request body cap: 10 MB.',
+      'Refunds are accepted up to 180 days after the original charge.'
+    ])]];
+  }
+  if (fx.has('example') && !secs.some(([h]) => /worked example/i.test(h))) {
+    secs = [...secs, ['Worked example',
+      F + 'bash\ncurl -X POST https://api.acme.dev/v1/charges \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -d amount=2000 -d currency=usd -d source=src_123\n' + F]];
+  }
+  return { title: t, sections: secs };
+}
+
 /* ---------------- Document generation ---------------- */
-export function generateDocument({ track, docTypes, format, repo, instructions, skill = '', skillName = '', brief = null, output = null }) {
+export function generateDocument({ track, docTypes, format, repo, instructions, skill = '', skillName = '', brief = null, output = null, fixes = [] }) {
   const id = docTypes[0];
   let title = docTypeName(track, id);
   const sk = parseSkill(skill);
@@ -510,6 +561,14 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   if (sk.sections.length) sections = sk.sections.map((s) => [s, skillSectionBody(s, sk)]);
   else if (tpl) sections = tpl.sections(c);
   else sections = [['Overview', 'Drafted from repository analysis.']];
+
+  // ---- Apply the user's accepted fixes: real content repairs ----
+  const fxSet = new Set(fixes || []);
+  if (fxSet.size) {
+    const repaired = applyFixes({ title, sections, fx: fxSet });
+    title = repaired.title;
+    sections = repaired.sections;
+  }
 
   // ---- Apply output options to the outline ----
   if (!oc.includeExamples) sections = sections.map(([h, b]) => [h, stripExamples(b)]);
@@ -558,6 +617,12 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   }
   parts.push('> Standard: ' + (tpl ? tpl.standard : 'DocGen default') + ' · Source: `' + repo + '`' + (oc.showDate ? ' · ' + fmtDate(oc) : ''));
   parts.push('', 'The ' + c.product + ' lets you create, capture, and refund charges programmatically.');
+  if (fxSet.has('shortdesc')) {
+    parts.push('', '**Short description.** The ' + c.product + ' lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling.');
+  }
+  if (fxSet.has('keywords')) {
+    parts.push('', 'Keywords: payments-api, REST authentication, refunds, webhook events.');
+  }
   if (skillName) {
     parts.push('', '> Skill applied: ' + skillName +
       (sk.rules.length ? ' — ' + sk.rules.length + ' rule' + (sk.rules.length > 1 ? 's' : '') : '') +
@@ -604,6 +669,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
         '<othermeta name="version" content="' + escX((oc.version && oc.version.trim()) || c.version) + '"/>' +
         (org ? '<othermeta name="organization" content="' + escX(org) + '"/>' : '') +
         (oc.classification !== 'none' ? '<othermeta name="classification" content="' + escX(oc.classification) + '"/>' : '') +
+        (fxSet.has('keywords') ? '<othermeta name="keywords" content="payments-api, REST authentication, refunds, webhook events"/>' : '') +
         '</metadata></prolog>',
       '  <body>'
     ];
@@ -723,34 +789,200 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   return { title, content };
 }
 
+/* ---------------- Quality model: dimensions, weights, assistants ----------------
+   One configurable source of truth. Every score in the product is DERIVED from
+   this config plus the open/fixed issue state — nothing is hardcoded twice, so
+   the report can never contradict itself. Adjust weights, gates, and assistant
+   blends here. */
+export const QUALITY_CONFIG = {
+  gate: 85,          // publish gate for the overall score
+  assistantGate: 85, // "ready to land in AI assistants" threshold
+  dimensions: [
+    { id: 'style', name: 'Style & editorial', weight: 0.15, desc: 'Tone, grammar, and formatting against the enterprise style profile' },
+    { id: 'consistency', name: 'Consistency', weight: 0.13, desc: 'Terminology mismatches and duplicated content' },
+    { id: 'completeness', name: 'Completeness', weight: 0.15, desc: 'Prerequisites, limitations, examples, and workflows present' },
+    { id: 'readability', name: 'Readability', weight: 0.15, desc: 'Clarity and structure, section by section' },
+    { id: 'llm', name: 'LLM readiness', weight: 0.27, desc: 'Short descriptions, search-optimized titles, metadata' },
+    { id: 'links', name: 'Link integrity', weight: 0.15, desc: 'Broken links, redirects, and internal references' }
+  ],
+  // How each assistant weighs the dimensions when retrieving and citing content.
+  assistants: [
+    { id: 'chatgpt', name: 'ChatGPT', blend: { llm: 0.45, links: 0.15, readability: 0.15, completeness: 0.15, consistency: 0.10 } },
+    { id: 'claude', name: 'Claude', blend: { llm: 0.40, readability: 0.25, completeness: 0.20, consistency: 0.15 } },
+    { id: 'perplexity', name: 'Perplexity', blend: { llm: 0.35, links: 0.35, readability: 0.20, style: 0.10 } }
+  ],
+  penalties: { perOpenIssue: 12, perBrokenLink: 14, perStyleFail: 12, floor: 40 }
+};
+
+const LEGACY_DIM = { 'LLM readiness': 'llm', 'Consumability': 'readability' };
+
+// Derive every dimension score, the weighted overall, the verdict, and the
+// per-assistant landing estimates from the raw report state.
+export function scoreReport({ issues, fixed, links, style }) {
+  const P = QUALITY_CONFIG.penalties;
+  const openByDim = {};
+  const totalByDim = {};
+  for (const i of issues) {
+    const dim = i.dim || LEGACY_DIM[i.cat] || 'llm';
+    totalByDim[dim] = (totalByDim[dim] || 0) + 1;
+    if (!fixed.includes(i.id)) openByDim[dim] = (openByDim[dim] || 0) + 1;
+  }
+  const styleFails = style.filter((s) => !s.pass).length;
+  const dimScore = (id) => {
+    if (id === 'links') return Math.max(P.floor, 100 - P.perBrokenLink * links.length);
+    if (id === 'style') return Math.max(P.floor, 100 - P.perStyleFail * styleFails);
+    return Math.max(P.floor, 100 - P.perOpenIssue * (openByDim[id] || 0));
+  };
+  const dimensions = QUALITY_CONFIG.dimensions.map((d) => ({
+    id: d.id, name: d.name, weight: d.weight, desc: d.desc,
+    score: Math.round(dimScore(d.id)),
+    open: d.id === 'links' ? links.length : d.id === 'style' ? styleFails : (openByDim[d.id] || 0),
+    total: d.id === 'links' ? links.length : d.id === 'style' ? style.length : (totalByDim[d.id] || 0)
+  }));
+  const wSum = dimensions.reduce((a, d) => a + d.weight, 0);
+  const overall = Math.round(dimensions.reduce((a, d) => a + d.weight * d.score, 0) / wSum);
+  const gatePassed = overall >= QUALITY_CONFIG.gate;
+  const verdict = gatePassed ? 'Publish-ready' : overall >= 70 ? 'Review recommended' : 'Needs work';
+  const byId = Object.fromEntries(dimensions.map((d) => [d.id, d]));
+  const assistants = QUALITY_CONFIG.assistants.map((a) => {
+    const entries = Object.entries(a.blend);
+    const bSum = entries.reduce((s, [, w]) => s + w, 0);
+    const score = Math.round(entries.reduce((s, [dim, w]) => s + w * (byId[dim] ? byId[dim].score : overall), 0) / bSum);
+    let weakest = null;
+    for (const [dim, w] of entries) {
+      const d = byId[dim];
+      if (d && (!weakest || d.score * w < weakest.score * a.blend[weakest.id])) weakest = d;
+    }
+    return {
+      id: a.id, name: a.name, score,
+      ready: score >= QUALITY_CONFIG.assistantGate,
+      heldBackBy: score >= QUALITY_CONFIG.assistantGate ? null : (weakest ? weakest.name : null)
+    };
+  });
+  return { dimensions, overall, gatePassed, verdict, assistants, gate: QUALITY_CONFIG.gate, assistantGate: QUALITY_CONFIG.assistantGate };
+}
+
+/* ---------------- Quality report export (HTML, human-readable) ---------------- */
+export function renderQualityReport(ser, meta) {
+  const tr = (cells, tag) => '<tr>' + cells.map((c) => '<' + (tag || 'td') + '>' + c + '</' + (tag || 'td') + '>').join('') + '</tr>';
+  const verdictColor = ser.gatePassed ? '#24a148' : ser.overall >= 70 ? '#8e6a00' : '#da1e28';
+  const css = PAGE_CSS +
+    '\n.band{display:flex;gap:24px;align-items:center;background:#f4f4f4;padding:20px 24px;margin:24px 0}' +
+    '.big{font-size:44px;font-family:"IBM Plex Mono",monospace}' +
+    '.v{font-weight:600;color:' + verdictColor + '}' +
+    '.del{color:#a2191f;background:#fff1f1;padding:2px 6px;text-decoration:line-through;display:inline-block;margin-top:4px}' +
+    '.ins{color:#0e6027;background:#defbe6;padding:2px 6px;display:inline-block;margin-top:2px}' +
+    '.st-ok{color:#0e6027;font-weight:600}.st-open{color:#8e6a00;font-weight:600}' +
+    '.muted{color:#525252;font-size:13px}';
+  const out = [
+    '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>',
+    '<title>Quality report — ' + escX(meta.title) + '</title><style>' + css + '</style></head><body>',
+    '<h1>Quality report — ' + escX(meta.title) + '</h1>',
+    '<p class="muted">Source: <code>' + escX(meta.repo) + '</code> · format: ' + escX(String(meta.format).toUpperCase()) +
+      ' · generated ' + new Date().toISOString().slice(0, 10) + ' · publish gate ≥ ' + ser.gate + '</p>',
+    '<div class="band"><span class="big">' + ser.overall + '</span><span><span class="v">' + escX(ser.verdict) + '</span><br/>' +
+      ser.fixedCount + ' fix' + (ser.fixedCount === 1 ? '' : 'es') + ' applied · ' + ser.remaining + ' finding' + (ser.remaining === 1 ? '' : 's') + ' open</span></div>',
+    '<h2>Quality dimensions</h2>',
+    '<table><thead>' + tr(['Dimension', 'Score', 'Weight', 'Open findings'], 'th') + '</thead><tbody>',
+    ...ser.dimensions.map((d) => tr([escX(d.name), String(d.score), Math.round(d.weight * 100) + '%', String(d.open)])),
+    '</tbody></table>',
+    '<h2>AI assistant readiness</h2>',
+    '<p class="muted">Modeled from the dimension scores and each assistant’s retrieval profile (threshold ≥ ' + ser.assistantGate + '). No live calls are made to third-party assistants.</p>',
+    '<table><thead>' + tr(['Assistant', 'Score', 'Status', 'Held back by'], 'th') + '</thead><tbody>',
+    ...ser.assistants.map((a) => tr([escX(a.name), String(a.score), a.ready ? 'Likely to land' : 'At risk', escX(a.heldBackBy || '—')])),
+    '</tbody></table>',
+    '<h2>Findings</h2>',
+    ...ser.issues.map((i) =>
+      '<h3>' + (i.fixed ? '<span class="st-ok">✓ Fixed</span> ' : '<span class="st-open">● Open</span> ') + escX(i.title) + '</h3>' +
+      '<p class="muted">' + escX(i.cat) + (i.target ? ' · ' + escX(i.target) : '') + '</p>' +
+      '<p>' + escX(i.body) + '</p>' +
+      (i.fixed && (i.before || i.after)
+        ? (i.before ? '<div class="del">− ' + escX(i.before) + '</div><br/>' : '') + (i.after ? '<div class="ins">+ ' + escX(i.after) + '</div>' : '')
+        : '<p class="muted">Suggested fix: ' + escX(i.fix) + '</p>')
+    ),
+    '<h2>Link integrity</h2>',
+    '<table><thead>' + tr(['URL', 'Location', 'Status', 'Detail'], 'th') + '</thead><tbody>',
+    ...ser.links.map((l) => tr(['<code>' + escX(l.url) + '</code>', escX(l.file), escX(l.status), escX(l.why)])),
+    '</tbody></table>',
+    '<h2>Style checks</h2>',
+    '<table><thead>' + tr(['Check', 'Status', 'Detail'], 'th') + '</thead><tbody>',
+    ...ser.style.map((s2) => tr([escX(s2.t), s2.pass ? 'Pass' : 'Review', escX(s2.d)])),
+    '</tbody></table>',
+    '<p class="muted">Produced by the DocGen quality auditor — human-in-the-loop: every applied fix above was reviewed and accepted by the author.</p>',
+    '</body></html>'
+  ];
+  return out.join('\n');
+}
+
+/* ---------------- Fix diffs: exact before → after shown to the user ----------------
+   These mirror applyFixes() one-to-one, so the diff the user sees is precisely
+   the change made to the document. Configurable alongside the transforms. */
+export const FIX_DIFFS = {
+  shortdesc: { target: 'Document head', before: '(no short description present)', after: 'Short description. The Payments API lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling.' },
+  title: { target: 'Document title', before: 'API reference', after: 'API reference — endpoints, authentication, and errors' },
+  keywords: { target: 'Document head + metadata', before: '(none)', after: 'Keywords: payments-api, REST authentication, refunds, webhook events.' },
+  pronoun: { target: 'Authentication / Rate limits', before: 'It must be rotated every 90 days.', after: 'The API signing secret must be rotated every 90 days.' },
+  longsent: { target: 'Overview', before: 'All responses are JSON; all timestamps are ISO 8601.', after: 'All responses are JSON. All timestamps are ISO 8601.' },
+  example: { target: 'New section (end)', before: '(no runnable example)', after: 'Worked example — curl POST /v1/charges with amount, currency, and source.' },
+  prereq: { target: 'New section (top)', before: '(missing)', after: '"Before you begin" — active account, API key, base URL, curl 8+.' },
+  limitations: { target: 'New section (end)', before: '(missing)', after: '"Limitations" — 100 req/s per key, 10 MB request cap, 180-day refund window.' },
+  term: { target: 'Whole document', before: '…experiment in test mode…', after: '…experiment in sandbox…' },
+  dupe: { target: 'Rate limits', before: 'Duplicated rotation sentence', after: 'Removed duplicate; cross-reference: "See Authentication for the rotation policy."' }
+};
+
 /* ---------------- LLM-as-judge ---------------- */
 export function judge() {
   return {
     issues: [
       {
-        id: 'shortdesc', cat: 'LLM readiness', title: 'Missing short description',
+        id: 'shortdesc', cat: 'LLM readiness', dim: 'llm', title: 'Missing short description',
         body: 'No short description was found at the top of the document. AI systems and search results rely on it to summarize the page — without one, retrieval quality drops and snippets are generated from arbitrary body text.',
         fix: 'Add under the title: "The Payments API lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling."'
       },
       {
-        id: 'title', cat: 'LLM readiness', title: 'Title is not search-optimized',
+        id: 'title', cat: 'LLM readiness', dim: 'llm', title: 'Title is not search-optimized',
         body: 'The current title "Reference" is too generic to match real queries. Users and LLMs search with product and task terms, not document-type labels.',
         fix: 'Rename to "Payments API reference — endpoints, authentication, and errors".'
       },
       {
-        id: 'keywords', cat: 'LLM readiness', title: 'Missing metadata keywords',
+        id: 'keywords', cat: 'LLM readiness', dim: 'llm', title: 'Missing metadata keywords',
         body: 'No keywords or tags are attached to the document, reducing discoverability in both site search and vector retrieval.',
         fix: 'Add keywords: payments-api, REST authentication, refunds, webhook events.'
       },
       {
-        id: 'pronoun', cat: 'Consumability', title: 'Ambiguous pronoun reference',
+        id: 'pronoun', cat: 'Readability', dim: 'readability', title: 'Ambiguous pronoun reference',
         body: 'In the Refunds section, the sentence "It must be rotated every 90 days" follows mentions of both the API key and the signing secret. Retrieved out of context, "It" does not resolve.',
         fix: 'Replace with "The API signing secret must be rotated every 90 days."'
       },
       {
-        id: 'example', cat: 'Consumability', title: 'Missing example',
+        id: 'longsent', cat: 'Readability', dim: 'readability', title: 'Sentence length above threshold',
+        body: 'Three sentences in the Authentication section exceed 28 words. Long sentences reduce comprehension and degrade chunk quality for retrieval.',
+        fix: 'Split each flagged sentence at the conjunction; target a mean of 18 words per sentence.'
+      },
+      {
+        id: 'example', cat: 'Completeness', dim: 'completeness', title: 'Missing example',
         body: 'The "Create a charge" section describes the request body but includes no code example. Sections without examples are retrieved less often and answered less accurately by LLMs.',
         fix: 'Add a curl example showing a minimal POST /v1/charges request with amount, currency, and source fields.'
+      },
+      {
+        id: 'prereq', cat: 'Completeness', dim: 'completeness', title: 'Missing prerequisites section',
+        body: 'No prerequisites are stated before the first task. Readers discover missing requirements mid-procedure, and assistants cannot answer "what do I need first".',
+        fix: 'Add a "Before you begin" list: an active account, an API key from the console, and curl 8+.'
+      },
+      {
+        id: 'limitations', cat: 'Completeness', dim: 'completeness', title: 'Missing limitations section',
+        body: 'The document never states rate limits, size caps, or unsupported scenarios, leaving readers to find the edges by trial and error.',
+        fix: 'Add a "Limitations" section: 100 req/s per key, 10 MB request cap, refunds only within 180 days.'
+      },
+      {
+        id: 'term', cat: 'Consistency', dim: 'consistency', title: 'Terminology mismatch: "sandbox" vs "test mode"',
+        body: 'Both terms are used for the same environment. Mixed terminology fragments search results and confuses retrieval.',
+        fix: 'Standardize on "sandbox" everywhere; reserve "test mode" only for the dashboard toggle label.'
+      },
+      {
+        id: 'dupe', cat: 'Consistency', dim: 'consistency', title: 'Duplicated paragraph across sections',
+        body: 'The token-rotation paragraph appears in both Authentication and Refunds. Duplicates compete against each other in retrieval and drift out of sync over time.',
+        fix: 'Keep the paragraph in Authentication and replace the copy in Refunds with a cross-reference link.'
       }
     ],
     links: [

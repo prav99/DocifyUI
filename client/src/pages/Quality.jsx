@@ -4,12 +4,38 @@ import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, Notif, Score, IcCheck, IcInfo } from '../ui.jsx';
 
+const CAT_DESC = {
+  'LLM readiness': 'Whether AI systems can find, summarize, and cite this document.',
+  'Readability': 'Clarity and structure when sections are read on their own.',
+  'Completeness': 'Prerequisites, limitations, and examples are all present.',
+  'Consistency': 'One term, one meaning — no duplicated content.',
+  'Consumability': 'Whether individual sections hold up when retrieved out of context.'
+};
+
+function Gauge({ score, gate }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, score)) / 100;
+  const color = score >= gate ? '#24a148' : score >= 70 ? '#f1c21b' : '#da1e28';
+  return (
+    <svg width="140" height="140" viewBox="0 0 120 120" aria-label={'Overall score ' + score}>
+      <circle cx="60" cy="60" r={r} stroke="#e0e0e0" strokeWidth="10" fill="none" />
+      <circle cx="60" cy="60" r={r} stroke={color} strokeWidth="10" fill="none"
+        strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
+        transform="rotate(-90 60 60)" style={{ transition: 'stroke-dashoffset .6s cubic-bezier(0.2,0,0.38,0.9)' }} />
+      <text x="60" y="58" textAnchor="middle" fontSize="26" fontFamily="IBM Plex Mono, monospace" fill="#161616">{score}</text>
+      <text x="60" y="78" textAnchor="middle" fontSize="10" fill="#525252" letterSpacing="1">OVERALL</text>
+    </svg>
+  );
+}
+
 export default function Quality() {
   const nav = useNavigate();
   const { flow } = useFlow();
   const [tab, setTab] = useState('ai');
   const [report, setReport] = useState(null);
   const [checking, setChecking] = useState(false);
+  const [fixing, setFixing] = useState({}); // issueId -> step index while the fix runs
 
   useEffect(() => {
     if (!flow.genId) { nav('/dashboard'); return; }
@@ -20,12 +46,32 @@ export default function Quality() {
 
   if (!report) return <div className="page"><p className="body01 t2">Loading quality report…</p></div>;
 
+  const FIX_STEPS = ['Locating the issue', 'Rewriting the content', 'Re-rendering every format', 'Re-scoring with the judge'];
+
   async function applyFix(issueId) {
+    if (fixing[issueId] != null) return;
+    const prevOverall = report.overall != null ? report.overall : report.aiScore;
+    setFixing((f) => ({ ...f, [issueId]: 0 }));
+    const stepper = setInterval(() => {
+      setFixing((f) => (typeof f[issueId] === 'number' && f[issueId] < FIX_STEPS.length - 1
+        ? { ...f, [issueId]: f[issueId] + 1 } : f));
+    }, 550);
     try {
-      const d = await api('/quality/' + report.id + '/fix', { method: 'POST', body: { issueId } });
+      // Run the real fix while the progress plays; hold long enough to be seen.
+      const [d] = await Promise.all([
+        api('/quality/' + report.id + '/fix', { method: 'POST', body: { issueId } }),
+        new Promise((r) => setTimeout(r, FIX_STEPS.length * 550 + 250))
+      ]);
+      clearInterval(stepper);
+      setFixing((f) => { const n = { ...f }; delete n[issueId]; return n; });
       setReport(d.report);
-      toast('success', 'Fix applied', 'AI-readiness score is now ' + d.report.aiScore + ' / 100');
-    } catch (e) { toast('error', 'Could not apply fix', e.message); }
+      const newOverall = d.report.overall != null ? d.report.overall : d.report.aiScore;
+      toast('success', 'Fixed in the document', 'Content re-rendered · overall ' + prevOverall + ' → ' + newOverall);
+    } catch (e) {
+      clearInterval(stepper);
+      setFixing((f) => { const n = { ...f }; delete n[issueId]; return n; });
+      toast('error', 'Could not apply fix', e.message);
+    }
   }
 
   async function recheck() {
@@ -33,15 +79,18 @@ export default function Quality() {
     try {
       const d = await api('/quality/' + report.id + '/recheck', { method: 'POST' });
       setReport(d.report);
-      toast('info', 'AI judge re-confirmed', 'Score verified at ' + d.report.aiScore + ' / 100 against the enterprise guideline set');
+      toast('info', 'AI judge re-confirmed', 'Overall score verified at ' + (d.report.overall != null ? d.report.overall : d.report.aiScore) + ' / 100 against the enterprise guideline set');
     } catch (e) { toast('error', 'Re-check failed', e.message); }
     finally { setChecking(false); }
   }
 
   const ai = report.aiScore;
-  const verdict = report.remaining <= 1 ? ['AI-consumable', 'tag--green']
-    : report.remaining <= 3 ? ['Mostly consumable', 'tag--amber']
-    : ['Needs work before publishing', 'tag--red'];
+  const overall = report.overall != null ? report.overall : ai;
+  const dims = report.dimensions || [];
+  const assistants = report.assistants || [];
+  const gate = report.gate || 85;
+  const verdictLabel = report.verdict || (report.remaining <= 1 ? 'AI-consumable' : report.remaining <= 3 ? 'Mostly consumable' : 'Needs work');
+  const verdictCls = report.gatePassed ? 'tag--green' : overall >= 70 ? 'tag--amber' : 'tag--red';
 
   return (
     <>
@@ -64,9 +113,9 @@ export default function Quality() {
             </div>
           </div>
           <div className="judgescore">
-            <span className="label01" style={{ color: '#8d8d8d' }}>AI-READINESS</span>
-            <span className="mono" style={{ fontSize: 44, lineHeight: 1.2 }}>{ai}</span>
-            <span className={'tag ' + verdict[1]}>{verdict[0]}</span>
+            <span className="label01" style={{ color: '#8d8d8d' }}>OVERALL SCORE</span>
+            <span className="mono" style={{ fontSize: 44, lineHeight: 1.2 }}>{overall}</span>
+            <span className={'tag ' + verdictCls}>{verdictLabel}</span>
           </div>
         </div>
 
@@ -78,11 +127,74 @@ export default function Quality() {
 
         {tab === 'overview' && (
           <>
-            <div className="grid3">
-              <Score label="Overall score" num={Math.min(100, Math.round((ai + 92 + 86) / 3))} helper="Weighted across all checks" kind={ai >= 85 ? 'good' : 'warn'} />
-              <Score label="Broken links" num={report.links.length} helper="Of 47 links checked" kind="warn" />
-              <Score label="AI-readiness score" num={ai} helper="LLM-judge evaluation" kind={ai >= 85 ? 'good' : 'warn'} />
+            <div className="qhero">
+              <div className="qgauge tile tile--white">
+                <Gauge score={overall} gate={gate} />
+                <span className={'tag ' + verdictCls}>{verdictLabel}</span>
+                <p className="helper mt2" style={{ textAlign: 'center' }}>
+                  Publish gate ≥ {gate} · {report.fixedCount} fix{report.fixedCount === 1 ? '' : 'es'} applied · {report.remaining} open
+                </p>
+              </div>
+              <div className="dimgrid">
+                {dims.map((d) => {
+                  const cls = d.score >= gate ? 'ok' : d.score >= 70 ? 'warn' : 'bad';
+                  return (
+                    <div key={d.id} className="dimcard" title={d.desc}>
+                      <div className="row row--between">
+                        <span className="h01">{d.name}</span>
+                        <span className="mono" style={{ fontSize: 15 }}>{d.score}</span>
+                      </div>
+                      <div className="dimbar"><div className={'dimfill dimfill--' + cls} style={{ width: d.score + '%' }} /></div>
+                      <span className="helper">weight {Math.round(d.weight * 100)}% · {d.open} open{d.total ? ' of ' + d.total + ' checks' : ''}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+
+            <h2 className="h02 mt7 mb3">Will this land in AI assistants?</h2>
+            <p className="helper mb5">
+              Modeled from your dimension scores and each assistant&apos;s retrieval profile — blends and the
+              ≥ {report.assistantGate || 85} threshold are configurable server-side. No live calls are made to
+              third-party assistants; this is a labeled estimate, recomputed on every fix so it can never
+              disagree with the report above.
+            </p>
+            <div className="asstgrid">
+              {assistants.map((a) => (
+                <div key={a.id} className="asstcard" style={{ borderTopColor: a.ready ? 'var(--support-success)' : 'var(--support-warning)' }}>
+                  <div className="row row--between">
+                    <span className="h01">{a.name}</span>
+                    {a.ready ? <span className="tag tag--green">Likely to land ✓</span> : <span className="tag tag--amber">At risk</span>}
+                  </div>
+                  <p className="mono" style={{ fontSize: 28, marginTop: 8 }}>{a.score}<span className="helper"> /100</span></p>
+                  <p className="helper mt2">
+                    {a.ready
+                      ? 'Clears the readiness threshold for retrieval and citation.'
+                      : 'Held back by: ' + (a.heldBackBy || 'open findings') + '. Apply the fixes to clear it.'}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <h2 className="h02 mt7 mb3">How this report is produced</h2>
+            <div className="qpipe">
+              {[
+                ['01', 'Input', 'Generated document · style profile · optional PRDs and code summaries'],
+                ['02', 'Analysis', 'NLP checks · rule-based style validation · LLM judge · link engine'],
+                ['03', 'Scoring', 'Weighted dimension scores, issues, and one-click fix suggestions'],
+                ['04', 'Human in the loop', 'You review and apply or dismiss each fix — nothing publishes itself']
+              ].map(([n, t, d2], i, arr) => (
+                <React.Fragment key={n}>
+                  <div className="qstage">
+                    <span className="label01 mono t2">{n}</span>
+                    <span className="h01">{t}</span>
+                    <span className="helper">{d2}</span>
+                  </div>
+                  {i < arr.length - 1 ? <span className="qarrow">→</span> : null}
+                </React.Fragment>
+              ))}
+            </div>
+
             <h2 className="h02 mt7 mb3">Annotated preview</h2>
             <p className="helper mb5">A sample of the generated content with findings marked inline. Green — correct terminology. Amber — broken link. Blue — well-chunked for AI retrieval.</p>
             <div className="annot">
@@ -139,7 +251,7 @@ export default function Quality() {
         {tab === 'ai' && (
           <>
             <div className="grid3">
-              <Score label="AI-readiness score" num={ai} helper="+6 per resolved issue, cap 100" kind={ai >= 85 ? 'good' : 'warn'} />
+              <Score label="LLM-readiness dimension" num={ai} helper="Recomputed live from open findings" kind={ai >= 85 ? 'good' : 'warn'} />
               <Score label="Issues remaining" num={report.remaining} helper="Across both categories" kind="info" />
               <Score label="Fixes applied" num={report.fixedCount} helper="Applied to the working draft" kind="good" />
             </div>
@@ -148,7 +260,7 @@ export default function Quality() {
               <div className="row">
                 <IcInfo />
                 <span className="body01">Evaluated by LLM judge, aligned to enterprise documentation guidelines</span>
-                <span className={'tag ' + verdict[1]}>{verdict[0]}</span>
+                <span className={'tag ' + verdictCls}>{verdictLabel}</span>
               </div>
               <button className="btn btn--tertiary btn--field" disabled={checking} onClick={recheck}>
                 {checking ? 'Re-evaluating…' : 'Re-check with AI judge'}
@@ -164,27 +276,52 @@ export default function Quality() {
               </p>
             </div>
 
-            {['LLM readiness', 'Consumability'].map((cat) => (
+            {[...new Set(report.issues.map((i) => i.cat))].map((cat) => (
               <div key={cat}>
                 <h2 className="h02 mt7 mb3">{cat}</h2>
-                <p className="helper mb5">
-                  {cat === 'LLM readiness'
-                    ? 'Whether AI systems can find, summarize, and cite this document.'
-                    : 'Whether individual sections hold up when retrieved out of context.'}
-                </p>
-                {report.issues.filter((i) => i.cat === cat).map((iss) => (
-                  <div key={iss.id} className={'issue' + (iss.fixed ? ' fixed' : '')}>
-                    <div className="row row--between">
-                      <div className="row">{iss.fixed ? <IcCheck /> : null}<p className="h01">{iss.title}</p></div>
-                      <span className={'tag ' + (iss.fixed ? 'tag--green' : 'tag--amber')}>{iss.fixed ? 'Fixed' : 'Open'}</span>
+                <p className="helper mb5">{CAT_DESC[cat] || 'Findings from the LLM judge.'}</p>
+                {report.issues.filter((i) => i.cat === cat).map((iss) => {
+                  const step = fixing[iss.id];
+                  const inFlight = typeof step === 'number';
+                  return (
+                    <div key={iss.id} className={'issue' + (iss.fixed ? ' fixed' : '')}>
+                      <div className="row row--between">
+                        <div className="row">{iss.fixed ? <IcCheck /> : null}<p className="h01">{iss.title}</p></div>
+                        <span className={'tag ' + (iss.fixed ? 'tag--green' : inFlight ? 'tag--blue' : 'tag--amber')}>
+                          {iss.fixed ? 'Fixed' : inFlight ? 'Fixing…' : 'Open'}
+                        </span>
+                      </div>
+                      <p className="body01 mt3 t2">{iss.body}</p>
+                      <p className="ifix"><b>Suggested fix:</b> {iss.fix}</p>
+
+                      {inFlight && (
+                        <div className="fixprog mt5">
+                          {FIX_STEPS.map((s, i) => (
+                            <div key={s} className={'genstep ' + (i < step ? 'done' : i === step ? 'doing' : 'todo')} style={{ padding: '6px 0' }}>
+                              <span className="sicon">
+                                {i < step ? <IcCheck /> : i === step ? <span className="spin" /> : <span className="dotcircle" />}
+                              </span>
+                              {s}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {iss.fixed && (iss.before || iss.after) && (
+                        <div className="fixdiff mt5">
+                          {iss.target ? <p className="label01 t2">{iss.target}</p> : null}
+                          {iss.before ? <p className="diff-del mono">− {iss.before}</p> : null}
+                          {iss.after ? <p className="diff-add mono">+ {iss.after}</p> : null}
+                          <p className="helper mt2">Applied to the document — content, preview, and all export formats were regenerated.</p>
+                        </div>
+                      )}
+
+                      {!iss.fixed && !inFlight && (
+                        <button className="btn btn--primary btn--sm mt5" onClick={() => applyFix(iss.id)}>Apply fix</button>
+                      )}
                     </div>
-                    <p className="body01 mt3 t2">{iss.body}</p>
-                    <p className="ifix"><b>Suggested fix:</b> {iss.fix}</p>
-                    {!iss.fixed && (
-                      <button className="btn btn--primary btn--sm mt5" onClick={() => applyFix(iss.id)}>Apply fix</button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ))}
 

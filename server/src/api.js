@@ -8,7 +8,7 @@ import { listRepos as listBitbucket } from './adapters/bitbucket.js';
 import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces } from './adapters/atlassian.js';
 import { verifyNotion, listNotion } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
-import { generateDocument, judge, aiScore } from './adapters/llm.js';
+import { generateDocument, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport } from './adapters/llm.js';
 import { charge } from './adapters/stripe.js';
 
 export const apiRouter = Router();
@@ -205,10 +205,28 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
   const fmt = formatDef(g.track, g.format) || { ext: '.txt' };
   const base = (g.title || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-');
   if (req.query.kind === 'report') {
+    // Quality report export — always the LIVE state (scores, fixes, diffs),
+    // in a reviewer-friendly HTML or a CI-friendly JSON.
     const rep = await prisma.qualityReport.findUnique({ where: { generationId: g.id } });
-    res.setHeader('Content-Disposition', 'attachment; filename="quality-report.json"');
-    res.setHeader('Content-Type', 'application/json');
-    return res.send(rep ? JSON.stringify({ issues: j(rep.issues, []), links: j(rep.links, []), style: j(rep.style, []), fixed: j(rep.fixedIds, []) }, null, 2) : '{}');
+    if (!rep) return res.status(404).json({ error: 'Report not ready' });
+    const ser = serializeReport(rep, g);
+    if (String(req.query.fmt || 'html') === 'json') {
+      res.setHeader('Content-Disposition', 'attachment; filename="quality-report.json"');
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        document: { title: g.title, repo: g.repo, format: g.format, track: g.track },
+        scores: { overall: ser.overall, verdict: ser.verdict, gate: ser.gate, gatePassed: ser.gatePassed },
+        dimensions: ser.dimensions,
+        assistants: ser.assistants,
+        issues: ser.issues,
+        links: ser.links,
+        style: ser.style
+      }, null, 2));
+    }
+    res.setHeader('Content-Disposition', 'attachment; filename="quality-report.html"');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(renderQualityReport(ser, { title: g.title, repo: g.repo, format: g.format }));
   }
   const ct = fmt.ext.endsWith('.xhtml') ? 'application/xhtml+xml; charset=utf-8'
     : fmt.ext.endsWith('.html') ? 'text/html; charset=utf-8'
@@ -223,11 +241,18 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
 function serializeReport(rep, gen) {
   const issues = j(rep.issues, []);
   const fixed = j(rep.fixedIds, []);
+  const links = j(rep.links, []);
+  const style = j(rep.style, []);
+  // All scores below derive from one model (scoreReport + QUALITY_CONFIG),
+  // so the dashboard, verdicts, and assistant estimates always agree.
+  const q = scoreReport({ issues, fixed, links, style });
+  const llmDim = q.dimensions.find((d) => d.id === 'llm');
   return {
     id: rep.id, generationId: rep.generationId,
-    issues: issues.map((i) => ({ ...i, fixed: fixed.includes(i.id) })),
-    links: j(rep.links, []), style: j(rep.style, []),
-    aiScore: aiScore(issues.length, fixed.length),
+    issues: issues.map((i) => ({ ...i, ...(FIX_DIFFS[i.id] || {}), fixed: fixed.includes(i.id) })),
+    links, style,
+    ...q,
+    aiScore: llmDim ? llmDim.score : aiScore(issues.length, fixed.length),
     fixedCount: fixed.length, remaining: issues.length - fixed.length,
     title: gen ? gen.title || docTypeName(gen.track, j(gen.docTypes, [])[0]) : ''
   };
@@ -252,9 +277,28 @@ apiRouter.post('/quality/:id/fix', async (req, res) => {
   const updated = await prisma.qualityReport.update({
     where: { id: rep.id }, data: { fixedIds: JSON.stringify([...fixed]) }
   });
-  const score = aiScore(issues.length, fixed.size);
-  await prisma.generation.update({ where: { id: rep.generationId }, data: { score } });
-  res.json({ report: serializeReport(updated, rep.generation) });
+  // The fix is REAL: regenerate the document (chosen format + preview) with
+  // every accepted fix applied, then persist the repaired content and score.
+  const genRow = await prisma.generation.findUnique({ where: { id: rep.generationId } });
+  const ser = serializeReport(updated, genRow);
+  if (genRow) {
+    const fixesArr = [...fixed];
+    const genArgs = {
+      track: genRow.track, docTypes: j(genRow.docTypes, []), format: genRow.format,
+      repo: genRow.repo, instructions: genRow.instructions,
+      skill: genRow.skill || '', skillName: genRow.skillName || '',
+      brief: j(genRow.brief, {}), output: j(genRow.output, {}), fixes: fixesArr
+    };
+    const { title, content } = generateDocument(genArgs);
+    const previewHtml = genRow.format === 'html'
+      ? content
+      : generateDocument({ ...genArgs, format: 'html' }).content;
+    await prisma.generation.update({
+      where: { id: rep.generationId },
+      data: { title, content, preview: previewHtml, score: ser.overall }
+    });
+  }
+  res.json({ report: ser, regenerated: true });
 });
 
 apiRouter.post('/quality/:id/recheck', async (req, res) => {

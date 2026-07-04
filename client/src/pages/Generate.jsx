@@ -4,6 +4,63 @@ import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { IcCheck } from '../ui.jsx';
 
+/* ---------- Source-view syntax highlighting (escape first, then wrap) ---------- */
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function hlXml(src) {
+  return escHtml(src)
+    .replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="tk-com">$1</span>')
+    .replace(/(&lt;\/?)([\w:-]+)/g, '$1<span class="tk-tag">$2</span>')
+    .replace(/([\w-]+)=(&quot;[^&]*?&quot;)/g, '<span class="tk-attr">$1</span>=<span class="tk-str">$2</span>');
+}
+
+function hlMd(src) {
+  return escHtml(src)
+    .replace(/^(#{1,6} .*)$/gm, '<span class="tk-h">$1</span>')
+    .replace(/^(&gt;.*)$/gm, '<span class="tk-q">$1</span>')
+    .replace(/^(\|.*)$/gm, '<span class="tk-tbl">$1</span>')
+    .replace(/^(```.*)$/gm, '<span class="tk-fence">$1</span>')
+    .replace(/(\*\*[^*\n]+\*\*)/g, '<span class="tk-b">$1</span>')
+    .replace(/(`[^`\n]+`)/g, '<span class="tk-code">$1</span>');
+}
+
+const XMLISH = ['dita', 'docbook', 'html', 'epub', 'htmlsnip', 'email'];
+function highlight(src, format) {
+  return XMLISH.includes(format) ? hlXml(src) : hlMd(src);
+}
+
+/* ---------- Chips: every choice the user made, visible on the preview ---------- */
+export function buildChips(gen) {
+  const oc = gen.output || {};
+  const chips = [];
+  const add = (label, cls) => chips.push({ label, cls: cls || 'tag--gray' });
+  if (gen.skillName) add('Skill: ' + gen.skillName, 'tag--green');
+  const org = [oc.company, oc.trademark].filter(Boolean).join(' ');
+  if (org) add(org, 'tag--blue');
+  if (oc.classification && oc.classification !== 'none') add(String(oc.classification).toUpperCase(), 'tag--red');
+  if (oc.watermark) add('Watermark: ' + String(oc.watermark).toUpperCase(), 'tag--amber');
+  if (oc.draftBanner) add('DRAFT banner', 'tag--amber');
+  add(oc.coverPage === false ? 'No cover block' : 'Cover block');
+  add(oc.toc === false ? 'No contents' : 'Contents' + (Number(oc.tocDepth) >= 2 ? ' (deep)' : ''));
+  if (oc.numberedHeadings) add('Numbered headings');
+  if (oc.showDate === false) add('Date hidden');
+  if (oc.aboutSection) add('About section');
+  if (oc.revisionHistory) add('Revision history');
+  if (oc.glossary) add('Glossary');
+  if (oc.includeExamples === false) add('Examples omitted', 'tag--amber');
+  if (oc.author) add('Author: ' + oc.author);
+  if (oc.docId) add('ID: ' + oc.docId);
+  if (['pdf', 'word'].includes(gen.format)) {
+    add((oc.paperSize || 'A4') + ' · page numbers ' + (oc.pageNumbers === false ? 'off' : 'on'));
+  }
+  if (oc.disclaimer) add('Disclaimer');
+  if ((oc.copyright && oc.copyright.trim()) || org) add('Copyright line');
+  if (gen.brief && (gen.brief.audience || gen.brief.emphasis)) add('Brief applied', 'tag--teal');
+  return { chips, accent: oc.accentColor && oc.accentColor !== '#0f62fe' ? oc.accentColor : null };
+}
+
 export default function Generate() {
   const nav = useNavigate();
   const { flow } = useFlow();
@@ -43,14 +100,14 @@ export default function Generate() {
 
   return (
     <>
-      <div className="page">
+      <div className="page" style={{ maxWidth: 1200 }}>
         <h1 className="h04">Generating {done && gen.title ? gen.title.toLowerCase() : 'your document'}</h1>
         <p className="body01 t2 mt3">
           From <span className="mono">{gen.repo}</span> → {gen.format.toUpperCase()}
           {gen.docTypes.length > 1 ? ' · ' + gen.docTypes.length + ' documents in this set' : ''}
         </p>
-        <div className="grid2 mt7" style={{ alignItems: 'start' }}>
-          <div className="tile tile--white" style={{ padding: 24 }}>
+        <div className="genlayout mt7">
+          <div className="tile tile--white" style={{ padding: 24, alignSelf: 'start' }}>
             <h2 className="h02 mb5">Pipeline</h2>
             <div>
               {steps.map((s, i) => {
@@ -71,7 +128,7 @@ export default function Generate() {
             {done ? <Preview gen={gen} /> : (
               <div className="tile" style={{ padding: 24 }}>
                 <h2 className="h02 mb5">Preview</h2>
-                <p className="body01 t2">The live preview appears here when the pipeline finishes.</p>
+                <p className="body01 t2">The rendered preview appears here when the pipeline finishes — with every option you configured applied.</p>
               </div>
             )}
           </div>
@@ -93,33 +150,46 @@ export default function Generate() {
 }
 
 function Preview({ gen }) {
-  const fmt = gen.format;
-  if (fmt === 'pdf' || fmt === 'word') {
-    const fname = (gen.title || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-') + (fmt === 'pdf' ? '.pdf' : '.docx');
-    return (
-      <div>
-        <h2 className="h02 mb5">Preview · {fmt === 'pdf' ? 'PDF' : 'Word'}</h2>
-        <div className="paper">
-          <p className="label01 t2 mono">ACME · PAYMENTS PLATFORM</p>
-          <h3 className="h03 mt5">{gen.title}</h3>
-          <p className="helper mt2">Generated from {gen.repo} · v2.4.0</p>
-          <p className="h01 mt7">1. Overview</p>
-          <div className="skel w90" /><div className="skel" /><div className="skel w60" />
-          <p className="h01 mt6">2. Authentication</p>
-          <div className="skel w80" /><div className="skel w90" /><div className="skel w60" />
-          <p className="h01 mt6">3. Endpoints</p>
-          <div className="skel" /><div className="skel w80" />
-          <div className="row row--between mt7" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
-            <span className="helper mono">{fname}</span><span className="helper">14 pages</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const [view, setView] = useState('rendered');
+  const oc = gen.output || {};
+  const { chips, accent } = buildChips(gen);
+
   return (
     <div>
-      <h2 className="h02 mb5">Preview · {fmt === 'dita' ? 'DITA' : 'Markdown'}</h2>
-      <div className="codeblock">{gen.content}</div>
+      <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <h2 className="h02">Preview · {gen.format.toUpperCase()}</h2>
+        <div className="seg" style={{ width: 220 }}>
+          <button className={view === 'rendered' ? 'on' : ''} onClick={() => setView('rendered')}>Rendered</button>
+          <button className={view === 'source' ? 'on' : ''} onClick={() => setView('source')}>Source</button>
+        </div>
+      </div>
+
+      <div className="row mt3" style={{ flexWrap: 'wrap', gap: 6 }}>
+        {chips.map((c, i) => <span key={c.label + i} className={'tag ' + c.cls}>{c.label}</span>)}
+        {accent && (
+          <span className="tag tag--outline">
+            <span style={{ width: 10, height: 10, background: accent, display: 'inline-block' }} />Accent
+          </span>
+        )}
+      </div>
+
+      {view === 'rendered' ? (
+        <div className="prevframe mt5">
+          {['pdf', 'word'].includes(gen.format) && (
+            <div className="prevpagebar">
+              Paginated export preview · {(oc.paperSize || 'A4')} · page numbers {oc.pageNumbers === false ? 'off' : 'on'}
+              {oc.headerText ? ' · header “' + oc.headerText + '”' : ''}
+              {oc.footerText ? ' · footer “' + oc.footerText + '”' : ''}
+            </div>
+          )}
+          {['dita', 'docbook'].includes(gen.format) && (
+            <div className="prevpagebar">Rendered from the {gen.format === 'dita' ? 'DITA topic' : 'DocBook article'} — switch to Source for the exact markup</div>
+          )}
+          <iframe title="Document preview" sandbox="" srcDoc={gen.preview || gen.content} />
+        </div>
+      ) : (
+        <pre className="codeblock prevsrc mt5" dangerouslySetInnerHTML={{ __html: highlight(gen.content, gen.format) }} />
+      )}
     </div>
   );
 }
