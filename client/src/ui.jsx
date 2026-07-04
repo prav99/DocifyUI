@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from './store.jsx';
+import { useAuth, toast } from './store.jsx';
 
 /* ---------- Logo: a generated document, verified ---------- */
 export function LogoMark({ size = 24 }) {
@@ -175,7 +175,7 @@ export function TopBar() {
       )}
       <div className="topbar-actions">
         {user ? (
-          <span className="userchip">{user.email}</span>
+          <UserMenu user={user} />
         ) : (
           <>
             {path !== '/signup' && <button className="btn btn--ghost btn--sm btn--center" onClick={() => nav('/signup#login')}>Login</button>}
@@ -184,6 +184,47 @@ export function TopBar() {
         )}
       </div>
     </header>
+  );
+}
+
+/* ---------- Account menu: dashboard, settings, log out ---------- */
+function UserMenu({ user }) {
+  const nav = useNavigate();
+  const { logout } = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const go = (to) => { setOpen(false); nav(to); };
+  const signOut = () => {
+    setOpen(false);
+    try { sessionStorage.removeItem('docgen_flow'); } catch { /* ignore */ }
+    logout();
+    toast('info', 'Logged out', 'See you soon');
+    nav('/');
+  };
+  return (
+    <div className="usermenu" ref={ref}>
+      <button className={'userchip userchip--btn' + (open ? ' open' : '')} aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}>
+        {user.email}<span className="uchev" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="umenu" role="menu">
+          <button role="menuitem" onClick={() => go('/dashboard')}>Dashboard</button>
+          <button role="menuitem" onClick={() => go('/automation')}>Automation</button>
+          <button role="menuitem" onClick={() => go('/settings')}>Team &amp; settings</button>
+          <div className="umenu-div" />
+          <button role="menuitem" className="umenu-out" onClick={signOut}>Log out</button>
+        </div>
+      )}
+    </div>
   );
 }
 

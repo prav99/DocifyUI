@@ -46,6 +46,10 @@ export async function download(path) {
 
 let catalogCache = null;
 export async function getCatalog() {
-  if (!catalogCache) catalogCache = api('/catalog');
+  if (!catalogCache) {
+    // Don't cache a failure — one flaky request must not brick the catalog
+    // for the rest of the session.
+    catalogCache = api('/catalog').catch((e) => { catalogCache = null; throw e; });
+  }
   return catalogCache;
 }

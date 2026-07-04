@@ -657,6 +657,17 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .blendrow{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-secondary);margin-top:7px}
 .blendbar{flex:1;height:4px;background:var(--border-subtle);min-width:40px}
 .blendbar>div{height:4px;background:var(--button-primary);transition:width .6s var(--ease)}
+/* ============ Account menu ============ */
+.usermenu{position:relative}
+.userchip--btn{cursor:pointer;font-family:inherit;transition:border-color .11s var(--ease)}
+.userchip--btn:hover,.userchip--btn.open{border-color:var(--button-primary)}
+.uchev{margin-left:8px;font-size:10px;color:var(--text-secondary)}
+.umenu{position:absolute;right:0;top:calc(100% + 6px);background:#ffffff;border:1px solid var(--border-subtle);box-shadow:0 6px 16px rgba(22,22,22,.16);min-width:200px;z-index:80;display:flex;flex-direction:column;animation:fadeup .15s var(--ease)}
+.umenu button{text-align:left;padding:11px 16px;font-family:inherit;font-size:14px;background:none;border:none;cursor:pointer;color:var(--text-primary)}
+.umenu button:hover{background:var(--layer-hover)}
+.umenu-div{height:1px;background:var(--border-subtle)}
+.umenu-out{color:var(--support-error)}
+
 /* ============ Hero feature pill (landing) ============ */
 .herofeat{display:inline-flex;align-items:center;gap:12px;max-width:560px;text-align:left;background:rgba(15,98,254,.12);border:1px solid #4589ff;color:#d0e2ff;font-family:inherit;font-size:13.5px;line-height:1.45;padding:10px 16px;cursor:pointer;transition:background .11s var(--ease),border-color .11s var(--ease),transform .11s var(--ease)}
 .herofeat:hover{background:rgba(15,98,254,.22);border-color:#78a9ff;transform:translateX(3px)}

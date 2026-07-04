@@ -8,11 +8,11 @@ export default function Dashboard() {
   const nav = useNavigate();
   const { setFlow } = useFlow();
   const [gens, setGens] = useState(null);
-  const [auto, setAuto] = useState(null);
+  const [profiles, setProfiles] = useState(null);
 
   useEffect(() => {
     api('/generations').then((d) => setGens(d.generations)).catch(() => setGens([]));
-    api('/automation').then((d) => setAuto(d.automation)).catch(() => {});
+    api('/profiles').then((d) => setProfiles(d.profiles)).catch(() => setProfiles([]));
   }, []);
 
   if (!gens) return <div className="page"><p className="body01 t2">Loading…</p></div>;
@@ -44,7 +44,12 @@ export default function Dashboard() {
         <div className="grid3 mt7">
           <Score label="Documents total" num={complete.length} helper="Across all repositories" kind="good" />
           <Score label="Avg quality score" num={avg} helper="All completed generations" kind={avg >= 85 ? 'good' : 'warn'} />
-          <Score label="Automation" num={auto && auto.enabled ? 'On' : 'Off'} helper="Regenerate on merge to main" kind={auto && auto.enabled ? 'good' : 'warn'} />
+          <Score label="Automation pipelines"
+            num={profiles === null ? '…' : profiles.filter((p) => p.status === 'active').length}
+            helper={profiles && profiles.some((p) => p.status === 'active')
+              ? 'Active — regenerating on every merge'
+              : 'Create one — docs that maintain themselves'}
+            kind={profiles && profiles.some((p) => p.status === 'active') ? 'good' : 'warn'} />
         </div>
 
         <h2 className="h02 mt7 mb5">Recent generations</h2>
@@ -82,7 +87,7 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-      <NavBar back="/checkout" next="/automation" />
+      <NavBar next="/automation" nextLabel="Automation" />
     </>
   );
 }
