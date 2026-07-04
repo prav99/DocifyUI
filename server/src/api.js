@@ -9,6 +9,7 @@ import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces } 
 import { verifyNotion, listNotion } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport } from './adapters/llm.js';
+import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
 
 export const apiRouter = Router();
@@ -224,9 +225,24 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
         style: ser.style
       }, null, 2));
     }
-    res.setHeader('Content-Disposition', 'attachment; filename="quality-report.html"');
+    res.setHeader('Content-Disposition', 'attachment; filename="ai-consumability-report.html"');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(renderQualityReport(ser, { title: g.title, repo: g.repo, format: g.format }));
+  }
+  // Binary formats are built for real at download time from the stored
+  // Markdown master (which already includes any applied fixes).
+  if (g.format === 'word' || g.format === 'pdf') {
+    try {
+      const args = { md: g.content, title: g.title, output: j(g.output, {}) };
+      const buf = g.format === 'word' ? await buildDocx(args) : await buildPdf(args);
+      res.setHeader('Content-Disposition', 'attachment; filename="' + base + (g.format === 'word' ? '.docx' : '.pdf') + '"');
+      res.setHeader('Content-Type', g.format === 'word'
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : 'application/pdf');
+      return res.send(buf);
+    } catch (e) {
+      return res.status(500).json({ error: 'Export failed: ' + e.message });
+    }
   }
   const ct = fmt.ext.endsWith('.xhtml') ? 'application/xhtml+xml; charset=utf-8'
     : fmt.ext.endsWith('.html') ? 'text/html; charset=utf-8'
@@ -247,11 +263,25 @@ function serializeReport(rep, gen) {
   // so the dashboard, verdicts, and assistant estimates always agree.
   const q = scoreReport({ issues, fixed, links, style });
   const llmDim = q.dimensions.find((d) => d.id === 'llm');
+  // Projected impact, from the same model: what fixing ONE issue does to the
+  // overall score, and where everything lands if ALL open findings are fixed.
+  const gains = {};
+  for (const i of issues) {
+    if (fixed.includes(i.id)) continue;
+    gains[i.id] = Math.max(0, scoreReport({ issues, fixed: [...fixed, i.id], links, style }).overall - q.overall);
+  }
+  const allFixed = issues.length > fixed.length
+    ? scoreReport({ issues, fixed: issues.map((i) => i.id), links, style })
+    : null;
   return {
     id: rep.id, generationId: rep.generationId,
-    issues: issues.map((i) => ({ ...i, ...(FIX_DIFFS[i.id] || {}), fixed: fixed.includes(i.id) })),
+    issues: issues.map((i) => ({ ...i, ...(FIX_DIFFS[i.id] || {}), fixed: fixed.includes(i.id), gain: gains[i.id] || 0 })),
     links, style,
     ...q,
+    potential: allFixed ? {
+      overall: allFixed.overall, verdict: allFixed.verdict, gatePassed: allFixed.gatePassed,
+      assistants: allFixed.assistants.map((a) => ({ id: a.id, probability: a.probability, score: a.score }))
+    } : null,
     aiScore: llmDim ? llmDim.score : aiScore(issues.length, fixed.length),
     fixedCount: fixed.length, remaining: issues.length - fixed.length,
     title: gen ? gen.title || docTypeName(gen.track, j(gen.docTypes, [])[0]) : ''

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { IcCheck } from '../ui.jsx';
+import { IcCheck, PreviewFrame } from '../ui.jsx';
 
 /* ---------- Source-view syntax highlighting (escape first, then wrap) ---------- */
 function escHtml(s) {
@@ -185,7 +185,7 @@ function Preview({ gen }) {
           {['dita', 'docbook'].includes(gen.format) && (
             <div className="prevpagebar">Rendered from the {gen.format === 'dita' ? 'DITA topic' : 'DocBook article'} — switch to Source for the exact markup</div>
           )}
-          <iframe title="Document preview" sandbox="" srcDoc={gen.preview || gen.content} />
+          <PreviewFrame title="Document preview" html={gen.preview || gen.content} />
         </div>
       ) : (
         <pre className="codeblock prevsrc mt5" dangerouslySetInnerHTML={{ __html: highlight(gen.content, gen.format) }} />

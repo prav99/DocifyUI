@@ -34,16 +34,16 @@ export const DOCTYPES = {
 export const FORMATS = {
   technical: [
     { id: 'dita', name: 'DITA', desc: 'Topic-based XML for enterprise pipelines', ok: true, ext: '.dita' },
-    { id: 'pdf', name: 'PDF', desc: 'Print-ready, paginated output', ok: true, ext: '.pdf.txt' },
-    { id: 'word', name: 'Word', desc: '.docx for review workflows', ok: true, ext: '.docx.txt' },
+    { id: 'pdf', name: 'PDF', desc: 'Print-ready, paginated output', ok: true, ext: '.pdf' },
+    { id: 'word', name: 'Word', desc: '.docx for review workflows', ok: true, ext: '.docx' },
     { id: 'markdown', name: 'Markdown', desc: 'Repo-native docs, static site ready', ok: true, ext: '.md' },
     { id: 'html', name: 'HTML / Web Help', desc: 'Standalone help page, host anywhere', ok: true, ext: '.html' },
     { id: 'docbook', name: 'DocBook XML', desc: 'DocBook 5.0 article for publishing toolchains', ok: true, ext: '.xml' },
     { id: 'epub', name: 'ePub', desc: 'EPUB3 content document (XHTML)', ok: true, ext: '.xhtml' }
   ],
   marketing: [
-    { id: 'pdf', name: 'PDF', desc: 'Shareable one-pagers and briefs', ok: true, ext: '.pdf.txt' },
-    { id: 'word', name: 'Word', desc: '.docx for stakeholder edits', ok: true, ext: '.docx.txt' },
+    { id: 'pdf', name: 'PDF', desc: 'Shareable one-pagers and briefs', ok: true, ext: '.pdf' },
+    { id: 'word', name: 'Word', desc: '.docx for stakeholder edits', ok: true, ext: '.docx' },
     { id: 'markdown', name: 'Markdown', desc: 'CMS-ready copy blocks', ok: true, ext: '.md' },
     { id: 'htmlsnip', name: 'HTML landing snippet', desc: 'Drop-in landing page section', ok: true, ext: '.html' },
     { id: 'socialpack', name: 'Social post pack', desc: 'Sized variants per channel', ok: false, ext: '.zip' },

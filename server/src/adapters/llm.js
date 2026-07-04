@@ -777,14 +777,10 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
       '</body></html>'
     ].join('\n');
   } else if (format === 'pdf' || format === 'word') {
-    const setup = [
-      'Page setup: ' + oc.paperSize,
-      'page numbers ' + (oc.pageNumbers ? 'on' : 'off'),
-      oc.headerText && oc.headerText.trim() ? 'header: "' + oc.headerText.trim() + '"' : '',
-      oc.footerText && oc.footerText.trim() ? 'footer: "' + oc.footerText.trim() + '"' : '',
-      oc.watermark && oc.watermark.trim() ? 'watermark: ' + oc.watermark.trim().toUpperCase() : ''
-    ].filter(Boolean).join(' · ');
-    content = '[' + format.toUpperCase() + ' EXPORT — rendered by the format adapter in production]\n[' + setup + ']\n\n' + md;
+    // The Markdown master is stored; the real binary (.pdf / .docx) is built
+    // from it at download time by server/src/adapters/exporters.js, applying
+    // paper size, header/footer, page numbers, and watermark for real.
+    content = md;
   }
   return { title, content };
 }
@@ -806,13 +802,33 @@ export const QUALITY_CONFIG = {
     { id: 'links', name: 'Link integrity', weight: 0.15, desc: 'Broken links, redirects, and internal references' }
   ],
   // How each assistant weighs the dimensions when retrieving and citing content.
+  // Override at runtime without a code change by setting QUALITY_ASSISTANTS in
+  // server/.env to a JSON array of { id, name, blend } entries (blend weights
+  // should sum to 1; keys are the dimension ids above).
   assistants: [
     { id: 'chatgpt', name: 'ChatGPT', blend: { llm: 0.45, links: 0.15, readability: 0.15, completeness: 0.15, consistency: 0.10 } },
     { id: 'claude', name: 'Claude', blend: { llm: 0.40, readability: 0.25, completeness: 0.20, consistency: 0.15 } },
-    { id: 'perplexity', name: 'Perplexity', blend: { llm: 0.35, links: 0.35, readability: 0.20, style: 0.10 } }
+    { id: 'gemini', name: 'Google Gemini', blend: { llm: 0.38, links: 0.27, readability: 0.15, completeness: 0.10, style: 0.10 } }
   ],
-  penalties: { perOpenIssue: 12, perBrokenLink: 14, perStyleFail: 12, floor: 40 }
+  penalties: { perOpenIssue: 12, perBrokenLink: 14, perStyleFail: 12, floor: 40 },
+  // Maps an assistant readiness score to an estimated retrieval/citation
+  // probability. Capped below 100 on purpose — we never claim certainty.
+  ranking: { minScore: 40, maxScore: 98, minProb: 4, maxProb: 97 }
 };
+
+// Optional runtime override: QUALITY_ASSISTANTS='[{"id":"gemini","name":"Google Gemini","blend":{"llm":0.4,"links":0.3,"readability":0.3}}]'
+if (process.env.QUALITY_ASSISTANTS) {
+  try {
+    const list = JSON.parse(process.env.QUALITY_ASSISTANTS);
+    if (Array.isArray(list) && list.length && list.every((a) => a && a.id && a.name && a.blend)) {
+      QUALITY_CONFIG.assistants = list;
+    } else {
+      console.warn('QUALITY_ASSISTANTS ignored: expected a non-empty array of { id, name, blend }');
+    }
+  } catch (e) {
+    console.warn('QUALITY_ASSISTANTS ignored: invalid JSON —', e.message);
+  }
+}
 
 const LEGACY_DIM = { 'LLM readiness': 'llm', 'Consumability': 'readability' };
 
@@ -853,10 +869,19 @@ export function scoreReport({ issues, fixed, links, style }) {
       const d = byId[dim];
       if (d && (!weakest || d.score * w < weakest.score * a.blend[weakest.id])) weakest = d;
     }
+    const R = QUALITY_CONFIG.ranking;
+    const clamped = Math.max(R.minScore, Math.min(R.maxScore, score));
+    const probability = Math.round(R.minProb + ((clamped - R.minScore) / (R.maxScore - R.minScore)) * (R.maxProb - R.minProb));
     return {
-      id: a.id, name: a.name, score,
+      id: a.id, name: a.name, score, probability,
       ready: score >= QUALITY_CONFIG.assistantGate,
-      heldBackBy: score >= QUALITY_CONFIG.assistantGate ? null : (weakest ? weakest.name : null)
+      heldBackBy: score >= QUALITY_CONFIG.assistantGate ? null : (weakest ? weakest.name : null),
+      // Retrieval profile as percentages, for the expandable breakdown in the UI.
+      blend: entries.map(([dim, w]) => ({
+        dim, name: byId[dim] ? byId[dim].name : dim,
+        pct: Math.round((w / bSum) * 100),
+        score: byId[dim] ? byId[dim].score : overall
+      }))
     };
   });
   return { dimensions, overall, gatePassed, verdict, assistants, gate: QUALITY_CONFIG.gate, assistantGate: QUALITY_CONFIG.assistantGate };
@@ -876,8 +901,8 @@ export function renderQualityReport(ser, meta) {
     '.muted{color:#525252;font-size:13px}';
   const out = [
     '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>',
-    '<title>Quality report — ' + escX(meta.title) + '</title><style>' + css + '</style></head><body>',
-    '<h1>Quality report — ' + escX(meta.title) + '</h1>',
+    '<title>AI consumability report — ' + escX(meta.title) + '</title><style>' + css + '</style></head><body>',
+    '<h1>AI consumability report — ' + escX(meta.title) + '</h1>',
     '<p class="muted">Source: <code>' + escX(meta.repo) + '</code> · format: ' + escX(String(meta.format).toUpperCase()) +
       ' · generated ' + new Date().toISOString().slice(0, 10) + ' · publish gate ≥ ' + ser.gate + '</p>',
     '<div class="band"><span class="big">' + ser.overall + '</span><span><span class="v">' + escX(ser.verdict) + '</span><br/>' +

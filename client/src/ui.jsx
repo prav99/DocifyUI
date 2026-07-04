@@ -15,6 +15,34 @@ export function LogoMark({ size = 24 }) {
   );
 }
 
+/* ---------- Sandboxed document preview ----------
+   Scripts inside the preview stay blocked (no allow-scripts), but srcDoc
+   iframes resolve "#anchor" hrefs against the PARENT page URL, which the
+   sandbox then blocks — so TOC links would be dead. We keep the sandbox and
+   wire navigation ourselves from the parent: in-page anchors smooth-scroll
+   within the frame; external links open in a new tab. */
+export function PreviewFrame({ html, title = 'Document preview' }) {
+  const ref = React.useRef(null);
+  const wire = () => {
+    const frame = ref.current;
+    const doc = frame && frame.contentDocument;
+    if (!doc) return;
+    doc.querySelectorAll('a[href]').forEach((a) => {
+      const href = a.getAttribute('href') || '';
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (href.startsWith('#')) {
+          const el = doc.getElementById(href.slice(1));
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else if (/^https?:/i.test(href)) {
+          window.open(href, '_blank', 'noopener');
+        }
+      });
+    });
+  };
+  return <iframe ref={ref} title={title} sandbox="allow-same-origin" srcDoc={html} onLoad={wire} />;
+}
+
 /* ---------- Icons ---------- */
 export const IcCheck = ({ c = '#24a148' }) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill={c}><path d="M6.5 12.3 2.7 8.5l1.1-1.1 2.7 2.7 5.7-5.7 1.1 1.1z" /></svg>

@@ -599,6 +599,19 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .vid-postertxt{color:#fff;font-size:13px;letter-spacing:.32px}
 .demo-ctl--wide{width:auto;padding:0 10px;font-size:12px;white-space:nowrap}
 
+/* ============ MOAT panel: ranking outlook across AI models ============ */
+.moat{background:#161616;padding:24px;border-left:4px solid var(--button-primary)}
+.moatgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.moatcard{background:#262626;padding:16px 20px}
+.moatpct{font-size:42px;line-height:1.1;color:#ffffff;margin-top:10px}
+.moatpctsign{font-size:20px;color:#8d8d8d;margin-left:2px}
+.moatbar{height:6px;background:#393939;margin:12px 0 8px;position:relative}
+.moatbar>div{height:6px;background:var(--button-primary);transition:width .9s var(--ease);position:relative;z-index:1}
+.moatbar>div.ok{background:var(--support-success)}
+.moatbar>.ghost{position:absolute;inset:0 auto 0 0;background:rgba(120,169,255,.32);z-index:0;transition:width .9s var(--ease)}
+.moatpot{font-size:15px;color:#78a9ff;margin-left:10px;letter-spacing:.3px}
+.moatdelta{animation:popin .4s var(--ease)}
+
 /* ============ Live fix: progress + real diff ============ */
 .fixprog{background:var(--background);border:1px solid var(--border-subtle);padding:8px 16px}
 .fixdiff{background:var(--background);border:1px solid var(--border-subtle);padding:12px 16px;font-size:12.5px;animation:fadeup .4s var(--ease)}
@@ -610,14 +623,31 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 @media(max-width:800px){.qhero{grid-template-columns:1fr}}
 .qgauge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px}
 .dimgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-.dimcard{background:var(--layer-01);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.dimcard{background:var(--layer-01);padding:14px 16px;display:flex;flex-direction:column;gap:8px;border:1px solid transparent}
+.dimcard--click{cursor:pointer;transition:border-color .11s var(--ease),transform .11s var(--ease),box-shadow .11s var(--ease)}
+.dimcard--click:hover,.dimcard--click:focus-visible{border-color:var(--button-primary);transform:translateY(-2px);box-shadow:0 4px 10px rgba(22,22,22,.10);outline:none}
+.dimlink{color:var(--button-primary);font-size:12.5px;font-weight:600}
+.dimcard--click:hover .dimlink{text-decoration:underline}
 .dimbar{height:6px;background:var(--border-subtle);width:100%}
-.dimfill{height:6px;transition:width .5s var(--ease)}
+.dimfill{height:6px;transition:width .9s var(--ease)}
 .dimfill--ok{background:var(--support-success)}
 .dimfill--warn{background:var(--support-warning)}
 .dimfill--bad{background:var(--support-error)}
 .asstgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
 .asstcard{background:var(--layer-01);border-top:3px solid var(--border-subtle);padding:16px 20px}
+.asstcard--click{cursor:pointer;transition:box-shadow .11s var(--ease),transform .11s var(--ease)}
+.asstcard--click:hover,.asstcard--click:focus-visible{box-shadow:0 4px 10px rgba(22,22,22,.10);transform:translateY(-2px);outline:none}
+.asstcard .dimlink{display:inline-block;margin-top:10px}
+.asstblend{margin-top:12px;border-top:1px solid var(--border-subtle);padding-top:10px;cursor:default;animation:fadeup .3s var(--ease)}
+.blendrow{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-secondary);margin-top:7px}
+.blendbar{flex:1;height:4px;background:var(--border-subtle);min-width:40px}
+.blendbar>div{height:4px;background:var(--button-primary);transition:width .6s var(--ease)}
+/* Findings filter chips */
+.qfilter{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.qfiltersep{width:1px;height:20px;background:var(--border-subtle);margin:0 4px}
+.fchip{font-family:inherit;font-size:13px;letter-spacing:.16px;padding:6px 12px;background:var(--layer-01);border:1px solid var(--border-subtle);color:var(--text-secondary);cursor:pointer;transition:border-color .11s var(--ease),background .11s var(--ease),color .11s var(--ease)}
+.fchip:hover{border-color:var(--button-primary);color:var(--text-primary)}
+.fchip.on{background:var(--text-primary);border-color:var(--text-primary);color:#ffffff;font-weight:600}
 .qpipe{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
 .qstage{flex:1 1 190px;background:var(--layer-01);padding:14px 16px;display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--button-primary)}
 .qarrow{align-self:center;color:var(--text-placeholder);font-size:18px}

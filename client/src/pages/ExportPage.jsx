@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, download, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, IcCheck } from '../ui.jsx';
+import { NavBar, IcCheck, PreviewFrame } from '../ui.jsx';
 import { buildChips } from './Generate.jsx';
 
 export default function ExportPage() {
@@ -77,7 +77,7 @@ export default function ExportPage() {
           </div>
           {showPrev && (
             <div className="prevframe mt5">
-              <iframe title="Final document preview" sandbox="" srcDoc={gen.preview || gen.content} />
+              <PreviewFrame title="Final document preview" html={gen.preview || gen.content} />
             </div>
           )}
         </div>
@@ -90,17 +90,14 @@ export default function ExportPage() {
                 Download {fmtDefn ? fmtDefn.name : gen.format.toUpperCase()}<span className="ico">↓</span>
               </button>
               <button className="btn btn--tertiary" style={{ width: '100%' }} onClick={() => dl('report', 'html')}>
-                Quality report — HTML<span className="ico">↓</span>
-              </button>
-              <button className="btn btn--tertiary" style={{ width: '100%' }} onClick={() => dl('report', 'json')}>
-                Quality report — JSON<span className="ico">↓</span>
+                AI consumability report<span className="ico">↓</span>
               </button>
             </div>
             <p className="helper mt5 mono">{fname}</p>
             <p className="helper mt3">
-              The quality report is the full audit record: dimension scores, the AI-assistant readiness
-              estimates, every finding with its status, the exact before/after of each applied fix, link and
-              style checks. HTML for reviewers; JSON for CI gates and tooling.
+              The AI consumability report is the full audit record in plain HTML: dimension scores, the
+              AI-assistant readiness estimates, every finding with its status, and the exact before/after of
+              each applied fix, plus link and style checks — ready to attach to a review.
             </p>
           </div>
           <div className="tile tile--white" style={{ padding: 24 }}>
