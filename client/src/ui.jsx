@@ -173,7 +173,7 @@ export function TopBar() {
           <span className="userchip">{user.email}</span>
         ) : (
           <>
-            {path !== '/login' && <button className="btn btn--ghost btn--sm btn--center" onClick={() => nav('/login')}>Login</button>}
+            {path !== '/signup' && <button className="btn btn--ghost btn--sm btn--center" onClick={() => nav('/signup#login')}>Login</button>}
             {path !== '/signup' && <button className="btn btn--primary btn--sm btn--center" onClick={() => nav('/signup')}>Start free</button>}
           </>
         )}

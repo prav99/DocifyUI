@@ -48,47 +48,105 @@ apiRouter.post('/waitlist', async (req, res) => {
      Bitbucket — append ?token=<secret> to the webhook URL
    Understands GitHub push and merged-PR payloads, GitLab push, Bitbucket
    push, and a generic { repo, branch, commit } body for custom CI. */
-apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
-  const auto = await prisma.automation.findUnique({ where: { id: req.params.hookId } });
-  if (!auto || !auto.secret) return res.status(404).json({ error: 'Unknown webhook' });
+// Normalize a git event across providers, keeping the merge metadata the
+// document-handling engine analyzes: branch, commit, message, changed files.
+function normalizeGitEvent(b = {}) {
+  if (b.ref && String(b.ref).startsWith('refs/heads/')) { // GitHub / GitLab push
+    const commits = Array.isArray(b.commits) ? b.commits : [];
+    const files = [...new Set(commits.flatMap((c) => [...(c.added || []), ...(c.modified || []), ...(c.removed || [])]))];
+    return {
+      kind: 'push',
+      branch: String(b.ref).slice('refs/heads/'.length),
+      commit: (b.head_commit && b.head_commit.id) || b.checkout_sha || b.after || '',
+      message: (b.head_commit && b.head_commit.message) || (commits[0] && commits[0].message) || '',
+      repo: (b.repository && b.repository.full_name) || (b.project && b.project.path_with_namespace) || '',
+      files
+    };
+  }
+  if (b.pull_request && b.action === 'closed' && b.pull_request.merged) { // GitHub merged PR
+    return {
+      kind: 'mergedPr',
+      branch: b.pull_request.base && b.pull_request.base.ref,
+      commit: b.pull_request.merge_commit_sha || '',
+      message: b.pull_request.title || '',
+      repo: (b.repository && b.repository.full_name) || '',
+      files: []
+    };
+  }
+  if (b.push && Array.isArray(b.push.changes)) { // Bitbucket push
+    const ch = b.push.changes[0];
+    return {
+      kind: 'push',
+      branch: ch && ch.new && ch.new.name,
+      commit: (ch && ch.new && ch.new.target && ch.new.target.hash) || '',
+      message: (ch && ch.new && ch.new.target && ch.new.target.message) || '',
+      repo: (b.repository && b.repository.full_name) || '',
+      files: []
+    };
+  }
+  if (b.branch) { // generic (custom CI)
+    return {
+      kind: b.kind === 'mergedPr' ? 'mergedPr' : 'push',
+      branch: String(b.branch), commit: String(b.commit || ''),
+      message: String(b.message || ''), repo: String(b.repo || ''),
+      files: Array.isArray(b.files) ? b.files.map(String) : []
+    };
+  }
+  return null;
+}
 
+async function verifyHookSecret(req, secret) {
   const crypto = await import('node:crypto');
-  let authed = false;
   const sig = req.get('X-Hub-Signature-256');
   if (sig && req.rawBody) {
-    const want = 'sha256=' + crypto.createHmac('sha256', auto.secret).update(req.rawBody).digest('hex');
-    try { authed = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want)); } catch { authed = false; }
+    const want = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+    try { if (crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return true; } catch { /* length mismatch */ }
   }
-  if (!authed && req.get('X-Gitlab-Token') === auto.secret) authed = true;
-  if (!authed && req.query.token === auto.secret) authed = true;
-  if (!authed) return res.status(401).json({ error: 'Signature verification failed' });
+  if (req.get('X-Gitlab-Token') === secret) return true;
+  if (req.query.token === secret) return true;
+  return false;
+}
 
+apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
+  // Automation profiles first (the orchestration module); legacy single
+  // automation second, so existing webhooks keep working.
+  const profile = await prisma.automationProfile.findUnique({ where: { id: req.params.hookId } });
+  if (profile) {
+    if (!profile.secret || !(await verifyHookSecret(req, profile.secret))) {
+      return res.status(401).json({ error: 'Signature verification failed' });
+    }
+    if (profile.status !== 'active') return res.json({ ok: true, action: 'ignored', reason: 'Profile is paused' });
+    const ev = normalizeGitEvent(req.body);
+    if (!ev || !ev.branch) return res.json({ ok: true, action: 'ignored', reason: 'No branch in payload (event type not handled)' });
+    const cfg = profCfg(profile);
+    if (!branchMatches(cfg.branch, ev.branch)) {
+      return res.json({ ok: true, action: 'ignored', reason: 'Branch ' + ev.branch + ' does not match watched ' + cfg.branch });
+    }
+    if ((ev.kind === 'push' && !cfg.events.push) || (ev.kind === 'mergedPr' && !cfg.events.mergedPr)) {
+      return res.json({ ok: true, action: 'ignored', reason: 'Event type ' + ev.kind + ' is not enabled for this profile' });
+    }
+    if (cfg.pathFilter && ev.files.length) {
+      const pats = cfg.pathFilter.split(',').map((s) => s.trim()).filter(Boolean);
+      if (pats.length && !ev.files.some((f) => pats.some((p) => f.includes(p)))) {
+        return res.json({ ok: true, action: 'ignored', reason: 'No changed file matches the path filter (' + cfg.pathFilter + ')' });
+      }
+    }
+    // Respond immediately; the pipeline runs in the background (webhook
+    // senders time out fast). Progress is visible in the run history.
+    profileRun(profile, { ...ev, trigger: 'webhook' }).catch((e) => console.error('profile run', e));
+    return res.json({ ok: true, action: 'regenerating', profile: profile.name });
+  }
+
+  const auto = await prisma.automation.findUnique({ where: { id: req.params.hookId } });
+  if (!auto || !auto.secret) return res.status(404).json({ error: 'Unknown webhook' });
+  if (!(await verifyHookSecret(req, auto.secret))) return res.status(401).json({ error: 'Signature verification failed' });
   if (!auto.enabled) return res.json({ ok: true, action: 'ignored', reason: 'Automation is disabled' });
-
-  // Normalize the event across providers.
-  const b = req.body || {};
-  let branch = null; let commit = ''; let repo = '';
-  if (b.ref && String(b.ref).startsWith('refs/heads/')) { // GitHub / GitLab push
-    branch = String(b.ref).slice('refs/heads/'.length);
-    commit = (b.head_commit && b.head_commit.id) || b.checkout_sha || b.after || '';
-    repo = (b.repository && b.repository.full_name) || (b.project && b.project.path_with_namespace) || '';
-  } else if (b.pull_request && b.action === 'closed' && b.pull_request.merged) { // GitHub merged PR
-    branch = b.pull_request.base && b.pull_request.base.ref;
-    commit = b.pull_request.merge_commit_sha || '';
-    repo = (b.repository && b.repository.full_name) || '';
-  } else if (b.push && Array.isArray(b.push.changes)) { // Bitbucket push
-    const ch = b.push.changes[0];
-    branch = ch && ch.new && ch.new.name;
-    commit = (ch && ch.new && ch.new.target && ch.new.target.hash) || '';
-    repo = (b.repository && b.repository.full_name) || '';
-  } else if (b.branch) { // generic
-    branch = String(b.branch); commit = String(b.commit || ''); repo = String(b.repo || '');
+  const ev = normalizeGitEvent(req.body);
+  if (!ev || !ev.branch) return res.json({ ok: true, action: 'ignored', reason: 'No branch in payload (event type not handled)' });
+  if (!branchMatches(auto.branch, ev.branch)) {
+    return res.json({ ok: true, action: 'ignored', reason: 'Branch ' + ev.branch + ' does not match watched ' + auto.branch });
   }
-  if (!branch) return res.json({ ok: true, action: 'ignored', reason: 'No branch in payload (event type not handled)' });
-  if (!branchMatches(auto.branch, branch)) {
-    return res.json({ ok: true, action: 'ignored', reason: 'Branch ' + branch + ' does not match watched ' + auto.branch });
-  }
-  const { run } = await triggerRegeneration(auto.userId, auto, { trigger: 'webhook', commit, branch, repo });
+  const { run } = await triggerRegeneration(auto.userId, auto, { trigger: 'webhook', commit: ev.commit, branch: ev.branch, repo: ev.repo });
   res.json({ ok: true, action: run.status === 'skipped' ? 'skipped' : 'regenerating', run });
 });
 
@@ -572,6 +630,342 @@ async function triggerRegeneration(uid, auto, { trigger, commit, branch, repo })
   });
   return { run: { ...base, status: 'running', genId: gen.id } };
 }
+
+/* ================= Automation profiles: the orchestration module =================
+   A profile is the persisted result of the 6-step wizard:
+     1 repository · 2 branch · 3 merge triggers · 4 documents & update policy
+     5 AI quality & ranking thresholds · 6 publishing & notifications
+   Each profile has its own webhook secret and execution history, and the
+   engine decides per merge whether to CREATE, UPDATE, VERSION, or refresh
+   impacted SECTIONS of the mapped document — never duplicating docs. */
+
+const PROFILE_DEFAULTS = {
+  provider: 'github', repo: '',                                   // step 1
+  branch: 'main',                                                 // step 2
+  events: { push: true, mergedPr: true }, pathFilter: '',         // step 3
+  track: 'technical', docTypes: ['api'], format: 'markdown',      // step 4
+  templateFrom: 'latest', updatePolicy: 'auto', versioning: 'semver-patch',
+  gate: 85, minAssistant: 0, autoFix: true, requireApproval: false, // step 5
+  publishTo: 'workspace', notifyEmail: '',                          // step 6
+  notifyOn: { success: true, blocked: true, failure: true }
+};
+
+function profCfg(p) {
+  const c = j(p.config, {});
+  return {
+    ...PROFILE_DEFAULTS, ...c,
+    events: { ...PROFILE_DEFAULTS.events, ...(c.events || {}) },
+    notifyOn: { ...PROFILE_DEFAULTS.notifyOn, ...(c.notifyOn || {}) },
+    docTypes: Array.isArray(c.docTypes) && c.docTypes.length ? c.docTypes : PROFILE_DEFAULTS.docTypes
+  };
+}
+
+function serializeProfile(p) {
+  const runs = j(p.runs, []);
+  const done = runs.filter((r) => r.status === 'complete');
+  return {
+    id: p.id, name: p.name, status: p.status, secret: p.secret,
+    config: profCfg(p), runs, createdAt: p.createdAt, updatedAt: p.updatedAt,
+    stats: {
+      total: runs.length,
+      published: runs.filter((r) => r.outcome === 'published').length,
+      held: runs.filter((r) => r.outcome === 'held' || r.outcome === 'awaiting-approval').length,
+      failed: runs.filter((r) => r.status === 'failed').length,
+      lastRun: runs[0] || null,
+      avgOverall: done.length ? Math.round(done.reduce((a, r) => a + (r.overall || 0), 0) / done.length) : null
+    }
+  };
+}
+
+async function newSecret() {
+  const crypto = await import('node:crypto');
+  return crypto.randomBytes(24).toString('hex');
+}
+
+/* ---- Intelligent document handling ----
+   The mapping key is (repository, primary doc type, format): that triple
+   identifies "the" document a profile maintains. The decision analyzes the
+   mapping, the merge metadata, the changed-file impact, and the configured
+   policy — and always says WHY. */
+const SECTION_MAP = [
+  [/auth|token|oauth|credential|secret|key/i, 'Authentication'],
+  [/error|exception|status/i, 'Errors'],
+  [/charge|payment|refund|endpoint|route|controller|handler/i, 'Endpoint reference'],
+  [/rate|limit|throttle/i, 'Rate limits'],
+  [/readme|overview|docs?\//i, 'Overview'],
+  [/config|env|setting|deploy/i, 'Configuration']
+];
+function sectionImpact(files) {
+  const hits = new Set();
+  for (const f of files || []) for (const [re, sec] of SECTION_MAP) if (re.test(f)) hits.add(sec);
+  return [...hits];
+}
+
+function bumpVersion(v, strategy) {
+  if (strategy === 'date') return new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+  const m = String(v || '2.4.0').match(/(\d+)\.(\d+)\.(\d+)/) || [null, '2', '4', '0'];
+  const [maj, min, pat] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  return strategy === 'semver-minor' ? maj + '.' + (min + 1) + '.0' : maj + '.' + min + '.' + (pat + 1);
+}
+
+async function decideDocAction(uid, cfg, event) {
+  const rows = await prisma.generation.findMany({ where: { userId: uid }, orderBy: { createdAt: 'desc' }, take: 100 });
+  const existing = rows.find((g) => g.status === 'complete'
+    && g.format === cfg.format
+    && j(g.docTypes, [])[0] === cfg.docTypes[0]
+    && (!cfg.repo || g.repo === cfg.repo));
+  if (!existing) {
+    return { action: 'create', existing: null, reason: 'No document is mapped to ' + (cfg.repo || 'this repository') + ' · ' + cfg.docTypes[0] + ' · ' + cfg.format + ' yet — creating it establishes the mapping.' };
+  }
+  if (cfg.updatePolicy === 'create') return { action: 'create', existing, reason: 'Policy: always create a new document.' };
+  if (cfg.updatePolicy === 'update') return { action: 'update', existing, reason: 'Policy: always update the mapped document in place.' };
+  if (cfg.updatePolicy === 'version') return { action: 'version', existing, reason: 'Policy: every merge produces a new version (' + cfg.versioning + ').' };
+  // 'auto' — analyze the merge.
+  const msg = String(event.message || '');
+  if (/(^|\s)(release|v?\d+\.\d+\.\d+)(\s|$|:)/i.test(msg) || /^release\//.test(String(event.branch || ''))) {
+    return { action: 'version', existing, reason: 'Merge metadata indicates a release (' + (msg ? '“' + msg.slice(0, 60) + '”' : event.branch) + ') — a new version preserves the published history.' };
+  }
+  const impacted = sectionImpact(event.files);
+  if ((event.files || []).length && impacted.length) {
+    return { action: 'sections', existing, impacted, reason: event.files.length + ' changed file(s) map to: ' + impacted.join(', ') + ' — regenerating the mapped document with those sections refreshed.' };
+  }
+  return { action: 'update', existing, reason: 'Routine merge on the watched branch — updating the mapped document in place avoids duplicate documentation.' };
+}
+
+async function patchProfileRun(profileId, patch) {
+  const row = await prisma.automationProfile.findUnique({ where: { id: profileId } });
+  if (!row) return;
+  const runs = j(row.runs, []);
+  const i = runs.findIndex((r) => r.id === patch.id);
+  if (i >= 0) runs[i] = { ...runs[i], ...patch };
+  else runs.unshift(patch);
+  await prisma.automationProfile.update({ where: { id: profileId }, data: { runs: JSON.stringify(runs.slice(0, 30)) } });
+}
+
+/* ---- The execution engine: steps 1–6, exactly as configured ---- */
+async function profileRun(profile, event) {
+  const cfg = profCfg(profile);
+  const uid = profile.userId;
+  const runId = 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const save = (patch) => patchProfileRun(profile.id, { id: runId, ...patch });
+  const decision = await decideDocAction(uid, cfg, event);
+  await save({
+    at: new Date().toISOString(), trigger: event.trigger, commit: event.commit || '',
+    branch: event.branch || cfg.branch, files: (event.files || []).length,
+    action: decision.action, reason: decision.reason, impacted: decision.impacted || [],
+    status: 'running'
+  });
+  try {
+    const tplRow = decision.existing || (cfg.templateFrom === 'latest' ? await latestTemplate(uid) : null);
+    const out = tplRow ? j(tplRow.output, {}) : {};
+    let version = null;
+    if (decision.action === 'version') {
+      version = bumpVersion(out.version, cfg.versioning);
+      out.version = version;
+    }
+    const steps = [
+      'Merge ' + (event.commit ? String(event.commit).slice(0, 7) + ' ' : '') + 'on ' + (event.branch || cfg.branch) + ' → ' + decision.action,
+      ...buildSteps({ provider: cfg.provider, instructions: tplRow ? tplRow.instructions : '', files: [], skillName: tplRow ? tplRow.skillName || '' : '' })
+    ];
+    const data = {
+      repo: cfg.repo || (tplRow ? tplRow.repo : 'unmapped'), branch: event.branch || cfg.branch,
+      track: cfg.track, docTypes: JSON.stringify(cfg.docTypes), format: cfg.format,
+      instructions: tplRow ? tplRow.instructions : '', files: '[]',
+      skillName: tplRow ? tplRow.skillName || '' : '', skill: tplRow ? tplRow.skill || '' : '',
+      brief: tplRow ? tplRow.brief || '{}' : '{}', output: JSON.stringify(out),
+      status: 'queued', step: 0, steps: JSON.stringify(steps), score: 0
+    };
+    let gen;
+    if ((decision.action === 'update' || decision.action === 'sections') && decision.existing) {
+      gen = await prisma.generation.update({ where: { id: decision.existing.id }, data });
+    } else {
+      gen = await prisma.generation.create({ data: { userId: uid, ...data } });
+    }
+    await save({ genId: gen.id, version });
+    await runPipeline(gen.id);
+
+    // Step 5a — auto-apply every suggested fix, then re-render and re-score.
+    let rep = await prisma.qualityReport.findUnique({ where: { generationId: gen.id } });
+    if (!rep) throw new Error('Pipeline produced no quality report');
+    if (cfg.autoFix) {
+      const allIds = j(rep.issues, []).map((i) => i.id);
+      rep = await prisma.qualityReport.update({ where: { id: rep.id }, data: { fixedIds: JSON.stringify(allIds) } });
+      const genArgs = {
+        track: cfg.track, docTypes: cfg.docTypes, format: cfg.format, repo: data.repo,
+        instructions: data.instructions, skill: data.skill, skillName: data.skillName,
+        brief: j(data.brief, {}), output: j(data.output, {}), fixes: allIds
+      };
+      const fixed = generateDocument(genArgs);
+      const previewHtml = cfg.format === 'html' ? fixed.content : generateDocument({ ...genArgs, format: 'html' }).content;
+      const q0 = scoreReport({ issues: j(rep.issues, []), fixed: allIds, links: j(rep.links, []), style: j(rep.style, []) });
+      await prisma.generation.update({
+        where: { id: gen.id },
+        data: { title: fixed.title, content: fixed.content, preview: previewHtml, score: q0.overall }
+      });
+    }
+
+    // Step 5b — thresholds: quality gate and per-model ranking floor.
+    const q = scoreReport({ issues: j(rep.issues, []), fixed: j(rep.fixedIds, []), links: j(rep.links, []), style: j(rep.style, []) });
+    const probs = Object.fromEntries(q.assistants.map((a) => [a.id, a.probability]));
+    const minProb = q.assistants.length ? Math.min(...q.assistants.map((a) => a.probability)) : 0;
+    const gateOk = q.overall >= cfg.gate;
+    const rankOk = !cfg.minAssistant || minProb >= cfg.minAssistant;
+
+    // Step 6 — publish or hold, then notify.
+    const outcome = !gateOk || !rankOk ? 'held' : cfg.requireApproval ? 'awaiting-approval' : 'published';
+    const holdWhy = !gateOk ? 'overall ' + q.overall + ' is below the gate (' + cfg.gate + ')'
+      : !rankOk ? 'lowest AI ranking estimate ' + minProb + '% is below the threshold (' + cfg.minAssistant + '%)' : '';
+    await save({ status: 'complete', overall: q.overall, assistants: probs, gatePassed: gateOk, outcome, holdWhy });
+
+    const user = await prisma.user.findUnique({ where: { id: uid } });
+    const to = cfg.notifyEmail || (user ? user.email : '');
+    const wants = (outcome === 'published' && cfg.notifyOn.success)
+      || ((outcome === 'held' || outcome === 'awaiting-approval') && cfg.notifyOn.blocked);
+    if (to && wants) {
+      sendMail(to, 'DocGen · ' + profile.name + ' — ' + outcome + ' at ' + q.overall + '/100',
+        '<p><b>' + decision.action.toUpperCase() + '</b> — ' + decision.reason + '</p>' +
+        '<p>Overall ' + q.overall + ' · ChatGPT ' + (probs.chatgpt ?? '—') + '% · Claude ' + (probs.claude ?? '—') + '% · Gemini ' + (probs.gemini ?? '—') + '%</p>' +
+        (holdWhy ? '<p>Held: ' + holdWhy + '</p>' : '<p>Published to ' + cfg.publishTo + '.</p>')
+      ).catch(() => {});
+    }
+    return { runId, outcome, overall: q.overall };
+  } catch (e) {
+    console.error('profile run failed', e);
+    await save({ status: 'failed', error: String(e.message || e).slice(0, 200) });
+    const user = await prisma.user.findUnique({ where: { id: uid } });
+    const to = cfg.notifyEmail || (user ? user.email : '');
+    if (to && cfg.notifyOn.failure) {
+      sendMail(to, 'DocGen · ' + profile.name + ' — run failed', '<p>' + String(e.message || e) + '</p>').catch(() => {});
+    }
+    return { runId, outcome: 'failed' };
+  }
+}
+
+/* ---- Profile CRUD + operations ---- */
+async function ownProfile(req, res) {
+  const row = await prisma.automationProfile.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  if (!row) res.status(404).json({ error: 'Profile not found' });
+  return row;
+}
+
+apiRouter.get('/profiles', async (req, res) => {
+  const rows = await prisma.automationProfile.findMany({ where: { userId: req.uid }, orderBy: { createdAt: 'asc' } });
+  res.json({ profiles: rows.map(serializeProfile) });
+});
+
+apiRouter.post('/profiles', async (req, res) => {
+  const { name, config } = req.body || {};
+  const row = await prisma.automationProfile.create({
+    data: {
+      userId: req.uid,
+      name: String(name || 'Documentation pipeline').slice(0, 80),
+      config: JSON.stringify(config || {}),
+      secret: await newSecret()
+    }
+  });
+  res.status(201).json({ profile: serializeProfile(row) });
+});
+
+apiRouter.get('/profiles/:id', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (row) res.json({ profile: serializeProfile(row) });
+});
+
+apiRouter.put('/profiles/:id', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const { name, config, status } = req.body || {};
+  const data = {};
+  if (typeof name === 'string' && name.trim()) data.name = name.trim().slice(0, 80);
+  if (config && typeof config === 'object') data.config = JSON.stringify(config);
+  if (status === 'active' || status === 'paused') data.status = status;
+  const updated = await prisma.automationProfile.update({ where: { id: row.id }, data });
+  res.json({ profile: serializeProfile(updated) });
+});
+
+apiRouter.post('/profiles/:id/clone', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const copy = await prisma.automationProfile.create({
+    data: {
+      userId: req.uid, name: (row.name + ' (copy)').slice(0, 80),
+      config: row.config, status: 'paused', secret: await newSecret()
+    }
+  });
+  res.status(201).json({ profile: serializeProfile(copy) });
+});
+
+apiRouter.delete('/profiles/:id', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  await prisma.automationProfile.delete({ where: { id: row.id } });
+  res.json({ ok: true });
+});
+
+apiRouter.post('/profiles/:id/rotate-secret', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const updated = await prisma.automationProfile.update({ where: { id: row.id }, data: { secret: await newSecret() } });
+  res.json({ profile: serializeProfile(updated) });
+});
+
+// Manual / simulated run. The body may carry synthetic merge metadata so the
+// decision engine can be exercised: { files: [...], message, branch }.
+apiRouter.post('/profiles/:id/run', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const cfg = profCfg(row);
+  const b = req.body || {};
+  const event = {
+    trigger: b.simulate ? 'simulate' : 'manual',
+    kind: 'push',
+    branch: String(b.branch || cfg.branch).replace('/*', '/next'),
+    commit: 'sim' + Date.now().toString(36).slice(-5),
+    message: String(b.message || ''),
+    files: Array.isArray(b.files) ? b.files.map(String) : [],
+    repo: cfg.repo
+  };
+  profileRun(row, event).catch((e) => console.error('manual profile run', e));
+  res.json({ ok: true, started: true });
+});
+
+apiRouter.post('/profiles/:id/runs/:runId/approve', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const runs = j(row.runs, []);
+  const run = runs.find((r) => r.id === req.params.runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  if (run.outcome !== 'awaiting-approval') return res.status(400).json({ error: 'Run is not awaiting approval' });
+  run.outcome = 'published';
+  run.approvedAt = new Date().toISOString();
+  await prisma.automationProfile.update({ where: { id: row.id }, data: { runs: JSON.stringify(runs) } });
+  res.json({ ok: true, run });
+});
+
+// Effectiveness insights: score and per-model ranking trends over the run
+// history — the executive view of whether automation is working.
+apiRouter.get('/profiles/:id/insights', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const runs = j(row.runs, []).filter((r) => r.status === 'complete').slice(0, 20).reverse();
+  const series = runs.map((r) => ({
+    at: r.at, overall: r.overall || 0,
+    chatgpt: (r.assistants || {}).chatgpt ?? null,
+    claude: (r.assistants || {}).claude ?? null,
+    gemini: (r.assistants || {}).gemini ?? null,
+    action: r.action, outcome: r.outcome
+  }));
+  const first = series[0]; const last = series[series.length - 1];
+  res.json({
+    series,
+    summary: {
+      runs: series.length,
+      publishRate: series.length ? Math.round(100 * series.filter((s) => s.outcome === 'published').length / series.length) : 0,
+      overallTrend: first && last ? last.overall - first.overall : 0,
+      latest: last || null
+    }
+  });
+});
 
 apiRouter.get('/automation', async (req, res) => {
   const row = await getAutomation(req.uid);

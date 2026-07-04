@@ -29,12 +29,27 @@ export function Signup() {
   const nav = useNavigate();
   const { login } = useAuth();
   const { setFlow } = useFlow();
+  const [authMode, setAuthMode] = useState('signup'); // signup | login — one page, both doors
   const [mode, setMode] = useState('oauth');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [sentTo, setSentTo] = useState(''); // verification code sent to this address
   const [otp, setOtp] = useState('');
+  const [needOtp, setNeedOtp] = useState(false); // login path: account exists but is unverified
+
+  // Entry points: TopBar "Login" arrives as /signup#login; the email
+  // verification link arrives as #verified=1|0 (redirected from /login).
+  useEffect(() => {
+    const raw = window.location.hash.slice(1);
+    if (!raw) return;
+    const h = new URLSearchParams(raw);
+    if (raw === 'login' || h.get('verified') !== null) setAuthMode('login');
+    const v = h.get('verified');
+    if (v === '1') toast('success', 'Email verified', 'Your account is active — log in below');
+    if (v === '0') toast('error', 'Verification link invalid', 'It may have expired — sign up again or resend');
+    window.history.replaceState(null, '', '/signup');
+  }, []);
 
   const validEmail = /.+@.+\..+/.test(email);
   const strength =
@@ -104,6 +119,38 @@ export function Signup() {
     finally { setBusy(false); }
   }
 
+  /* ---- Log-in mode ---- */
+  async function loginSubmit() {
+    setBusy(true);
+    try {
+      const d = await api('/auth/login', { method: 'POST', body: { email, password } });
+      login(d.token, d.user);
+      toast('success', 'Logged in', 'Welcome back');
+      nav('/dashboard');
+    } catch (e) {
+      if (e.message.indexOf('Verify your email') === 0) {
+        setNeedOtp(true);
+        try { await api('/auth/resend', { method: 'POST', body: { email } }); } catch { /* ignore */ }
+        toast('info', 'Verification needed', 'We sent a fresh 6-digit code to ' + email);
+      } else {
+        toast('error', 'Login failed', e.message);
+      }
+    }
+    finally { setBusy(false); }
+  }
+
+  async function loginVerifyOtp() {
+    if (!/^\d{6}$/.test(otp.trim())) return toast('error', 'Enter the 6-digit code', 'Exactly six digits, from the email we sent');
+    setBusy(true);
+    try {
+      const d = await api('/auth/verify-otp', { method: 'POST', body: { email, code: otp.trim() } });
+      login(d.token, d.user);
+      toast('success', 'Verified and logged in', 'Welcome to DocGen');
+      nav('/dashboard');
+    } catch (e) { toast('error', 'Verification failed', e.message); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className="authsplit">
       <aside className="authleft">
@@ -132,6 +179,65 @@ export function Signup() {
       </aside>
 
       <section className="authright">
+        {authMode === 'login' ? (
+          <>
+            <h2 className="h04">Welcome back</h2>
+            <p className="body01 t2 mt3">Log in to reach your dashboard, documents, and pipelines.</p>
+            <div className="mt6">
+              <div className="field">
+                <label htmlFor="liEmail">Email</label>
+                <input id="liEmail" className="input" type="email" placeholder="you@company.com"
+                  value={email} onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loginSubmit()} />
+              </div>
+              <div className="field">
+                <label htmlFor="liPass">Password</label>
+                <input id="liPass" className="input" type="password" placeholder="••••••••"
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loginSubmit()} />
+              </div>
+              <button className="btn btn--primary" style={{ width: '100%' }} disabled={busy} onClick={loginSubmit}>
+                Log in<span className="ico">→</span>
+              </button>
+              {needOtp && (
+                <div className="tile mt5" style={{ padding: 16 }}>
+                  <p className="h01">Enter the verification code</p>
+                  <p className="helper mt2">Sent to {email} · expires in 10 minutes</p>
+                  <div className="row mt3" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+                    <input className="input mono" inputMode="numeric" maxLength={6} placeholder="000000"
+                      style={{ letterSpacing: 6, fontSize: 18, width: 170 }}
+                      value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                      onKeyDown={(e) => e.key === 'Enter' && loginVerifyOtp()} aria-label="Verification code" />
+                    <button className="btn btn--primary btn--field" disabled={busy} onClick={loginVerifyOtp}>Verify &amp; log in</button>
+                  </div>
+                  <p className="helper mt3"><button className="linkbtn" onClick={loginSubmit}>Resend code</button></p>
+                </div>
+              )}
+              <div className="divider" style={{ margin: '24px 0' }} />
+              <p className="label01 t2 mb3">OR CONTINUE WITH A CODE HOST</p>
+              <div className="stack">
+                {PROVIDERS.map((p) => (
+                  <button key={p.id} className="provbtn" disabled={busy} onClick={() => oauth(p.id)}>
+                    <SrcMark id={p.id} />
+                    <span>
+                      <span className="h01" style={{ display: 'block' }}>{p.name}</span>
+                      <span className="helper">{p.sub}</span>
+                    </span>
+                    <span className="parrow">→</span>
+                  </button>
+                ))}
+              </div>
+              <p className="helper mt5">Demo account: demo@acme.dev / demo1234 (seeded with history)</p>
+            </div>
+            <div className="divider" style={{ margin: '32px 0 16px' }} />
+            <p className="body01">
+              New here? <a onClick={() => { setAuthMode('signup'); setNeedOtp(false); }}>Start free instead</a>
+              {' · '}
+              <a onClick={() => nav('/')}>Back to home</a>
+            </p>
+          </>
+        ) : (
+          <>
         <h2 className="h04">Create your account</h2>
         <p className="body01 t2 mt3">
           Signing in with a code host also authorizes that source — one step instead of two.
@@ -223,11 +329,13 @@ export function Signup() {
 
         <div className="divider" style={{ margin: '32px 0 16px' }} />
         <p className="body01">
-          Already have an account? <a onClick={() => nav('/login')}>Log in</a>
+          Already have an account? <a onClick={() => setAuthMode('login')}>Log in</a>
           {' · '}
           <a onClick={() => nav('/')}>Back to home</a>
         </p>
         <p className="helper mt3">Free plan, no credit card required.</p>
+          </>
+        )}
       </section>
     </div>
   );
@@ -276,102 +384,14 @@ export function OAuthComplete() {
   );
 }
 
-export function Login() {
+// The standalone /login page is gone — the signup page hosts both modes.
+// This redirect keeps old links working, including the email-verification
+// links the server sends (/login#verified=1).
+export function LoginRedirect() {
   const nav = useNavigate();
-  const { login } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [needOtp, setNeedOtp] = useState(false);
-  const [otp, setOtp] = useState('');
-  const providers = useProviders();
-
   useEffect(() => {
-    const h = new URLSearchParams(window.location.hash.slice(1));
-    const v = h.get('verified');
-    if (v === '1') toast('success', 'Email verified', 'Your account is active — log in below');
-    if (v === '0') toast('error', 'Verification link invalid', 'It may have expired — sign up again or resend');
-    if (v !== null) window.history.replaceState(null, '', '/login');
-  }, []);
-
-  async function submit(provider) {
-    if (provider === 'github' && providers.github) {
-      window.location.href = '/api/auth/oauth/github';
-      return;
-    }
-    setBusy(true);
-    try {
-      const body = provider ? { provider } : { email, password };
-      const d = await api('/auth/login', { method: 'POST', body });
-      login(d.token, d.user);
-      toast('success', 'Logged in', 'Welcome back');
-      nav('/dashboard');
-    } catch (e) {
-      if (e.message.indexOf('Verify your email') === 0) {
-        setNeedOtp(true);
-        try { await api('/auth/resend', { method: 'POST', body: { email } }); } catch { /* ignore */ }
-        toast('info', 'Verification needed', 'We sent a fresh 6-digit code to ' + email);
-      } else {
-        toast('error', 'Login failed', e.message);
-      }
-    }
-    finally { setBusy(false); }
-  }
-
-  async function verifyOtp() {
-    if (!/^\d{6}$/.test(otp.trim())) return toast('error', 'Enter the 6-digit code', 'Exactly six digits, from the email we sent');
-    setBusy(true);
-    try {
-      const d = await api('/auth/verify-otp', { method: 'POST', body: { email, code: otp.trim() } });
-      login(d.token, d.user);
-      toast('success', 'Verified and logged in', 'Welcome to DocGen');
-      nav('/dashboard');
-    } catch (e) { toast('error', 'Verification failed', e.message); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <div className="page page--narrow">
-      <h1 className="h04">Log in</h1>
-      <p className="body01 t2 mt3">Welcome back. Log in to reach your dashboard.</p>
-      <div className="tile tile--white mt7" style={{ padding: 24 }}>
-        <div className="field">
-          <label htmlFor="liEmail">Email</label>
-          <input id="liEmail" className="input" type="email" placeholder="demo@acme.dev"
-            value={email} onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()} />
-        </div>
-        <div className="field">
-          <label htmlFor="liPass">Password</label>
-          <input id="liPass" className="input" type="password" placeholder="demo1234"
-            value={password} onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()} />
-        </div>
-        <button className="btn btn--primary" style={{ width: '100%' }} disabled={busy} onClick={() => submit()}>
-          Log in<span className="ico">→</span>
-        </button>
-        {needOtp && (
-          <div className="tile mt5" style={{ padding: 16 }}>
-            <p className="h01">Enter the verification code</p>
-            <p className="helper mt2">Sent to {email} · expires in 10 minutes</p>
-            <div className="row mt3" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
-              <input className="input mono" inputMode="numeric" maxLength={6} placeholder="000000"
-                style={{ letterSpacing: 6, fontSize: 18, width: 170 }}
-                value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                onKeyDown={(e) => e.key === 'Enter' && verifyOtp()} aria-label="Verification code" />
-              <button className="btn btn--primary btn--field" disabled={busy} onClick={verifyOtp}>Verify &amp; log in</button>
-            </div>
-            <p className="helper mt3"><button className="linkbtn" onClick={() => submit()}>Resend code</button></p>
-          </div>
-        )}
-        <div className="divider" style={{ margin: '24px 0' }} />
-        <button className="btn btn--secondary btn--center" style={{ width: '100%' }} disabled={busy} onClick={() => submit('github')}>
-          Continue with GitHub
-        </button>
-      </div>
-      <p className="helper mt5">Demo account: demo@acme.dev / demo1234 (seeded with history)</p>
-      <p className="body01 mt6">New here? <a onClick={() => nav('/signup')}>Start free instead</a></p>
-      <p className="body01 mt3"><a onClick={() => nav('/')}>← Back to home</a></p>
-    </div>
-  );
+    const hash = window.location.hash && window.location.hash !== '#' ? window.location.hash : '#login';
+    nav('/signup' + hash, { replace: true });
+  }, [nav]);
+  return null;
 }
