@@ -3,54 +3,84 @@
 
 import { docTypeName } from '../catalog.js';
 
-export function generateDocument({ track, docTypes, format, repo, instructions }) {
-  const title = docTypeName(track, docTypes[0]);
-  const custom = instructions && instructions.trim()
-    ? '\n> Customization applied: ' + instructions.trim().slice(0, 140) + '\n'
-    : '';
+// ---- Skill engine: parse a SKILL.md into applied directives ----
+// Recognized: `tone: ...`, `audience: ...`, bullet lists under a "## Sections"
+// heading (become the document outline), and all other bullets (become rules).
+export function parseSkill(md) {
+  const out = { tone: null, audience: null, sections: [], rules: [] };
+  if (!md) return out;
+  let inSections = false;
+  for (const raw of String(md).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (/^#{1,6}\s*sections\b/i.test(line)) { inSections = true; continue; }
+    if (/^#{1,6}\s/.test(line)) { inSections = false; continue; }
+    const b = line.match(/^[-*]\s+(.+)$/);
+    if (b) { (inSections ? out.sections : out.rules).push(b[1].trim()); continue; }
+    const t = line.match(/^tone\s*[:=]\s*(.+)$/i);
+    if (t) { out.tone = t[1].trim(); continue; }
+    const a = line.match(/^audience\s*[:=]\s*(.+)$/i);
+    if (a) out.audience = a[1].trim();
+  }
+  return out;
+}
 
-  const md = [
-    '# ' + title,
-    '',
-    'The Payments API lets you create, capture, and refund charges programmatically.',
-    'Generated from ' + repo + ' by DocGen.',
-    custom,
-    '## Authentication',
-    '',
-    'All requests require a bearer token issued from the developer console.',
-    'Tokens scope to a single project and expire after 12 hours.',
-    'See the token rotation guide for rotation policy.',
-    '',
-    '## Create a charge',
-    '',
-    'Send a POST request to `/v1/charges` with amount, currency, and source.',
-    'The response returns a charge object with a status of pending, succeeded, or failed.',
-    '',
-    '## Refunds',
-    '',
-    'Refunds are issued against a charge ID, never against raw card details.',
-    'It must be rotated every 90 days.'
-  ].join('\n');
+const CANON = {
+  authentication: 'All requests require a bearer token issued from the developer console. Tokens scope to a single project and expire after 12 hours. See the token rotation guide for rotation policy.',
+  'create a charge': 'Send a POST request to `/v1/charges` with amount, currency, and source. The response returns a charge object with a status of pending, succeeded, or failed.',
+  refunds: 'Refunds are issued against a charge ID, never against raw card details. It must be rotated every 90 days.',
+  overview: 'The Payments API lets you create, capture, and refund charges programmatically.'
+};
+
+function sectionBody(name, sk) {
+  const canned = CANON[name.toLowerCase()];
+  if (canned) return canned;
+  let body = 'Drafted from repository analysis for "' + name + '".';
+  if (sk.rules.length) body += ' Written to comply with ' + sk.rules.length + ' skill rule' + (sk.rules.length > 1 ? 's' : '') + '.';
+  return body;
+}
+
+export function generateDocument({ track, docTypes, format, repo, instructions, skill = '', skillName = '' }) {
+  const title = docTypeName(track, docTypes[0]);
+  const sk = parseSkill(skill);
+  const sections = sk.sections.length ? sk.sections : ['Overview', 'Authentication', 'Create a charge', 'Refunds'];
+
+  const head = ['# ' + title, '', 'The Payments API lets you create, capture, and refund charges programmatically.', 'Generated from ' + repo + ' by DocGen.'];
+  if (skillName) {
+    head.push('', '> Skill applied: ' + skillName +
+      (sk.rules.length ? ' — ' + sk.rules.length + ' rule' + (sk.rules.length > 1 ? 's' : '') : '') +
+      (sk.sections.length ? ' · custom outline (' + sk.sections.length + ' sections)' : ''));
+  }
+  if (sk.audience) head.push('', 'Audience: ' + sk.audience + '.');
+  if (sk.tone) head.push('Tone: ' + sk.tone + '.');
+  if (instructions && instructions.trim()) {
+    head.push('', '> Customization applied: ' + instructions.trim().slice(0, 140));
+  }
+
+  const parts = [...head];
+  for (const s of sections) {
+    parts.push('', '## ' + s, '', sectionBody(s, sk));
+  }
+  const md = parts.join('\n');
 
   let content = md;
   if (format === 'dita') {
-    content = [
+    const dita = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<topic id="' + slug(title) + '">',
       '  <title>' + title + '</title>',
       '  <shortdesc>Create, capture, and refund charges programmatically.</shortdesc>',
-      '  <body>',
-      '    <section id="authentication">',
-      '      <title>Authentication</title>',
-      '      <p>All requests require a bearer token issued from the developer console.</p>',
-      '    </section>',
-      '    <section id="endpoints">',
-      '      <title>Endpoints</title>',
-      '      <p>POST /v1/charges creates a charge.</p>',
-      '    </section>',
-      '  </body>',
-      '</topic>'
-    ].join('\n');
+      '  <body>'
+    ];
+    for (const s of sections) {
+      dita.push(
+        '    <section id="' + slug(s) + '">',
+        '      <title>' + s + '</title>',
+        '      <p>' + sectionBody(s, sk).replace(/`/g, '') + '</p>',
+        '    </section>'
+      );
+    }
+    dita.push('  </body>', '</topic>');
+    content = dita.join('\n');
   } else if (format === 'pdf' || format === 'word') {
     content = '[' + format.toUpperCase() + ' EXPORT — rendered by the format adapter in production]\n\n' + md;
   }

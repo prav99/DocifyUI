@@ -24,7 +24,8 @@ export default function Format() {
         body: {
           repo: flow.repo || flow.provider, branch: 'main', track: flow.track,
           docTypes: flow.docTypes, format: flow.format,
-          instructions: flow.instructions, files: flow.files, provider: flow.provider || 'github'
+          instructions: flow.instructions, files: flow.files, provider: flow.provider || 'github',
+          skillName: flow.skillName || '', skill: flow.skillContent || ''
         }
       });
       setFlow({ genId: d.generation.id });

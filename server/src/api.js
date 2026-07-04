@@ -103,15 +103,17 @@ function serializeGen(g) {
   return {
     id: g.id, repo: g.repo, branch: g.branch, track: g.track,
     docTypes: j(g.docTypes, []), format: g.format, instructions: g.instructions,
-    files: j(g.files, []), status: g.status, step: g.step, steps: j(g.steps, []),
+    files: j(g.files, []), skillName: g.skillName || '',
+    status: g.status, step: g.step, steps: j(g.steps, []),
     title: g.title, content: g.content, score: g.score, createdAt: g.createdAt
   };
 }
 
-function buildSteps({ provider, instructions, files }) {
+function buildSteps({ provider, instructions, files, skillName }) {
   const steps = provider === 'jira'
     ? ['Reading Jira projects', 'Collecting issues and release versions']
     : ['Parsing repo structure', 'Extracting code comments'];
+  if (skillName) steps.push('Applying skill: ' + skillName);
   if ((instructions && instructions.trim()) || (files && files.length)) {
     steps.push('Applying your customization instructions');
   }
@@ -131,7 +133,8 @@ async function runPipeline(genId) {
     }
     const { title, content } = generateDocument({
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
-      repo: gen.repo, instructions: gen.instructions
+      repo: gen.repo, instructions: gen.instructions,
+      skill: gen.skill || '', skillName: gen.skillName || ''
     });
     const report = judge();
     await prisma.qualityReport.create({
@@ -152,18 +155,20 @@ async function runPipeline(genId) {
 }
 
 apiRouter.post('/generations', async (req, res) => {
-  const { repo, branch = 'main', track, docTypes, format, instructions = '', files = [], provider = 'github' } = req.body || {};
+  const { repo, branch = 'main', track, docTypes, format, instructions = '', files = [], provider = 'github', skillName = '', skill = '' } = req.body || {};
+  if (String(skill).length > 60000) return res.status(400).json({ error: 'SKILL.md is too large (60 KB max)' });
   if (track !== 'technical' && track !== 'marketing') return res.status(400).json({ error: 'Invalid track' });
   if (!Array.isArray(docTypes) || docTypes.length === 0) return res.status(400).json({ error: 'Select at least one document type' });
   const fmt = formatDef(track, format);
   if (!fmt) return res.status(400).json({ error: 'Unknown format' });
   if (!fmt.ok) return res.status(400).json({ error: 'This output format is not currently supported. We will add support for it in a future release.' });
-  const steps = buildSteps({ provider, instructions, files });
+  const steps = buildSteps({ provider, instructions, files, skillName });
   const gen = await prisma.generation.create({
     data: {
       userId: req.uid, repo: repo || provider, branch, track,
       docTypes: JSON.stringify(docTypes), format, instructions,
-      files: JSON.stringify(files), status: 'queued', steps: JSON.stringify(steps)
+      files: JSON.stringify(files), skillName: String(skillName), skill: String(skill),
+      status: 'queued', steps: JSON.stringify(steps)
     }
   });
   runPipeline(gen.id); // fire and forget — polled by the client

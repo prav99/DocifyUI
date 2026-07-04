@@ -69,6 +69,7 @@ const defaultFlow = {
   track: 'technical', docTypes: [],
   briefAudience: '', briefEmphasis: '', briefTone: 'Plain & direct',
   instructions: '', files: [],
+  skillName: '', skillContent: '',
   format: 'dita',
   genId: null,
   billing: 'annual', plan: 'team'

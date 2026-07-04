@@ -48,6 +48,8 @@ model Generation {
   format       String
   instructions String         @default("")
   files        String         @default("[]") // JSON array of filenames
+  skillName    String         @default("") // Uploaded SKILL.md filename
+  skill        String         @default("") // SKILL.md content — parsed and applied at generation time
   status       String         @default("queued") // queued | running | complete | failed
   step         Int            @default(0)
   steps        String         @default("[]") // JSON array of step labels

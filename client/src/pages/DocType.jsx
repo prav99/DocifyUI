@@ -1,9 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import { getCatalog } from '../api.js';
-import { useFlow } from '../store.jsx';
+import { useFlow, toast } from '../store.jsx';
 import { NavBar, IcCheck } from '../ui.jsx';
 
 const PLACEHOLDER = 'Provide any additional instructions for document generation. You can specify the content to include, preferred document structure, formatting requirements, target audience, sections to generate, or upload a reference file.';
+
+const SKILL_TEMPLATE = [
+  '# DocGen Skill',
+  '',
+  'Configure how DocGen writes your documents. Every directive below is',
+  'applied at generation time — edit freely.',
+  '',
+  'tone: plain and direct',
+  'audience: platform engineers integrating the API',
+  '',
+  '## Sections',
+  '- Overview',
+  '- Authentication',
+  '- Quick start',
+  '- Endpoints',
+  '- Error handling',
+  '- FAQ',
+  '',
+  '## Rules',
+  '- Use "API key" — never "token" — outside code samples.',
+  '- Every section must open with a one-sentence summary.',
+  '- Include at least one curl example per endpoint.',
+  '- Keep paragraphs under four sentences.',
+  ''
+].join('\n');
 
 export default function DocType() {
   const { flow, setFlow } = useFlow();
@@ -27,6 +52,32 @@ export default function DocType() {
     const names = Array.from(input.files).map((f) => f.name);
     setFlow((f) => ({ files: [...f.files, ...names] }));
     input.value = '';
+  }
+
+  function readSkill(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    if (file.size > 60000) return toast('error', 'File too large', 'SKILL.md must be under 60 KB');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setFlow({ skillName: file.name, skillContent: String(reader.result || ''), genId: null });
+      toast('success', 'Skill loaded', file.name + ' will shape every document in this run');
+    };
+    reader.onerror = () => toast('error', 'Could not read file', 'Try again or use a plain .md file');
+    reader.readAsText(file);
+  }
+
+  function downloadSkillTemplate() {
+    const blob = new Blob([SKILL_TEMPLATE], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'SKILL.md';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   const count = flow.docTypes.length;
@@ -90,6 +141,38 @@ export default function DocType() {
           <p className="helper mt2">Optional. Anything you write here is applied across every selected document type in this run.</p>
           <textarea className="textarea mt5" rows={5} placeholder={PLACEHOLDER}
             defaultValue={flow.instructions} onInput={(e) => setFlow({ instructions: e.target.value })} />
+
+          <div className="fileup mt5" style={{ borderColor: flow.skillName ? 'var(--support-success)' : 'var(--button-primary)' }}>
+            <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <p className="label01 t2">SKILL FILE · SKILL.MD</p>
+              {flow.skillName
+                ? <span className="tag tag--green">Skill loaded ✓</span>
+                : <span className="tag tag--blue">Recommended</span>}
+            </div>
+            <p className="helper mt2">
+              Teach DocGen exactly how you want documents written: your preferred sections, tone, target
+              audience, and terminology rules. Upload a SKILL.md and every document in this run follows it —
+              the outline, the wording rules, all of it.
+            </p>
+            {flow.skillName ? (
+              <div className="row mt3" style={{ flexWrap: 'wrap' }}>
+                <span className="filechip">
+                  {flow.skillName}
+                  <button aria-label="Remove skill" onClick={() => setFlow({ skillName: '', skillContent: '', genId: null })}>✕</button>
+                </span>
+                <span className="helper">{Math.max(1, Math.round((flow.skillContent || '').length / 1024))} KB · applied to this run</span>
+              </div>
+            ) : (
+              <div className="row mt3" style={{ flexWrap: 'wrap' }}>
+                <label className="btn btn--primary btn--field" style={{ cursor: 'pointer' }}>
+                  Upload SKILL.md
+                  <input type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} onChange={(e) => readSkill(e.target)} />
+                </label>
+                <button className="linkbtn" onClick={downloadSkillTemplate}>Download the SKILL.md template</button>
+              </div>
+            )}
+          </div>
+
           <div className="fileup mt5">
             <p className="label01 t2">Reference files</p>
             <p className="helper mt2">Style guides, existing docs, or templates. Max 5 MB per file: .pdf, .docx, .md, .txt</p>
