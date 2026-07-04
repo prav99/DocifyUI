@@ -11,6 +11,7 @@ import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, FRAMEWORK } from './adapters/llm.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
+import { sendMail } from './adapters/mailer.js';
 
 export const apiRouter = Router();
 
@@ -213,8 +214,17 @@ async function runPipeline(genId) {
       ? content
       : generateDocument({ ...genArgs, format: 'html' }).content;
     const report = judge();
-    await prisma.qualityReport.create({
-      data: {
+    // Upsert so the pipeline can re-run on the SAME generation (automation
+    // "update in place" and "sections" actions) without duplicating reports.
+    await prisma.qualityReport.upsert({
+      where: { generationId: genId },
+      update: {
+        issues: JSON.stringify(report.issues),
+        links: JSON.stringify(report.links),
+        style: JSON.stringify([...(structure || []), ...report.style]),
+        fixedIds: '[]'
+      },
+      create: {
         generationId: genId,
         issues: JSON.stringify(report.issues),
         links: JSON.stringify(report.links),

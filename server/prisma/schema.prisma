@@ -26,6 +26,7 @@ model User {
   generations   Generation[]
   members       TeamMember[]
   automation    Automation?
+  profiles      AutomationProfile[]
 }
 
 model Source {
@@ -98,6 +99,22 @@ model Automation {
   gate    Int     @default(85)
   secret  String  @default("") // HMAC webhook secret — generated on first use, rotatable
   runs    String  @default("[]") // JSON run history (latest 20): trigger, commit, score, gate result
+}
+
+// A reusable automation pipeline: the full 6-step wizard configuration plus
+// its own webhook secret and execution history. A user can run many profiles
+// (different repos, branches, document sets) side by side.
+model AutomationProfile {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String   @default("Documentation pipeline")
+  status    String   @default("active") // active | paused
+  secret    String   @default("")
+  config    String   @default("{}") // wizard steps 1–6 as JSON (see PROFILE_DEFAULTS in api.js)
+  runs      String   @default("[]") // execution history, newest first (capped)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Waitlist {
