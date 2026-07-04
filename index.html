@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocGen — Docs that update themselves</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============ IBM Carbon tokens — White theme ============ */
+:root{
+  --background:#ffffff;
+  --layer-01:#f4f4f4;
+  --layer-02:#ffffff;
+  --layer-hover:#e8e8e8;
+  --field-01:#f4f4f4;
+  --border-subtle:#e0e0e0;
+  --border-strong:#8d8d8d;
+  --text-primary:#161616;
+  --text-secondary:#525252;
+  --text-placeholder:#a8a8a8;
+  --text-on-color:#ffffff;
+  --icon-primary:#161616;
+  --link-primary:#0f62fe;
+  --link-hover:#0043ce;
+  --button-primary:#0f62fe;
+  --button-primary-hover:#0353e9;
+  --button-primary-active:#002d9c;
+  --button-secondary:#393939;
+  --button-secondary-hover:#4c4c4c;
+  --button-danger:#da1e28;
+  --support-success:#24a148;
+  --support-warning:#f1c21b;
+  --support-warning-text:#8e6a00;
+  --support-error:#da1e28;
+  --support-info:#0043ce;
+  --focus:#0f62fe;
+  --inverse-01:#ffffff;
+  --inverse-02:#393939;
+  --code-bg:#262626;
+  --code-text:#f4f4f4;
+  /* spacing scale */
+  --sp-01:2px; --sp-02:4px; --sp-03:8px; --sp-04:12px; --sp-05:16px;
+  --sp-06:24px; --sp-07:32px; --sp-08:40px; --sp-09:48px; --sp-10:64px;
+  --ease:cubic-bezier(0.2,0,0.38,0.9);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:auto}
+body{
+  font-family:'IBM Plex Sans',system-ui,sans-serif;
+  background:var(--background);
+  color:var(--text-primary);
+  font-size:14px;line-height:1.43;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',monospace}
+a{color:var(--link-primary);text-decoration:none;cursor:pointer}
+a:hover{color:var(--link-hover);text-decoration:underline}
+
+/* Carbon productive type scale */
+.h01{font-size:14px;font-weight:600;line-height:1.29}
+.h02{font-size:16px;font-weight:600;line-height:1.375}
+.h03{font-size:20px;font-weight:400;line-height:1.4}
+.h04{font-size:28px;font-weight:400;line-height:1.29}
+.h05{font-size:32px;font-weight:400;line-height:1.25}
+.h06{font-size:42px;font-weight:400;line-height:1.19}
+.body01{font-size:14px;line-height:1.43}
+.body02{font-size:16px;line-height:1.5}
+.label01{font-size:12px;line-height:1.34;letter-spacing:.32px}
+.helper{font-size:12px;color:var(--text-secondary);letter-spacing:.32px}
+.t2{color:var(--text-secondary)}
+
+/* ============ Top bar (Carbon UI Shell header) ============ */
+.topbar{
+  position:sticky;top:0;z-index:80;height:48px;
+  background:var(--background);
+  border-bottom:1px solid var(--border-subtle);
+  display:flex;align-items:center;padding:0 var(--sp-05);gap:var(--sp-05);
+}
+.topbar .logo{font-weight:600;font-size:14px;letter-spacing:.16px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text-primary);white-space:nowrap}
+.topbar .logo .mark{width:20px;height:20px;background:var(--button-primary);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600}
+.crumb{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--text-primary);font-weight:500}
+.topnav{display:flex;gap:2px;margin-left:var(--sp-03)}
+.topnav a{font-size:14px;color:var(--text-secondary);padding:0 12px;line-height:46px;border-bottom:2px solid transparent;text-decoration:none}
+.topnav a:hover{color:var(--text-primary);background:var(--layer-01)}
+.topnav a.on{color:var(--text-primary);border-bottom-color:var(--button-primary)}
+.topbar .spacer{flex:1}
+.stepwrap{display:flex;flex-direction:column;gap:4px;min-width:160px;max-width:220px;flex:0 1 220px}
+.steplabel{font-size:12px;color:var(--text-secondary);letter-spacing:.32px}
+.stepbar{height:2px;background:var(--border-subtle);width:100%}
+.stepbar>div{height:2px;background:var(--button-primary);transition:width .15s var(--ease)}
+.topbar-actions{display:flex;gap:var(--sp-03);align-items:center}
+.userchip{font-size:12px;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace;padding:4px 8px;background:var(--layer-01)}
+
+/* ============ Buttons ============ */
+.btn{
+  font-family:inherit;font-size:14px;line-height:1.29;letter-spacing:.16px;
+  display:inline-flex;align-items:center;justify-content:space-between;gap:32px;
+  height:48px;padding:0 15px 0 15px;min-width:78px;
+  border:1px solid transparent;border-radius:0;cursor:pointer;
+  transition:background .07s var(--ease),border-color .07s var(--ease);
+  text-align:left;white-space:nowrap;
+}
+.btn--field{height:40px}
+.btn--sm{height:32px;font-size:14px}
+.btn--primary{background:var(--button-primary);color:#fff}
+.btn--primary:hover{background:var(--button-primary-hover)}
+.btn--primary:active{background:var(--button-primary-active)}
+.btn--secondary{background:var(--button-secondary);color:#fff}
+.btn--secondary:hover{background:var(--button-secondary-hover)}
+.btn--tertiary{background:transparent;color:var(--button-primary);border-color:var(--button-primary)}
+.btn--tertiary:hover{background:var(--button-primary);color:#fff}
+.btn--ghost{background:transparent;color:var(--link-primary)}
+.btn--ghost:hover{background:var(--layer-01);color:var(--link-hover)}
+.btn:disabled{background:#c6c6c6;color:#8d8d8d;border-color:transparent;cursor:not-allowed}
+.btn--ghost:disabled,.btn--tertiary:disabled{background:transparent;color:#c6c6c6;border-color:#c6c6c6}
+.btn:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;box-shadow:inset 0 0 0 2px #fff}
+.btn .ico{flex:none}
+.btn--center{justify-content:center;gap:8px;text-align:center}
+
+/* ============ Form fields ============ */
+.field{display:flex;flex-direction:column;gap:var(--sp-03);margin-bottom:var(--sp-05)}
+.field label{font-size:12px;color:var(--text-secondary);letter-spacing:.32px}
+.input,.textarea,.select{
+  font-family:inherit;font-size:14px;color:var(--text-primary);
+  background:var(--field-01);border:none;border-bottom:1px solid var(--border-strong);
+  border-radius:0;padding:0 var(--sp-05);height:40px;width:100%;
+  transition:outline .07s var(--ease);
+}
+.textarea{padding:11px var(--sp-05);height:auto;min-height:120px;resize:vertical;line-height:1.43}
+.input::placeholder,.textarea::placeholder{color:var(--text-placeholder)}
+.input:focus,.textarea:focus,.select:focus{outline:2px solid var(--focus);outline-offset:-2px}
+.select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23161616'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 16px center;cursor:pointer}
+
+/* toggle */
+.toggle{display:inline-flex;align-items:center;gap:var(--sp-03);cursor:pointer;user-select:none}
+.toggle .track{width:48px;height:24px;border-radius:12px;background:#8d8d8d;position:relative;transition:background .11s var(--ease);flex:none}
+.toggle .track::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .11s var(--ease)}
+.toggle.on .track{background:var(--support-success)}
+.toggle.on .track::after{transform:translateX(24px)}
+
+/* ============ Tags (Carbon tag) ============ */
+.tag{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 var(--sp-03);border-radius:24px;font-size:12px;letter-spacing:.32px;white-space:nowrap}
+.tag--gray{background:#e0e0e0;color:#393939}
+.tag--blue{background:#d0e2ff;color:#0043ce}
+.tag--green{background:#a7f0ba;color:#0e6027}
+.tag--red{background:#ffd7d9;color:#a2191f}
+.tag--amber{background:#fdf0c0;color:#684e00}
+.tag--purple{background:#e8daff;color:#6929c4}
+.tag--teal{background:#9ef0f0;color:#005d5d}
+.tag--outline{background:transparent;border:1px solid #8d8d8d;color:#393939}
+
+/* ============ Tiles / cards ============ */
+.tile{background:var(--layer-01);padding:var(--sp-05);border:1px solid transparent}
+.tile--white{background:var(--background);border:1px solid var(--border-subtle)}
+.tile--click{cursor:pointer;transition:background .07s var(--ease)}
+.tile--click:hover{background:var(--layer-hover)}
+.tile--selected{outline:2px solid var(--button-primary);outline-offset:-2px;background:var(--background)}
+.tile--disabled{opacity:.65}
+
+/* ============ Notifications ============ */
+.notif{display:flex;gap:var(--sp-05);align-items:flex-start;padding:var(--sp-05);border:1px solid;border-left-width:3px;max-width:100%}
+.notif .ntitle{font-weight:600;font-size:14px}
+.notif .nbody{font-size:14px}
+.notif--warning{background:#fdf0c0;border-color:#f1c21b}
+.notif--error{background:#fff1f1;border-color:#da1e28}
+.notif--success{background:#defbe6;border-color:#24a148}
+.notif--info{background:#edf5ff;border-color:#0043ce}
+.notif svg{flex:none;margin-top:1px}
+
+/* ============ Tabs (Carbon line tabs) ============ */
+.tabs{display:flex;border-bottom:1px solid var(--border-subtle);margin-bottom:var(--sp-06);overflow-x:auto}
+.tabs button{
+  font-family:inherit;font-size:14px;letter-spacing:.16px;color:var(--text-secondary);
+  background:none;border:none;border-bottom:2px solid var(--border-subtle);
+  padding:11px var(--sp-05);cursor:pointer;white-space:nowrap;margin-bottom:-1px;
+  transition:color .07s var(--ease),border-color .07s var(--ease);
+}
+.tabs button:hover{color:var(--text-primary)}
+.tabs button.on{color:var(--text-primary);font-weight:600;border-bottom-color:var(--button-primary)}
+
+/* ============ Code blocks ============ */
+.codeblock{position:relative;background:var(--code-bg);color:var(--code-text);font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.6;padding:var(--sp-05);overflow-x:auto;white-space:pre;tab-size:2}
+.codeblock .cm{color:#6ea6ff}.codeblock .cs{color:#3ddbd9}.codeblock .ck{color:#be95ff}.codeblock .cc{color:#8d8d8d}
+
+/* ============ Toasts ============ */
+#toasts{position:fixed;right:var(--sp-05);bottom:var(--sp-05);z-index:200;display:flex;flex-direction:column;gap:var(--sp-03);width:320px}
+.toast{background:var(--inverse-02);color:#fff;display:flex;gap:var(--sp-04);padding:var(--sp-05);border-left:3px solid;animation:tin .15s var(--ease);box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.toast--success{border-color:#42be65}.toast--error{border-color:#fa4d56}.toast--info{border-color:#4589ff}.toast--warning{border-color:#f1c21b}
+.toast .ttitle{font-weight:600;font-size:14px}
+.toast .tsub{font-size:12px;color:#c6c6c6;margin-top:2px}
+.toast .tclose{margin-left:auto;background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:0 2px;flex:none}
+@keyframes tin{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+
+/* ============ Modal ============ */
+.overlay{position:fixed;inset:0;background:rgba(22,22,22,.5);z-index:150;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;animation:fin .11s var(--ease)}
+@keyframes fin{from{opacity:0}to{opacity:1}}
+.modal{background:var(--background);width:480px;max-width:92vw;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.modal .mhead{padding:var(--sp-05) var(--sp-05) var(--sp-03);display:flex;justify-content:space-between;align-items:flex-start}
+.modal .mbody{padding:0 var(--sp-05) var(--sp-06)}
+.modal .mfoot{display:flex}
+.modal .mfoot .btn{flex:1;height:64px;border-radius:0}
+.mclose{background:none;border:none;cursor:pointer;font-size:16px;padding:4px 8px;color:var(--text-primary)}
+.mclose:hover{background:var(--layer-01)}
+
+/* ============ Layout ============ */
+.page{max-width:1056px;margin:0 auto;padding:var(--sp-07) var(--sp-06) 120px}
+.page--narrow{max-width:640px}
+.page--wide{max-width:1200px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-05)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-05)}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-05)}
+@media(max-width:900px){.grid3,.grid4{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}}
+@media(max-width:600px){.grid3,.grid4{grid-template-columns:1fr}}
+.row{display:flex;align-items:center;gap:var(--sp-03)}
+.row--between{justify-content:space-between}
+.stack>*+*{margin-top:var(--sp-05)}
+.mt2{margin-top:var(--sp-02)}.mt3{margin-top:var(--sp-03)}.mt5{margin-top:var(--sp-05)}.mt6{margin-top:var(--sp-06)}.mt7{margin-top:var(--sp-07)}.mt9{margin-top:var(--sp-09)}
+.mb3{margin-bottom:var(--sp-03)}.mb5{margin-bottom:var(--sp-05)}.mb6{margin-bottom:var(--sp-06)}.mb7{margin-bottom:var(--sp-07)}
+
+/* bottom nav */
+.navbar{position:fixed;left:0;right:0;bottom:0;background:var(--background);border-top:1px solid var(--border-subtle);z-index:90}
+.navbar .inner{max-width:1056px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;padding:var(--sp-04) var(--sp-06);gap:var(--sp-05)}
+.navnote{font-size:12px;color:var(--text-secondary);letter-spacing:.32px}
+
+/* checkbox tiles */
+.cbtile{position:relative;padding-right:44px}
+.cbtile .cb{position:absolute;top:var(--sp-05);right:var(--sp-05);width:18px;height:18px;border:1px solid var(--icon-primary);background:var(--background);display:flex;align-items:center;justify-content:center;flex:none}
+.tile--selected .cb{background:var(--icon-primary)}
+.radioline{display:flex;align-items:center;gap:var(--sp-04);padding:var(--sp-04) var(--sp-05);border-bottom:1px solid var(--border-subtle);cursor:pointer;background:var(--background)}
+.radioline:hover{background:var(--layer-01)}
+.radioline .rdot{width:16px;height:16px;border-radius:50%;border:1px solid var(--icon-primary);flex:none;display:flex;align-items:center;justify-content:center}
+.radioline.on .rdot::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--icon-primary)}
+
+/* chips (choice) */
+.chip{font-family:inherit;font-size:14px;height:32px;padding:0 var(--sp-05);background:var(--layer-01);border:1px solid transparent;border-radius:0;cursor:pointer;color:var(--text-primary);transition:background .07s var(--ease)}
+.chip:hover{background:var(--layer-hover)}
+.chip.on{background:var(--inverse-02);color:#fff}
+
+/* file uploader */
+.fileup{border:1px dashed var(--border-strong);padding:var(--sp-05);text-align:left;background:var(--background)}
+.filechip{display:inline-flex;align-items:center;gap:var(--sp-03);background:var(--layer-01);border:1px solid var(--border-subtle);padding:4px var(--sp-04);font-size:12px;font-family:'IBM Plex Mono',monospace;margin:var(--sp-02) var(--sp-02) 0 0}
+.filechip button{background:none;border:none;cursor:pointer;font-size:13px;padding:0;color:var(--text-primary)}
+.filechip button:hover{color:var(--support-error)}
+
+/* score badges */
+.score{background:var(--layer-01);padding:var(--sp-05);display:flex;flex-direction:column;gap:var(--sp-02);border-top:2px solid var(--border-subtle)}
+.score .num{font-size:32px;font-weight:400;line-height:1.25;font-family:'IBM Plex Mono',monospace}
+.score--good{border-top-color:var(--support-success)}
+.score--warn{border-top-color:var(--support-warning)}
+.score--bad{border-top-color:var(--support-error)}
+.score--info{border-top-color:var(--support-info)}
+
+/* generation steps */
+.genstep{display:flex;align-items:center;gap:var(--sp-04);padding:var(--sp-04) 0;border-bottom:1px solid var(--border-subtle);font-size:14px}
+.genstep:last-child{border-bottom:none}
+.genstep .sicon{width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center}
+.genstep.todo{color:var(--text-placeholder)}
+.genstep.doing{color:var(--text-primary);font-weight:600}
+.genstep.done{color:var(--text-secondary)}
+.spin{width:14px;height:14px;border:2px solid var(--border-subtle);border-top-color:var(--button-primary);border-radius:50%;animation:rot .69s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.dotcircle{width:12px;height:12px;border-radius:50%;border:1px solid var(--border-strong)}
+
+/* paper preview */
+.paper{background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 1px 4px rgba(0,0,0,.12);max-width:560px;margin:0 auto;padding:var(--sp-07) var(--sp-08)}
+.skel{height:8px;background:var(--layer-hover);margin-top:var(--sp-03)}
+.skel.w80{width:80%}.skel.w60{width:60%}.skel.w90{width:90%}
+
+/* annotated preview */
+.annot{background:var(--layer-01);font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.9;padding:var(--sp-05);overflow-x:auto;white-space:pre-wrap}
+.an-good{border-bottom:2px solid var(--support-success)}
+.an-warn{background:#fdf0c0;padding:1px 2px}
+.an-ai{background:#d0e2ff;padding:1px 2px}
+.antag{font-size:10px;letter-spacing:.32px;padding:1px 6px;border-radius:10px;vertical-align:2px;margin-left:4px;font-family:'IBM Plex Sans',sans-serif}
+.antag--warn{background:#f1c21b;color:#161616}
+.antag--ai{background:#0043ce;color:#fff}
+.antag--good{background:#24a148;color:#fff}
+
+/* issue cards */
+.issue{background:var(--layer-01);padding:var(--sp-05);border-left:3px solid var(--support-warning);margin-bottom:var(--sp-04);transition:border-color .15s var(--ease),opacity .15s var(--ease)}
+.issue.fixed{border-left-color:var(--support-success);opacity:.75}
+.issue .ifix{font-style:italic;color:var(--text-secondary);margin-top:var(--sp-03);font-size:13px}
+.issue .ifix b{font-style:normal;color:var(--text-primary);font-weight:600}
+
+/* pricing table */
+.pricegrid{display:grid;grid-template-columns:220px repeat(3,1fr);border:1px solid var(--border-subtle)}
+.pricegrid>div{padding:var(--sp-04) var(--sp-05);border-bottom:1px solid var(--border-subtle);border-right:1px solid var(--border-subtle);font-size:14px;display:flex;align-items:center}
+.pricegrid>div:nth-child(4n){border-right:none}
+.pricegrid .phead{flex-direction:column;align-items:flex-start;gap:var(--sp-02);padding:var(--sp-05);background:var(--layer-01)}
+.pricegrid .phead.pop{background:var(--background);outline:2px solid var(--button-primary);outline-offset:-2px}
+.pricegrid .rowlabel{color:var(--text-secondary);font-size:12px;letter-spacing:.32px}
+@media(max-width:800px){.pricegrid{grid-template-columns:130px repeat(3,1fr)}}
+
+/* integration matrix */
+.matrix{border-collapse:collapse;width:100%}
+.matrix th,.matrix td{border:1px solid var(--border-subtle);padding:var(--sp-04) var(--sp-05);font-size:14px;text-align:center}
+.matrix th{background:var(--layer-01);font-weight:600;font-size:12px;letter-spacing:.32px}
+.matrix td:first-child,.matrix th:first-child{text-align:left}
+
+/* data table */
+.dtable{width:100%;border-collapse:collapse}
+.dtable th{background:var(--layer-01);text-align:left;font-size:12px;font-weight:600;letter-spacing:.32px;padding:var(--sp-04) var(--sp-05);border-bottom:1px solid var(--border-subtle)}
+.dtable td{padding:var(--sp-04) var(--sp-05);border-bottom:1px solid var(--border-subtle);font-size:14px}
+.dtable tr:hover td{background:var(--layer-01)}
+
+/* landing */
+.hero{padding:var(--sp-10) 0 var(--sp-09)}
+.threestep{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:var(--sp-05);align-items:stretch}
+.threestep .arrow{display:flex;align-items:center;color:var(--text-placeholder);font-size:20px}
+@media(max-width:800px){.threestep{grid-template-columns:1fr}.threestep .arrow{display:none}}
+.logorow{display:flex;flex-wrap:wrap;gap:var(--sp-06);align-items:center;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace;font-size:13px}
+.logorow span{opacity:.75}
+
+.divider{height:1px;background:var(--border-subtle);margin:var(--sp-07) 0}
+.check{color:var(--support-success);font-weight:600}
+.linkbtn{background:none;border:none;color:var(--link-primary);cursor:pointer;font-family:inherit;font-size:14px;padding:0}
+.linkbtn:hover{color:var(--link-hover);text-decoration:underline}
+</style>
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<main id="view"></main>
+<div id="modalRoot"></div>
+<div id="toasts"></div>
+<script>
+'use strict';
+/* ================= State ================= */
+var state = {
+  screen: 'landing',
+  auth: false,
+  email: '',
+  oauth: null,                 // 'github' | 'gitlab' | 'bitbucket' | null
+  source: null,                // selected source id
+  repo: null,                  // selected repo (github)
+  jiraUrl: '', jiraToken: '', jiraConnected: false,
+  waitlisted: {},              // sourceId -> true
+  track: 'technical',          // 'technical' | 'marketing'
+  docTypes: [],                // selected doc type ids
+  briefAudience: '', briefEmphasis: '', briefTone: 'Plain & direct',
+  instructions: '', files: [],
+  format: 'dita',
+  genDone: false, genStep: -1,
+  qTab: 'overview',
+  fixed: {},                   // issueId -> true
+  billing: 'annual',           // 'monthly' | 'annual'
+  plan: 'team',
+  paid: false,
+  autoRegen: true, branch: 'main',
+  settingsTab: 'sources',
+  invited: []
+};
+var genTimer = null;
+
+/* ================= Static data ================= */
+var SEQ = ['landing','signup','source','doctype','format','generation','quality','export','pricing','checkout','dashboard','automation','settings'];
+
+var CRUMBS = {
+  landing:'docgen / home', signup:'docgen / onboarding / signup', login:'docgen / login',
+  source:'docgen / onboarding / source-select', doctype:'docgen / onboarding / document-type',
+  format:'docgen / onboarding / output-format', generation:'docgen / generate',
+  quality:'docgen / quality-review', 'export':'docgen / export', pricing:'docgen / pricing',
+  checkout:'docgen / checkout', dashboard:'docgen / dashboard', automation:'docgen / automation',
+  settings:'docgen / settings', features:'docgen / features', integrations:'docgen / integrations',
+  customers:'docgen / customers', docs:'docgen / docs'
+};
+
+var SOURCES = [
+  {id:'github', name:'GitHub', desc:'Repositories, READMEs, code comments, commit history', avail:true},
+  {id:'gitlab', name:'GitLab', desc:'Projects, wikis, merge request context', avail:true},
+  {id:'bitbucket', name:'Bitbucket', desc:'Repositories and pipelines metadata', avail:true},
+  {id:'jira', name:'Jira', desc:'Issues, epics, release versions for changelogs', avail:true},
+  {id:'openapi', name:'OpenAPI / Swagger', desc:'Spec-first API reference generation', avail:false},
+  {id:'confluence', name:'Confluence', desc:'Existing pages as source material', avail:false},
+  {id:'notion', name:'Notion', desc:'Docs and databases as source material', avail:false},
+  {id:'azdo', name:'Azure DevOps', desc:'Repos, boards, and wikis', avail:false}
+];
+
+var REPOS = [
+  {name:'acme/payments-api', branch:'main', lang:'TypeScript', updated:'2 hours ago'},
+  {name:'acme/ledger-service', branch:'main', lang:'Go', updated:'yesterday'},
+  {name:'acme/sdk-python', branch:'develop', lang:'Python', updated:'3 days ago'},
+  {name:'acme/webhooks-gateway', branch:'main', lang:'TypeScript', updated:'last week'}
+];
+
+var DOCTYPES = {
+  technical: [
+    {id:'api', name:'API reference', desc:'Endpoints, parameters, schemas, auth, examples', common:true},
+    {id:'userguide', name:'User guide', desc:'Task-oriented walkthroughs for end users', common:true},
+    {id:'install', name:'Installation & setup guide', desc:'Prerequisites, environments, first run', common:true},
+    {id:'quickstart', name:'Quick start guide', desc:'Zero to first successful call in one page', common:false},
+    {id:'troubleshoot', name:'Troubleshooting & FAQ', desc:'Known errors, causes, and resolutions', common:false},
+    {id:'relnotes', name:'Release notes / changelog', desc:'What changed, per version, from commits and issues', common:false},
+    {id:'admin', name:'Admin & configuration guide', desc:'Config reference, permissions, deployment options', common:false}
+  ],
+  marketing: [
+    {id:'announce', name:'Release announcement', desc:'Blog-ready announcement of a release', common:false},
+    {id:'onepager', name:'Feature one-pager', desc:'Single-page benefit-led feature summary', common:true},
+    {id:'social', name:'Social / launch copy', desc:'Short-form posts for a launch moment', common:false},
+    {id:'custlog', name:'Customer-facing changelog', desc:'Plain-language what is new page', common:false}
+  ]
+};
+
+var FORMATS = {
+  technical: [
+    {id:'dita', name:'DITA', desc:'Topic-based XML for enterprise pipelines', ok:true},
+    {id:'pdf', name:'PDF', desc:'Print-ready, paginated output', ok:true},
+    {id:'word', name:'Word', desc:'.docx for review workflows', ok:true},
+    {id:'markdown', name:'Markdown', desc:'Repo-native docs, static site ready', ok:true},
+    {id:'html', name:'HTML / Web Help', desc:'Hosted help center output', ok:false},
+    {id:'docbook', name:'DocBook XML', desc:'Legacy publishing toolchains', ok:false},
+    {id:'epub', name:'ePub', desc:'Offline reader distribution', ok:false}
+  ],
+  marketing: [
+    {id:'pdf', name:'PDF', desc:'Shareable one-pagers and briefs', ok:true},
+    {id:'word', name:'Word', desc:'.docx for stakeholder edits', ok:true},
+    {id:'markdown', name:'Markdown', desc:'CMS-ready copy blocks', ok:true},
+    {id:'htmlsnip', name:'HTML landing snippet', desc:'Drop-in landing page section', ok:false},
+    {id:'socialpack', name:'Social post pack', desc:'Sized variants per channel', ok:false},
+    {id:'pptx', name:'Slide deck (PPTX)', desc:'Launch deck starter', ok:false},
+    {id:'email', name:'Email / newsletter', desc:'Announcement email HTML', ok:false}
+  ]
+};
+
+var AI_ISSUES = [
+  {id:'shortdesc', cat:'LLM readiness', title:'Missing short description',
+   body:'No short description was found at the top of the document. AI systems and search results rely on it to summarize the page — without one, retrieval quality drops and snippets are generated from arbitrary body text.',
+   fix:'Add under the title: "The Payments API lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling."'},
+  {id:'title', cat:'LLM readiness', title:'Title is not search-optimized',
+   body:'The current title "Reference" is too generic to match real queries. Users and LLMs search with product and task terms, not document-type labels.',
+   fix:'Rename to "Payments API reference — endpoints, authentication, and errors".'},
+  {id:'keywords', cat:'LLM readiness', title:'Missing metadata keywords',
+   body:'No keywords or tags are attached to the document, reducing discoverability in both site search and vector retrieval.',
+   fix:'Add keywords: payments-api, REST authentication, refunds, webhook events.'},
+  {id:'pronoun', cat:'Consumability', title:'Ambiguous pronoun reference',
+   body:'In section 2.3, the sentence "It must be rotated every 90 days" follows mentions of both the API key and the signing secret. Retrieved out of context, "It" does not resolve.',
+   fix:'Replace with "The API signing secret must be rotated every 90 days."'},
+  {id:'example', cat:'Consumability', title:'Missing example',
+   body:'The "Create a charge" section describes the request body but includes no code example. Sections without examples are retrieved less often and answered less accurately by LLMs.',
+   fix:'Add a curl example showing a minimal POST /v1/charges request with amount, currency, and source fields.'}
+];
+
+var DASH_ROWS = [
+  {repo:'acme/payments-api', branch:'main', doc:'API reference', fmt:'DITA', when:'today, 09:12', score:96},
+  {repo:'acme/payments-api', branch:'main', doc:'Quick start guide', fmt:'Markdown', when:'yesterday', score:91},
+  {repo:'acme/ledger-service', branch:'main', doc:'Installation & setup guide', fmt:'PDF', when:'2 days ago', score:68},
+  {repo:'acme/sdk-python', branch:'develop', doc:'User guide', fmt:'Word', when:'last week', score:88}
+];
+
+var CI_YAML = [
+  'name: docgen-regenerate',
+  'on:',
+  '  push:',
+  '    branches: [main]',
+  '',
+  'jobs:',
+  '  regenerate-docs:',
+  '    runs-on: ubuntu-latest',
+  '    steps:',
+  '      - uses: actions/checkout@v4',
+  '      - name: Regenerate documentation',
+  '        uses: docgen/generate-action@v2',
+  '        with:',
+  '          api-key: ${{ secrets.DOCGEN_API_KEY }}',
+  '          project: payments-api-reference',
+  '          formats: dita,markdown',
+  '          quality-gate: 85',
+  '      - name: Upload quality report',
+  '        uses: actions/upload-artifact@v4',
+  '        with:',
+  '          name: docgen-quality-report',
+  '          path: .docgen/report.html'
+].join('\n');
+
+/* ================= Helpers ================= */
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function go(s){
+  if (genTimer) { clearInterval(genTimer); genTimer = null; }
+  state.screen = s;
+  window.scrollTo(0,0);
+  render();
+}
+function toast(kind, title, sub){
+  var el = document.createElement('div');
+  el.className = 'toast toast--' + kind;
+  el.innerHTML = '<div><div class="ttitle">' + esc(title) + '</div>' +
+    (sub ? '<div class="tsub">' + esc(sub) + '</div>' : '') + '</div>' +
+    '<button class="tclose" aria-label="Close">&#10005;</button>';
+  el.querySelector('.tclose').onclick = function(){ el.remove(); };
+  $('toasts').appendChild(el);
+  setTimeout(function(){ if (el.parentNode) el.remove(); }, 5000);
+}
+function closeModal(){ $('modalRoot').innerHTML = ''; }
+function openModal(html){
+  $('modalRoot').innerHTML =
+    '<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">' + html + '</div></div>';
+}
+function svgCheck(c){ return '<svg width="16" height="16" viewBox="0 0 16 16" fill="' + (c||'#24a148') + '"><path d="M6.5 12.3 2.7 8.5l1.1-1.1 2.7 2.7 5.7-5.7 1.1 1.1z"/></svg>'; }
+function svgWarn(){ return '<svg width="16" height="16" viewBox="0 0 16 16"><path fill="#161616" d="M8 1 .5 14.5h15L8 1zm-.75 5h1.5v4.5h-1.5V6zM8 13a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>'; }
+function svgErr(){ return '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#da1e28"/><path fill="#fff" d="M10.6 4.3 8 6.9 5.4 4.3 4.3 5.4 6.9 8l-2.6 2.6 1.1 1.1L8 9.1l2.6 2.6 1.1-1.1L9.1 8l2.6-2.6z"/></svg>'; }
+function svgInfo(){ return '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#0043ce"/><path fill="#fff" d="M7.25 6.5h1.5V12h-1.5zM8 3.5A1 1 0 1 1 8 5.5 1 1 0 0 1 8 3.5z"/></svg>'; }
+
+/* icon per source — simple monochrome marks */
+function srcIcon(id){
+  var letters = {github:'GH', gitlab:'GL', bitbucket:'BB', jira:'JI', openapi:'OA', confluence:'CF', notion:'NO', azdo:'AZ'};
+  return '<span class="mono" style="display:inline-flex;width:32px;height:32px;background:var(--inverse-02);color:#fff;align-items:center;justify-content:center;font-size:12px;flex:none">' + (letters[id]||'??') + '</span>';
+}
+
+/* score → tag class */
+function scoreTag(n){
+  var cls = n >= 85 ? 'tag--green' : (n >= 70 ? 'tag--amber' : 'tag--red');
+  return '<span class="tag ' + cls + '">' + n + ' / 100</span>';
+}
+
+function docTypeName(){
+  var list = DOCTYPES[state.track], i;
+  for (i = 0; i < list.length; i++) if (list[i].id === state.docTypes[0]) return list[i].name;
+  return 'API reference';
+}
+function fmtDef(){
+  var list = FORMATS[state.track], i;
+  for (i = 0; i < list.length; i++) if (list[i].id === state.format) return list[i];
+  return null;
+}
+
+/* ================= Top bar ================= */
+function topbarHTML(){
+  var s = state.screen;
+  var idx = SEQ.indexOf(s);
+  var h = '<span class="logo" onclick="go(\'landing\')"><span class="mark">D</span>DocGen</span>';
+  h += '<span class="crumb">' + esc(CRUMBS[s] || 'docgen') + '</span>';
+  h += '<nav class="topnav">' +
+    '<a class="' + (s==='features'?'on':'') + '" onclick="go(\'features\')">Features</a>' +
+    '<a class="' + (s==='integrations'?'on':'') + '" onclick="go(\'integrations\')">Integrations</a>' +
+    '<a class="' + (s==='customers'?'on':'') + '" onclick="go(\'customers\')">Customers</a>' +
+    '<a class="' + (s==='docs'?'on':'') + '" onclick="go(\'docs\')">Docs</a>' +
+    '</nav>';
+  h += '<span class="spacer"></span>';
+  if (idx >= 0) {
+    var pct = Math.round(((idx + 1) / SEQ.length) * 100);
+    h += '<div class="stepwrap"><span class="steplabel">Step ' + (idx + 1) + ' of ' + SEQ.length + '</span>' +
+         '<div class="stepbar"><div style="width:' + pct + '%"></div></div></div>';
+  }
+  h += '<div class="topbar-actions">';
+  if (state.auth) {
+    h += '<span class="userchip">' + esc(state.email || 'praveen@acme.dev') + '</span>';
+  } else {
+    if (s !== 'login') h += '<button class="btn btn--ghost btn--sm btn--center" onclick="go(\'login\')">Login</button>';
+    if (s !== 'signup') h += '<button class="btn btn--primary btn--sm btn--center" onclick="go(\'signup\')">Start free</button>';
+  }
+  h += '</div>';
+  return h;
+}
+
+/* bottom Back / Continue bar */
+function navBar(backScreen, nextScreen, nextLabel, disabled, note){
+  var h = '<div class="navbar"><div class="inner">';
+  h += backScreen
+    ? '<button class="btn btn--ghost btn--center" onclick="go(\'' + backScreen + '\')">&#8592; Back</button>'
+    : '<span></span>';
+  h += '<div class="row">';
+  if (note) h += '<span class="navnote">' + esc(note) + '</span>';
+  if (nextScreen) {
+    h += '<button class="btn btn--primary" ' + (disabled ? 'disabled' : '') +
+         ' onclick="go(\'' + nextScreen + '\')">' + esc(nextLabel || 'Continue') + '<span class="ico">&#8594;</span></button>';
+  }
+  h += '</div></div></div>';
+  return h;
+}
+
+/* ================= Render ================= */
+function render(){
+  $('topbar').innerHTML = topbarHTML();
+  var fn = SCREENS[state.screen] || SCREENS.landing;
+  $('view').innerHTML = fn();
+  if (state.screen === 'generation') startGeneration();
+}
+
+var SCREENS = {};
+/* ================= 1. Landing ================= */
+SCREENS.landing = function(){
+  var h = '<div class="page">';
+  h += '<div class="hero">';
+  h += '<p class="label01 t2 mono mb3">DOCUMENTATION AUTOMATION FOR SOFTWARE TEAMS</p>';
+  h += '<h1 class="h06" style="max-width:760px">Docs that update themselves, and pass quality review before you do.</h1>';
+  h += '<p class="body02 t2 mt5" style="max-width:640px">DocGen generates API references, user guides, and release content directly from your repositories and issue trackers — then verifies every output for broken links, style compliance, and AI consumability before it ships.</p>';
+  h += '<div class="row mt7"><button class="btn btn--primary" onclick="go(\'signup\')">Start free<span class="ico">&#8594;</span></button>' +
+       '<button class="btn btn--tertiary" onclick="go(\'features\')">See how it works</button></div>';
+  h += '</div>';
+
+  h += '<div class="divider"></div>';
+  h += '<h2 class="h03 mb6">Three steps. No manual formatting.</h2>';
+  h += '<div class="threestep">';
+  h += '<div class="tile"><p class="label01 mono t2">01 &#183; SOURCE</p><p class="h02 mt3">Connect a source</p><p class="body01 t2 mt3">GitHub, GitLab, Bitbucket, or Jira. Read-only access to contents and commit history — we never store your source code.</p></div>';
+  h += '<div class="arrow">&#8594;</div>';
+  h += '<div class="tile"><p class="label01 mono t2">02 &#183; GENERATE</p><p class="h02 mt3">Generate the document</p><p class="body01 t2 mt3">Pick a document type and output format — DITA, PDF, Word, Markdown. Drafted from code, comments, and commits in under 3 minutes.</p></div>';
+  h += '<div class="arrow">&#8594;</div>';
+  h += '<div class="tile"><p class="label01 mono t2">03 &#183; VERIFY</p><p class="h02 mt3">Pass quality review</p><p class="body01 t2 mt3">Broken links, style-guide compliance, and an LLM-judge AI-readiness score — with one-click fixes before you publish.</p></div>';
+  h += '</div>';
+
+  h += '<div class="divider"></div>';
+  h += '<p class="label01 t2 mb5">SOURCES AND FORMATS</p>';
+  h += '<div class="logorow"><span>GitHub</span><span>GitLab</span><span>Bitbucket</span><span>Jira</span><span>&#183;</span><span>DITA</span><span>PDF</span><span>Word</span><span>Markdown</span></div>';
+
+  h += '<div class="divider"></div>';
+  h += '<div class="grid3">';
+  h += '<div class="tile--white tile"><p class="h04 mono">2.1 hrs</p><p class="body01 t2 mt3">Average writer time saved per generated document, measured across pilot teams.</p></div>';
+  h += '<div class="tile--white tile"><p class="h04 mono">94%</p><p class="body01 t2 mt3">Of generated documents pass style-guide review on first run after applying suggested fixes.</p></div>';
+  h += '<div class="tile--white tile"><p class="h04 mono">0</p><p class="body01 t2 mt3">Broken links shipped by teams using the quality gate in CI. The pipeline blocks them.</p></div>';
+  h += '</div>';
+  h += '</div>';
+  h += navBar(null, 'signup', 'Start free', false, 'No credit card required');
+  return h;
+};
+
+/* ================= 2. Signup ================= */
+SCREENS.signup = function(){
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Create your account</h1>';
+  h += '<p class="body01 t2 mt3" style="max-width:620px">Using GitHub, GitLab, or Bitbucket to sign in also authorizes that source — one step instead of two.</p>';
+  h += '<div class="grid2 mt7" style="align-items:start">';
+
+  h += '<div class="tile tile--white" style="padding:24px">';
+  h += '<div class="row row--between"><h2 class="h02">Continue with your code host</h2><span class="tag tag--blue">Fastest — connects your source too</span></div>';
+  h += '<div class="stack mt6">';
+  h += '<button class="btn btn--secondary btn--center" style="width:100%" onclick="oauthSignup(\'github\')">Continue with GitHub</button>';
+  h += '<button class="btn btn--secondary btn--center" style="width:100%" onclick="oauthSignup(\'gitlab\')">Continue with GitLab</button>';
+  h += '<button class="btn btn--secondary btn--center" style="width:100%" onclick="oauthSignup(\'bitbucket\')">Continue with Bitbucket</button>';
+  h += '</div>';
+  h += '<p class="helper mt6">We only request read access to repository contents and commit history. We never store your source code.</p>';
+  h += '</div>';
+
+  h += '<div class="tile tile--white" style="padding:24px">';
+  h += '<div class="row row--between"><h2 class="h02">Sign up with email</h2><span class="tag tag--gray">Confluence, Notion, Azure DevOps</span></div>';
+  h += '<p class="body01 t2 mt3">If your source is not in the OAuth row, start here — you can connect any source afterward.</p>';
+  h += '<div class="field mt6"><label for="suEmail">Work email</label><input id="suEmail" class="input" type="email" placeholder="you@company.com" value="' + esc(state.email) + '" oninput="state.email=this.value"></div>';
+  h += '<button class="btn btn--primary" style="width:100%" onclick="emailSignup()">Create account with email<span class="ico">&#8594;</span></button>';
+  h += '<p class="helper mt5">Free plan, no credit card. You will confirm your address on first login.</p>';
+  h += '</div>';
+
+  h += '</div>';
+  h += '<p class="body01 mt6">Already have an account? <a onclick="go(\'login\')">Log in</a></p>';
+  h += '</div>';
+  h += navBar('landing', null, null, false, null);
+  return h;
+};
+
+function oauthSignup(provider){
+  state.oauth = provider; state.auth = true;
+  state.email = 'praveen@acme.dev';
+  toast('success', 'Account created', provider.charAt(0).toUpperCase() + provider.slice(1) + ' connected as a source');
+  go('source');
+}
+function emailSignup(){
+  var v = ($('suEmail') ? $('suEmail').value : '').trim();
+  if (!v || v.indexOf('@') < 1) { toast('error', 'Enter a valid email', 'A work email is required to create an account'); return; }
+  state.email = v; state.auth = true; state.oauth = null;
+  toast('success', 'Account created', 'Confirmation sent to ' + v);
+  go('source');
+}
+
+/* ================= Login (outside sequence) ================= */
+SCREENS.login = function(){
+  var h = '<div class="page page--narrow">';
+  h += '<h1 class="h04">Log in</h1>';
+  h += '<p class="body01 t2 mt3">Welcome back. Log in to reach your dashboard.</p>';
+  h += '<div class="tile tile--white mt7" style="padding:24px">';
+  h += '<div class="field"><label for="liEmail">Email</label><input id="liEmail" class="input" type="email" placeholder="you@company.com" value="' + esc(state.email) + '" oninput="state.email=this.value"></div>';
+  h += '<div class="field"><label for="liPass">Password</label><input id="liPass" class="input" type="password" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;"></div>';
+  h += '<button class="btn btn--primary" style="width:100%" onclick="doLogin()">Log in<span class="ico">&#8594;</span></button>';
+  h += '<div class="divider" style="margin:24px 0"></div>';
+  h += '<button class="btn btn--secondary btn--center" style="width:100%" onclick="doLogin()">Continue with GitHub</button>';
+  h += '</div>';
+  h += '<p class="body01 mt6">New here? <a onclick="go(\'signup\')">Start free instead</a></p>';
+  h += '<p class="body01 mt3"><a onclick="go(\'landing\')">&#8592; Back to home</a></p>';
+  h += '</div>';
+  return h;
+};
+function doLogin(){
+  state.auth = true;
+  if (!state.email) state.email = 'praveen@acme.dev';
+  toast('success', 'Logged in', 'Welcome back');
+  go('dashboard');
+}
+
+/* ================= 3. Source selection ================= */
+SCREENS.source = function(){
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Where does your source of truth live?</h1>';
+  h += '<p class="body01 t2 mt3">DocGen reads structure, comments, and history from your source to draft documentation. Pick one to start — you can add more later in Settings.</p>';
+  h += '<div class="grid4 mt7">';
+  SOURCES.forEach(function(s){
+    var sel = state.source === s.id;
+    var wl = state.waitlisted[s.id];
+    h += '<div class="tile tile--click ' + (sel ? 'tile--selected' : '') + (s.avail ? '' : ' tile--disabled') + '" onclick="pickSource(\'' + s.id + '\')">';
+    h += '<div class="row row--between">' + srcIcon(s.id);
+    if (!s.avail) {
+      h += wl ? '<span class="tag tag--green">You&#39;re on the list &#10003;</span>' : '<span class="tag tag--gray">Coming soon</span>';
+    } else if ((state.oauth === s.id)) {
+      h += '<span class="tag tag--green">Authorized at signup</span>';
+    }
+    h += '</div>';
+    h += '<p class="h01 mt5">' + esc(s.name) + '</p>';
+    h += '<p class="helper mt2">' + esc(s.desc) + '</p>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  if (state.source === 'github') {
+    h += '<div class="mt7"><h2 class="h02 mb3">Pick a repository</h2>';
+    h += '<p class="helper mb5">Showing repositories readable by your GitHub authorization.</p>';
+    h += '<div style="border:1px solid var(--border-subtle)">';
+    REPOS.forEach(function(r){
+      var on = state.repo === r.name;
+      h += '<div class="radioline ' + (on ? 'on' : '') + '" onclick="pickRepo(\'' + r.name + '\')">';
+      h += '<span class="rdot"></span><span class="mono" style="font-size:13px">' + esc(r.name) + '</span>';
+      h += '<span class="tag tag--outline">' + esc(r.branch) + '</span>';
+      h += '<span class="helper">' + esc(r.lang) + '</span>';
+      h += '<span class="helper" style="margin-left:auto">updated ' + esc(r.updated) + '</span>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  }
+
+  if (state.source === 'jira') {
+    h += '<div class="mt7 tile tile--white" style="max-width:560px;padding:24px">';
+    h += '<h2 class="h02">Connect Jira</h2>';
+    h += '<p class="helper mt2">Jira uses an API token instead of OAuth. Generate one from your Atlassian account settings.</p>';
+    h += '<div class="field mt5"><label for="jiraUrl">Instance URL</label><input id="jiraUrl" class="input" placeholder="https://yourteam.atlassian.net" value="' + esc(state.jiraUrl) + '" oninput="state.jiraUrl=this.value"></div>';
+    h += '<div class="field"><label for="jiraToken">API token</label><input id="jiraToken" class="input" type="password" placeholder="Paste token" value="' + esc(state.jiraToken) + '" oninput="state.jiraToken=this.value"></div>';
+    h += state.jiraConnected
+      ? '<div class="row">' + svgCheck() + '<span class="body01">Connected to ' + esc(state.jiraUrl || 'your instance') + '</span></div>'
+      : '<button class="btn btn--tertiary btn--field" onclick="connectJira()">Connect Jira</button>';
+    h += '</div>';
+  }
+
+  h += '</div>';
+  var ready = (state.source === 'gitlab' || state.source === 'bitbucket') ||
+              (state.source === 'github' && !!state.repo) ||
+              (state.source === 'jira' && state.jiraConnected);
+  var note = !state.source ? 'Select a source to continue'
+    : (state.source === 'github' && !state.repo) ? 'Select a repository to continue'
+    : (state.source === 'jira' && !state.jiraConnected) ? 'Connect Jira to continue' : null;
+  h += navBar('signup', 'doctype', 'Continue', !ready, note);
+  return h;
+};
+
+function pickSource(id){
+  var src = null, i;
+  for (i = 0; i < SOURCES.length; i++) if (SOURCES[i].id === id) src = SOURCES[i];
+  if (!src) return;
+  if (!src.avail) {
+    if (state.waitlisted[id]) { toast('info', 'Already on the list', 'We will email you when ' + src.name + ' support ships'); return; }
+    openWaitlist(src);
+    return;
+  }
+  state.source = id;
+  if (id !== 'github') state.repo = null;
+  render();
+}
+function pickRepo(name){ state.repo = name; render(); }
+function connectJira(){
+  if (!state.jiraUrl.trim() || !state.jiraToken.trim()) { toast('error', 'Missing details', 'Instance URL and API token are both required'); return; }
+  state.jiraConnected = true;
+  toast('success', 'Jira connected', esc(state.jiraUrl));
+  render();
+}
+
+function openWaitlist(src){
+  var h = '<div class="mhead"><div><p class="label01 t2">WAITLIST</p><h2 class="h03 mt2">' + esc(src.name) + ' support is coming</h2></div>' +
+    '<button class="mclose" onclick="closeModal()" aria-label="Close">&#10005;</button></div>';
+  h += '<div class="mbody"><p class="body01 t2">We&#39;ll email you the moment ' + esc(src.name) + ' support ships — this also helps us prioritize what to build next.</p>';
+  h += '<div class="field mt6"><label for="wlEmail">Work email</label><input id="wlEmail" class="input" type="email" placeholder="you@company.com" value="' + esc(state.email) + '"></div></div>';
+  h += '<div class="mfoot"><button class="btn btn--ghost btn--center" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn--primary" onclick="joinWaitlist(\'' + src.id + '\')">Notify me</button></div>';
+  openModal(h);
+}
+function joinWaitlist(id){
+  var v = ($('wlEmail') ? $('wlEmail').value : '').trim();
+  if (!v || v.indexOf('@') < 1) { toast('error', 'Enter a valid email', 'We need an address to notify you'); return; }
+  state.waitlisted[id] = true;
+  closeModal();
+  toast('success', 'Added to waitlist', 'We will email ' + v + ' at launch');
+  render();
+}
+/* ================= 4. Document type ================= */
+SCREENS.doctype = function(){
+  var h = '<div class="page">';
+  h += '<h1 class="h04">What should DocGen produce?</h1>';
+  h += '<p class="body01 t2 mt3">Pick a track, then select one or more document types. Selections generate together as a set.</p>';
+
+  h += '<div class="row mt7" style="gap:0">';
+  h += '<button class="chip ' + (state.track === 'technical' ? 'on' : '') + '" style="height:40px" onclick="setTrack(\'technical\')">Technical documentation</button>';
+  h += '<button class="chip ' + (state.track === 'marketing' ? 'on' : '') + '" style="height:40px" onclick="setTrack(\'marketing\')">Marketing material</button>';
+  h += '</div>';
+
+  h += '<div class="grid3 mt6">';
+  DOCTYPES[state.track].forEach(function(d){
+    var on = state.docTypes.indexOf(d.id) >= 0;
+    h += '<div class="tile tile--click cbtile ' + (on ? 'tile--selected' : '') + '" onclick="toggleDocType(\'' + d.id + '\')">';
+    h += '<span class="cb">' + (on ? svgCheck('#ffffff') : '') + '</span>';
+    h += '<div class="row"><p class="h01">' + esc(d.name) + '</p>' + (d.common ? '<span class="tag tag--blue">Most common</span>' : '') + '</div>';
+    h += '<p class="helper mt2">' + esc(d.desc) + '</p>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  if (state.track === 'marketing') {
+    h += '<div class="tile tile--white mt7" style="padding:24px;max-width:720px">';
+    h += '<h2 class="h02">Brief</h2>';
+    h += '<p class="helper mt2">Two answers and a tone — that&#39;s all the marketing generator needs.</p>';
+    h += '<div class="field mt5"><label for="brAud">Who is this for?</label><input id="brAud" class="input" placeholder="e.g. platform engineers evaluating payment APIs" value="' + esc(state.briefAudience) + '" oninput="state.briefAudience=this.value"></div>';
+    h += '<div class="field"><label for="brEmp">What&#39;s the one thing to emphasize?</label><input id="brEmp" class="input" placeholder="e.g. idempotent retries now built in" value="' + esc(state.briefEmphasis) + '" oninput="state.briefEmphasis=this.value"></div>';
+    h += '<p class="label01 t2 mb3">Tone</p><div class="row">';
+    ['Plain & direct','Confident','Playful'].forEach(function(t){
+      h += '<button class="chip ' + (state.briefTone === t ? 'on' : '') + '" onclick="state.briefTone=\'' + t.replace('&','&amp;').replace(/'/g,'\\&#39;') + '\';render()">' + esc(t) + '</button>';
+    });
+    h += '</div></div>';
+  }
+
+  h += '<div class="tile tile--white mt7" style="padding:24px">';
+  h += '<h2 class="h02">Additional instructions</h2>';
+  h += '<p class="helper mt2">Optional. Anything you write here is applied across every selected document type in this run.</p>';
+  h += '<textarea class="textarea mt5" id="addInstr" rows="5" placeholder="Provide any additional instructions for document generation. You can specify the content to include, preferred document structure, formatting requirements, target audience, sections to generate, or upload a reference file." oninput="state.instructions=this.value">' + esc(state.instructions) + '</textarea>';
+  h += '<div class="fileup mt5">';
+  h += '<p class="label01 t2">Reference files</p>';
+  h += '<p class="helper mt2">Style guides, existing docs, or templates. Max 5 MB per file: .pdf, .docx, .md, .txt</p>';
+  h += '<label class="btn btn--tertiary btn--field mt3" style="cursor:pointer">Add files<input type="file" multiple style="display:none" onchange="addFiles(this)"></label>';
+  h += '<div id="fileChips">' + fileChipsHTML() + '</div>';
+  h += '</div></div>';
+
+  h += '</div>';
+  var count = state.docTypes.length;
+  h += navBar('source', 'format', 'Continue', count === 0,
+    count === 0 ? 'Select at least one document type' : count + ' type' + (count > 1 ? 's' : '') + ' selected');
+  return h;
+};
+
+function setTrack(t){
+  if (state.track === t) return;
+  state.track = t;
+  state.docTypes = [];
+  state.format = t === 'technical' ? 'dita' : 'pdf';
+  state.genDone = false;
+  render();
+}
+function toggleDocType(id){
+  var i = state.docTypes.indexOf(id);
+  if (i >= 0) state.docTypes.splice(i, 1); else state.docTypes.push(id);
+  state.genDone = false;
+  render();
+}
+function fileChipsHTML(){
+  var h = '';
+  state.files.forEach(function(f, i){
+    h += '<span class="filechip">' + esc(f) + '<button onclick="removeFile(' + i + ')" aria-label="Remove">&#10005;</button></span>';
+  });
+  return h;
+}
+function addFiles(inp){
+  var i;
+  for (i = 0; i < inp.files.length; i++) state.files.push(inp.files[i].name);
+  inp.value = '';
+  if ($('fileChips')) $('fileChips').innerHTML = fileChipsHTML();
+}
+function removeFile(i){
+  state.files.splice(i, 1);
+  if ($('fileChips')) $('fileChips').innerHTML = fileChipsHTML();
+}
+
+/* ================= 5. Output format ================= */
+SCREENS.format = function(){
+  var list = FORMATS[state.track];
+  var cur = fmtDef();
+  var unsupported = cur && !cur.ok;
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Choose an output format</h1>';
+  h += '<p class="body01 t2 mt3">Formats differ by track. Everything on the roadmap is listed — items marked coming soon are visible so you can tell us they matter.</p>';
+  h += '<div class="grid4 mt7">';
+  list.forEach(function(f){
+    var sel = state.format === f.id;
+    h += '<div class="tile tile--click ' + (sel ? 'tile--selected' : '') + '" onclick="pickFormat(\'' + f.id + '\')">';
+    h += '<div class="row row--between"><p class="h01">' + esc(f.name) + '</p>' +
+         (f.ok ? '' : '<span class="tag tag--gray">Coming soon</span>') + '</div>';
+    h += '<p class="helper mt2">' + esc(f.desc) + '</p>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  if (unsupported) {
+    h += '<div class="notif notif--warning mt6">' + svgWarn() +
+      '<div><p class="ntitle">Format not yet supported</p>' +
+      '<p class="nbody mt2">This output format is not currently supported. We will add support for it in a future release.</p></div></div>';
+  }
+
+  h += '</div>';
+  h += navBar('doctype', 'generation',
+    unsupported ? 'Pick a supported format to continue' : 'Generate document',
+    unsupported || !state.format,
+    unsupported ? null : (cur ? 'Output: ' + cur.name : null));
+  return h;
+};
+
+function pickFormat(id){
+  state.format = id;
+  state.genDone = false;
+  render();
+}
+/* ================= 6. Generation ================= */
+function genSteps(){
+  var steps = ['Parsing repo structure', 'Extracting code comments'];
+  if (state.source === 'jira') steps = ['Reading Jira projects', 'Collecting issues and release versions'];
+  if (state.instructions.trim() || state.files.length) steps.push('Applying your customization instructions');
+  steps.push('Drafting sections');
+  steps.push('Running quality checks');
+  return steps;
+}
+
+SCREENS.generation = function(){
+  var srcLabel = state.repo || (state.source ? state.source : 'your source');
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Generating ' + esc(docTypeName().toLowerCase()) + '</h1>';
+  h += '<p class="body01 t2 mt3">From <span class="mono">' + esc(srcLabel) + '</span> &#8594; ' + esc((fmtDef() || {name: state.format}).name) + (state.docTypes.length > 1 ? ' &#183; ' + state.docTypes.length + ' documents in this set' : '') + '</p>';
+  h += '<div class="grid2 mt7" style="align-items:start">';
+  h += '<div class="tile tile--white" style="padding:24px"><h2 class="h02 mb5">Pipeline</h2><div id="genList"></div></div>';
+  h += '<div id="genPreview"></div>';
+  h += '</div></div>';
+  h += '<div class="navbar"><div class="inner">';
+  h += '<button class="btn btn--ghost btn--center" onclick="go(\'format\')">&#8592; Back</button>';
+  h += '<div class="row"><span class="navnote" id="genNote">' + (state.genDone ? 'Generation complete' : 'Generating&#8230;') + '</span>';
+  h += '<button class="btn btn--primary" id="btnQuality" ' + (state.genDone ? '' : 'disabled') + ' onclick="go(\'quality\')">View quality report<span class="ico">&#8594;</span></button>';
+  h += '</div></div></div>';
+  return h;
+};
+
+function genListHTML(steps, at){
+  var h = '';
+  steps.forEach(function(s, i){
+    var cls, icon;
+    if (state.genDone || i < at) { cls = 'done'; icon = svgCheck(); }
+    else if (i === at) { cls = 'doing'; icon = '<span class="spin"></span>'; }
+    else { cls = 'todo'; icon = '<span class="dotcircle"></span>'; }
+    h += '<div class="genstep ' + cls + '"><span class="sicon">' + icon + '</span>' + esc(s) + '</div>';
+  });
+  return h;
+}
+
+function startGeneration(){
+  var steps = genSteps();
+  if (state.genDone) {
+    if ($('genList')) $('genList').innerHTML = genListHTML(steps, steps.length);
+    showPreview();
+    return;
+  }
+  state.genStep = 0;
+  if ($('genList')) $('genList').innerHTML = genListHTML(steps, 0);
+  genTimer = setInterval(function(){
+    if (!$('genList')) { clearInterval(genTimer); genTimer = null; return; }
+    state.genStep++;
+    if (state.genStep >= steps.length) {
+      clearInterval(genTimer); genTimer = null;
+      state.genDone = true;
+      $('genList').innerHTML = genListHTML(steps, steps.length);
+      showPreview();
+      var b = $('btnQuality'); if (b) b.disabled = false;
+      var n = $('genNote'); if (n) n.textContent = 'Generation complete';
+      toast('success', 'Document generated', docTypeName() + ' is ready for quality review');
+    } else {
+      $('genList').innerHTML = genListHTML(steps, state.genStep);
+    }
+  }, 900);
+}
+
+function showPreview(){
+  var el = $('genPreview'); if (!el) return;
+  var title = docTypeName();
+  var fmt = state.format;
+  var h = '<h2 class="h02 mb5">Preview &#183; ' + esc((fmtDef() || {name: fmt}).name) + '</h2>';
+  if (fmt === 'pdf' || fmt === 'word') {
+    var fname = title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + (fmt === 'pdf' ? '.pdf' : '.docx');
+    h += '<div class="paper">';
+    h += '<p class="label01 t2 mono">ACME &#183; PAYMENTS PLATFORM</p>';
+    h += '<h3 class="h03 mt5">' + esc(title) + '</h3>';
+    h += '<p class="helper mt2">Generated from ' + esc(state.repo || 'source') + ' &#183; v2.4.0</p>';
+    h += '<p class="h01 mt7">1. Overview</p><div class="skel w90"></div><div class="skel"></div><div class="skel w60"></div>';
+    h += '<p class="h01 mt6">2. Authentication</p><div class="skel w80"></div><div class="skel w90"></div><div class="skel w60"></div>';
+    h += '<p class="h01 mt6">3. Endpoints</p><div class="skel"></div><div class="skel w80"></div>';
+    h += '<div class="row row--between mt7" style="border-top:1px solid var(--border-subtle);padding-top:12px"><span class="helper mono">' + esc(fname) + '</span><span class="helper">14 pages</span></div>';
+    h += '</div>';
+  } else if (fmt === 'dita') {
+    h += '<div class="codeblock">' +
+'<span class="cc">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</span>\n' +
+'<span class="cm">&lt;topic</span> <span class="ck">id</span>=<span class="cs">"payments_api_reference"</span><span class="cm">&gt;</span>\n' +
+'  <span class="cm">&lt;title&gt;</span>' + esc(title) + '<span class="cm">&lt;/title&gt;</span>\n' +
+'  <span class="cm">&lt;shortdesc&gt;</span>Create, capture, and refund charges\n  programmatically.<span class="cm">&lt;/shortdesc&gt;</span>\n' +
+'  <span class="cm">&lt;body&gt;</span>\n' +
+'    <span class="cm">&lt;section</span> <span class="ck">id</span>=<span class="cs">"authentication"</span><span class="cm">&gt;</span>\n' +
+'      <span class="cm">&lt;title&gt;</span>Authentication<span class="cm">&lt;/title&gt;</span>\n' +
+'      <span class="cm">&lt;p&gt;</span>All requests require a bearer token issued\n      from the developer console.<span class="cm">&lt;/p&gt;</span>\n' +
+'    <span class="cm">&lt;/section&gt;</span>\n' +
+'    <span class="cm">&lt;section</span> <span class="ck">id</span>=<span class="cs">"endpoints"</span><span class="cm">&gt;</span>\n' +
+'      <span class="cm">&lt;title&gt;</span>Endpoints<span class="cm">&lt;/title&gt;</span>\n' +
+'      <span class="cm">&lt;p&gt;</span>POST /v1/charges creates a charge&#8230;<span class="cm">&lt;/p&gt;</span>\n' +
+'    <span class="cm">&lt;/section&gt;</span>\n' +
+'  <span class="cm">&lt;/body&gt;</span>\n' +
+'<span class="cm">&lt;/topic&gt;</span></div>';
+  } else {
+    h += '<div class="codeblock">' +
+'<span class="cm"># ' + esc(title) + '</span>\n\n' +
+'The Payments API lets you create, capture, and refund\ncharges programmatically.\n\n' +
+'<span class="cm">## Authentication</span>\n\n' +
+'All requests require a bearer token issued from the\ndeveloper console. Tokens scope to a single project.\n\n' +
+'<span class="cm">## Create a charge</span>\n\n' +
+'Send a POST request to <span class="cs">`/v1/charges`</span> with the amount,\ncurrency, and payment source&#8230;</div>';
+  }
+  el.innerHTML = h;
+}
+
+/* ================= 7. Quality review ================= */
+function aiScore(){
+  var n = 0, k;
+  for (k in state.fixed) if (state.fixed[k]) n++;
+  return Math.min(100, 70 + 6 * n);
+}
+function fixedCount(){ var n = 0, k; for (k in state.fixed) if (state.fixed[k]) n++; return n; }
+
+SCREENS.quality = function(){
+  var h = '<div class="page page--wide" style="max-width:1056px">';
+  h += '<h1 class="h04">Quality review</h1>';
+  h += '<p class="body01 t2 mt3">' + esc(docTypeName()) + ' &#183; <span class="mono">' + esc(state.repo || state.source || 'source') + '</span> &#183; generated just now</p>';
+  h += '<div class="tabs mt7">';
+  [['overview','Overview'],['links','Broken links'],['style','Style guide'],['ai','Check AI consumability']].forEach(function(t){
+    h += '<button class="' + (state.qTab === t[0] ? 'on' : '') + '" onclick="setQTab(\'' + t[0] + '\')">' + t[1] + '</button>';
+  });
+  h += '</div>';
+  h += qTabHTML();
+  h += '</div>';
+  h += navBar('generation', 'export', 'Continue to export', false, null);
+  return h;
+};
+function setQTab(t){ state.qTab = t; render(); }
+
+function qTabHTML(){
+  if (state.qTab === 'links') return qLinksHTML();
+  if (state.qTab === 'style') return qStyleHTML();
+  if (state.qTab === 'ai') return qAiHTML();
+  return qOverviewHTML();
+}
+
+function qOverviewHTML(){
+  var ai = aiScore();
+  var overall = Math.min(100, Math.round((ai + 92 + 86) / 3));
+  var h = '<div class="grid3">';
+  h += '<div class="score ' + (overall >= 85 ? 'score--good' : 'score--warn') + '"><span class="label01 t2">Overall score</span><span class="num">' + overall + '</span><span class="helper">Weighted across all checks</span></div>';
+  h += '<div class="score score--warn"><span class="label01 t2">Broken links</span><span class="num">2</span><span class="helper">Of 47 links checked</span></div>';
+  h += '<div class="score ' + (ai >= 85 ? 'score--good' : 'score--warn') + '"><span class="label01 t2">AI-readiness score</span><span class="num">' + ai + '</span><span class="helper">LLM-judge evaluation</span></div>';
+  h += '</div>';
+
+  h += '<h2 class="h02 mt7 mb3">Annotated preview</h2>';
+  h += '<p class="helper mb5">A sample of the generated content with findings marked inline. Green — correct terminology. Amber — broken link. Blue — well-chunked for AI retrieval.</p>';
+  h += '<div class="annot">';
+  h += '## Authentication\n\n';
+  h += 'All requests require a <span class="an-good">bearer token</span> issued from the developer\nconsole. Tokens scope to a single project and expire after\n12 hours. See the <span class="an-warn">token rotation guide</span><span class="antag antag--warn">404 — broken link</span> for rotation policy.\n\n';
+  h += '<span class="an-ai">## Create a charge\n\nSend a POST request to /v1/charges with amount, currency,\nand source. The response returns a charge object with a\nstatus of pending, succeeded, or failed.</span><span class="antag antag--ai">Self-contained — retrieval-ready</span>\n\n';
+  h += 'Refunds are issued against a <span class="an-good">charge ID</span><span class="antag antag--good">consistent term</span>, never against raw\ncard details.';
+  h += '</div>';
+  return h;
+}
+
+function qLinksHTML(){
+  var rows = [
+    {file:'authentication.md, line 24', url:'/docs/token-rotation-guide', why:'Target page was removed in v2.3 docs restructure. Returns 404.', tag:'<span class="tag tag--red">404</span>'},
+    {file:'webhooks.md, line 108', url:'https://status.acme.dev/webhooks', why:'Host resolves but path redirects 3 times, then times out.', tag:'<span class="tag tag--amber">Timeout</span>'}
+  ];
+  var h = '<p class="body01 t2 mb5">2 of 47 links failed verification. Fix targets at the source, or let auto-regenerate re-link on next merge.</p>';
+  rows.forEach(function(r){
+    h += '<div class="issue" style="border-left-color:var(--support-error)">';
+    h += '<div class="row row--between"><span class="mono" style="font-size:13px">' + esc(r.url) + '</span>' + r.tag + '</div>';
+    h += '<p class="helper mt2">' + esc(r.file) + '</p>';
+    h += '<p class="body01 mt3">' + esc(r.why) + '</p>';
+    h += '</div>';
+  });
+  h += '<div class="notif notif--info mt6">' + svgInfo() + '<div><p class="nbody">Link integrity is checked on every generation and on every merge when automation is on.</p></div></div>';
+  return h;
+}
+
+function qStyleHTML(){
+  var rows = [
+    {t:'Passive voice above threshold', d:'Sections 2 and 4 use passive voice in 31% of sentences; the style guide caps it at 20%. Example: "Tokens are issued by the console" &#8594; "The console issues tokens."', tag:'<span class="tag tag--amber">Review</span>'},
+    {t:'Inconsistent terminology: "API key" vs "token"', d:'Both terms refer to the same credential. The glossary prefers "API key". 6 occurrences of "token" flagged outside code samples.', tag:'<span class="tag tag--amber">Review</span>'},
+    {t:'Sentence case in headings', d:'All 14 headings comply with sentence-case convention.', tag:'<span class="tag tag--green">Pass</span>'},
+    {t:'Oxford comma usage', d:'Consistent across all list constructions.', tag:'<span class="tag tag--green">Pass</span>'},
+    {t:'Latin abbreviations', d:'No "e.g." or "i.e." in body text; expanded forms used throughout.', tag:'<span class="tag tag--green">Pass</span>'}
+  ];
+  var h = '<p class="body01 t2 mb5">Checked against your default style profile (IBM Style-derived). 2 findings need review, 3 checks pass.</p>';
+  rows.forEach(function(r){
+    h += '<div class="issue" style="border-left-color:' + (r.tag.indexOf('green') >= 0 ? 'var(--support-success)' : 'var(--support-warning)') + '">';
+    h += '<div class="row row--between"><p class="h01">' + r.t + '</p>' + r.tag + '</div>';
+    h += '<p class="body01 mt3 t2">' + r.d + '</p></div>';
+  });
+  return h;
+}
+
+function qAiHTML(){
+  var ai = aiScore();
+  var fixed = fixedCount();
+  var remaining = AI_ISSUES.length - fixed;
+  var verdict, vtag;
+  if (remaining <= 1) { verdict = 'AI-consumable'; vtag = 'tag--green'; }
+  else if (remaining <= 3) { verdict = 'Mostly consumable'; vtag = 'tag--amber'; }
+  else { verdict = 'Needs work before publishing'; vtag = 'tag--red'; }
+
+  var h = '<div class="grid3">';
+  h += '<div class="score ' + (ai >= 85 ? 'score--good' : 'score--warn') + '"><span class="label01 t2">AI-readiness score</span><span class="num" id="aiNum">' + ai + '</span><span class="helper">+6 per resolved issue, cap 100</span></div>';
+  h += '<div class="score score--info"><span class="label01 t2">Issues remaining</span><span class="num">' + remaining + '</span><span class="helper">Across both categories</span></div>';
+  h += '<div class="score score--good"><span class="label01 t2">Fixes applied</span><span class="num">' + fixed + '</span><span class="helper">Applied to the working draft</span></div>';
+  h += '</div>';
+
+  h += '<div class="row row--between mt7" style="flex-wrap:wrap;gap:12px">';
+  h += '<div class="row">' + svgInfo() + '<span class="body01">Evaluated by LLM judge, aligned to IBM Docs guidelines</span><span class="tag ' + vtag + '">' + verdict + '</span></div>';
+  h += '<button class="btn btn--tertiary btn--field" id="btnRecheck" onclick="recheckAI()">Re-check with AI judge</button>';
+  h += '</div>';
+
+  ['LLM readiness', 'Consumability'].forEach(function(cat){
+    h += '<h2 class="h02 mt7 mb3">' + cat + '</h2>';
+    if (cat === 'LLM readiness') h += '<p class="helper mb5">Whether AI systems can find, summarize, and cite this document.</p>';
+    else h += '<p class="helper mb5">Whether individual sections hold up when retrieved out of context.</p>';
+    AI_ISSUES.forEach(function(iss){
+      if (iss.cat !== cat) return;
+      var done = !!state.fixed[iss.id];
+      h += '<div class="issue ' + (done ? 'fixed' : '') + '">';
+      h += '<div class="row row--between"><div class="row">' + (done ? svgCheck() : '') + '<p class="h01">' + esc(iss.title) + '</p></div>';
+      h += done ? '<span class="tag tag--green">Fixed</span>' : '<span class="tag tag--amber">Open</span>';
+      h += '</div>';
+      h += '<p class="body01 mt3 t2">' + esc(iss.body) + '</p>';
+      h += '<p class="ifix"><b>Suggested fix:</b> ' + esc(iss.fix) + '</p>';
+      if (!done) h += '<button class="btn btn--primary btn--sm mt5" onclick="applyFix(\'' + iss.id + '\')">Apply fix</button>';
+      h += '</div>';
+    });
+  });
+
+  h += '<div class="notif notif--info mt6">' + svgInfo() + '<div><p class="nbody">Link integrity is evaluated separately — see the Broken links tab. It does not affect the AI-readiness score.</p></div></div>';
+  return h;
+}
+
+function applyFix(id){
+  state.fixed[id] = true;
+  toast('success', 'Fix applied', 'AI-readiness score is now ' + aiScore() + ' / 100');
+  render();
+}
+function recheckAI(){
+  var b = $('btnRecheck'); if (!b) return;
+  b.disabled = true;
+  b.textContent = 'Re-evaluating…';
+  setTimeout(function(){
+    if ($('btnRecheck')) { $('btnRecheck').disabled = false; $('btnRecheck').textContent = 'Re-check with AI judge'; }
+    toast('info', 'AI judge re-confirmed', 'Score verified at ' + aiScore() + ' / 100 against IBM Docs guidelines');
+  }, 800);
+}
+/* ================= 8. Export ================= */
+SCREENS['export'] = function(){
+  var fmt = fmtDef() || {name: state.format, id: state.format};
+  var base = docTypeName().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  var extMap = {dita:'.dita.zip', pdf:'.pdf', word:'.docx', markdown:'.md'};
+  var fname = base + (extMap[fmt.id] || '.zip');
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Export</h1>';
+  h += '<p class="body01 t2 mt3">Quality gate passed at ' + aiScore() + ' / 100 AI-readiness. Download your output or wire it into CI so it never goes stale.</p>';
+  h += '<div class="grid2 mt7" style="align-items:start">';
+
+  h += '<div class="tile tile--white" style="padding:24px">';
+  h += '<h2 class="h02 mb5">Downloads</h2>';
+  h += '<div class="stack">';
+  h += '<button class="btn btn--primary" style="width:100%" onclick="fakeDownload(\'' + fname + '\')">Download ' + esc(fmt.name) + '<span class="ico">&#8595;</span></button>';
+  h += '<button class="btn btn--tertiary" style="width:100%" onclick="fakeDownload(\'quality-report.html\')">Download quality report<span class="ico">&#8595;</span></button>';
+  h += '</div>';
+  h += '<p class="helper mt5 mono">' + esc(fname) + ' &#183; generated today</p>';
+  h += '</div>';
+
+  h += '<div class="tile tile--white" style="padding:24px">';
+  h += '<h2 class="h02 mb5">Keep it current</h2>';
+  h += '<p class="body01 t2">Documents drift the moment code merges. Regenerate automatically on every merge to main and gate publishing on the quality score.</p>';
+  h += '<button class="btn btn--tertiary mt5" onclick="go(\'automation\')">Set up auto-regenerate on merge<span class="ico">&#8594;</span></button>';
+  h += '<div class="divider" style="margin:24px 0"></div>';
+  h += '<h2 class="h02 mb3">Share with your team</h2>';
+  h += '<p class="helper mb5">Sends a read-only link to the quality report.</p>';
+  h += '<button class="btn btn--tertiary btn--field" onclick="shareReport()">Share quality report with team</button>';
+  h += '</div>';
+
+  h += '</div></div>';
+  h += navBar('quality', 'pricing', 'Continue', false, null);
+  return h;
+};
+function fakeDownload(fname){ toast('success', 'Download started', fname); }
+function shareReport(){ toast('success', 'Report shared', 'Read-only link sent to your team workspace'); }
+
+/* ================= 9. Pricing ================= */
+SCREENS.pricing = function(){
+  var annual = state.billing === 'annual';
+  var teamPrice = annual ? 26 : 32;
+  var h = '<div class="page">';
+  h += '<div class="row row--between" style="flex-wrap:wrap;gap:16px">';
+  h += '<div><h1 class="h04">Pricing</h1><p class="body01 t2 mt3">Start free. Upgrade when the whole team wants their docs to write themselves.</p></div>';
+  h += '<div class="row" style="gap:0"><button class="chip ' + (!annual ? 'on' : '') + '" onclick="state.billing=\'monthly\';render()">Monthly</button>' +
+       '<button class="chip ' + (annual ? 'on' : '') + '" onclick="state.billing=\'annual\';render()">Annual &#183; save 20%</button></div>';
+  h += '</div>';
+
+  h += '<div class="pricegrid mt7">';
+  h += '<div class="phead"><span class="label01 t2">PLANS</span></div>';
+  h += '<div class="phead"><p class="h02">Free</p><p class="h04 mono">$0</p><p class="helper">Per user, forever</p>' +
+       '<button class="btn btn--tertiary btn--field mt3" style="width:100%" onclick="choosePlan(\'free\')">Stay on Free</button></div>';
+  h += '<div class="phead pop"><div class="row row--between" style="width:100%"><p class="h02">Team</p><span class="tag tag--blue">Most popular</span></div>' +
+       '<p class="h04 mono">$' + teamPrice + '</p><p class="helper">Per user / month, billed ' + (annual ? 'annually' : 'monthly') + '</p>' +
+       '<button class="btn btn--primary btn--field mt3" style="width:100%" onclick="choosePlan(\'team\')">Choose Team</button></div>';
+  h += '<div class="phead"><p class="h02">Enterprise</p><p class="h04 mono">Custom</p><p class="helper">Annual contract</p>' +
+       '<button class="btn btn--tertiary btn--field mt3" style="width:100%" onclick="choosePlan(\'enterprise\')">Contact us</button></div>';
+
+  var rows = [
+    ['Sources', '1 source', 'All sources', 'All sources'],
+    ['Generations', '5 / month, watermarked', 'Unlimited', 'Unlimited'],
+    ['Output formats', 'PDF, Word only', 'All formats', 'All formats'],
+    ['Quality checks', 'Overview only', 'Full pipeline + AI judge', 'Full pipeline + AI judge'],
+    ['CI/CD automation', '—', 'Included', 'Included'],
+    ['Custom style-guide rules', '—', '—', 'Included'],
+    ['SSO (SAML / OIDC)', '—', '—', 'Included'],
+    ['Audit logs', '—', '—', 'Included'],
+    ['Support', 'Community', 'Business hours', 'Dedicated + SLA']
+  ];
+  rows.forEach(function(r){
+    h += '<div class="rowlabel">' + r[0] + '</div><div>' + r[1] + '</div><div>' + r[2] + '</div><div>' + r[3] + '</div>';
+  });
+  h += '</div></div>';
+  h += navBar('export', 'checkout', 'Continue to checkout', false, 'Team plan · billed ' + (annual ? 'annually' : 'monthly'));
+  return h;
+};
+function choosePlan(p){
+  state.plan = p;
+  if (p === 'team') { go('checkout'); return; }
+  if (p === 'free') { toast('info', 'Staying on Free', '5 watermarked generations per month'); go('dashboard'); return; }
+  toast('info', 'Request sent', 'Our enterprise team will reach out within one business day');
+}
+
+/* ================= 10. Checkout ================= */
+SCREENS.checkout = function(){
+  var annual = state.billing === 'annual';
+  var per = annual ? 26 : 32;
+  var seats = 5;
+  var subtotal = annual ? per * seats * 12 : per * seats;
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Checkout</h1>';
+  h += '<div class="grid2 mt7" style="align-items:start">';
+
+  h += '<div class="tile tile--white" style="padding:24px">';
+  h += '<h2 class="h02 mb5">Payment details</h2>';
+  h += '<div class="field"><label for="ccName">Name on card</label><input id="ccName" class="input" placeholder="Praveen Jha"></div>';
+  h += '<div class="field"><label for="ccNum">Card number</label><input id="ccNum" class="input mono" placeholder="4242 4242 4242 4242" inputmode="numeric"></div>';
+  h += '<div class="grid2"><div class="field"><label for="ccExp">Expiry</label><input id="ccExp" class="input mono" placeholder="MM / YY"></div>' +
+       '<div class="field"><label for="ccCvc">CVC</label><input id="ccCvc" class="input mono" placeholder="123"></div></div>';
+  h += '<div class="field"><label for="taxId">Tax ID / VAT number (optional)</label><input id="taxId" class="input mono" placeholder="e.g. GSTIN 29ABCDE1234F1Z5"></div>';
+  h += '<p class="helper">Invoices include your tax ID for expensing. Prices exclude applicable taxes.</p>';
+  h += '</div>';
+
+  h += '<div class="tile" style="padding:24px">';
+  h += '<h2 class="h02 mb5">Order summary</h2>';
+  h += '<div class="row row--between mb3"><span class="body01">Team plan &#183; ' + seats + ' seats</span><span class="mono">$' + per + ' / user / mo</span></div>';
+  h += '<div class="row row--between mb3"><span class="body01 t2">Billing cycle</span><span>' + (annual ? 'Annual' : 'Monthly') + '</span></div>';
+  if (annual) h += '<div class="row row--between mb3"><span class="body01 t2">Annual discount</span><span class="check">&#8722;20% applied</span></div>';
+  h += '<div class="divider" style="margin:16px 0"></div>';
+  h += '<div class="row row--between"><span class="h02">Due today</span><span class="h03 mono">$' + subtotal.toLocaleString() + '</span></div>';
+  h += '<p class="helper mt2">' + (annual ? '12 months, renews annually' : 'Renews monthly') + ' &#183; cancel anytime from Billing</p>';
+  h += '<button class="btn btn--primary mt6" style="width:100%" id="btnPay" onclick="payNow()">Pay now &#183; $' + subtotal.toLocaleString() + '</button>';
+  h += '<p class="helper mt3">Prototype only — no real payment is processed.</p>';
+  h += '</div>';
+
+  h += '</div></div>';
+  h += navBar('pricing', null, null, false, null);
+  return h;
+};
+function payNow(){
+  var b = $('btnPay'); if (!b || b.disabled) return;
+  b.disabled = true;
+  b.textContent = 'Processing…';
+  setTimeout(function(){
+    if ($('btnPay')) $('btnPay').textContent = 'Payment confirmed ✓';
+    toast('success', 'Payment successful', 'Team plan is active — receipt sent to ' + (state.email || 'your email'));
+    state.paid = true; state.auth = true;
+    setTimeout(function(){ go('dashboard'); }, 1200);
+  }, 900);
+}
+
+/* ================= 11. Dashboard ================= */
+SCREENS.dashboard = function(){
+  var h = '<div class="page">';
+  h += '<div class="row row--between" style="flex-wrap:wrap;gap:16px">';
+  h += '<div><h1 class="h04">Dashboard</h1><p class="body01 t2 mt3">Recent generations across your connected sources.</p></div>';
+  h += '<div class="row"><button class="btn btn--tertiary btn--field" onclick="go(\'automation\')">Automation</button>' +
+       '<button class="btn btn--tertiary btn--field" onclick="go(\'settings\')">Team &amp; settings</button>' +
+       '<button class="btn btn--primary btn--field" onclick="go(\'source\')">New generation<span class="ico">+</span></button></div>';
+  h += '</div>';
+
+  h += '<div class="grid3 mt7">';
+  h += '<div class="score score--good"><span class="label01 t2">Documents this month</span><span class="num">12</span><span class="helper">Across 3 repositories</span></div>';
+  h += '<div class="score score--good"><span class="label01 t2">Avg quality score</span><span class="num">86</span><span class="helper">Trailing 30 days</span></div>';
+  h += '<div class="score ' + (state.autoRegen ? 'score--good' : 'score--warn') + '"><span class="label01 t2">Automation</span><span class="num" style="font-size:20px;padding-top:8px">' + (state.autoRegen ? 'On' : 'Off') + '</span><span class="helper">Regenerate on merge to main</span></div>';
+  h += '</div>';
+
+  h += '<h2 class="h02 mt7 mb5">Recent generations</h2>';
+  h += '<table class="dtable"><thead><tr><th>REPOSITORY</th><th>BRANCH</th><th>DOCUMENT</th><th>FORMAT</th><th>GENERATED</th><th>QUALITY</th><th></th></tr></thead><tbody>';
+  DASH_ROWS.forEach(function(r){
+    h += '<tr><td class="mono" style="font-size:13px">' + esc(r.repo) + '</td>' +
+      '<td><span class="tag tag--outline">' + esc(r.branch) + '</span></td>' +
+      '<td>' + esc(r.doc) + '</td><td>' + esc(r.fmt) + '</td>' +
+      '<td class="t2">' + esc(r.when) + '</td><td>' + scoreTag(r.score) + '</td>' +
+      '<td><button class="linkbtn" onclick="go(\'quality\')">View report</button></td></tr>';
+  });
+  h += '</tbody></table>';
+  h += '<div class="notif notif--warning mt6">' + svgWarn() + '<div><p class="ntitle">One document needs attention</p><p class="nbody mt2">acme/ledger-service scored 68 — 4 unresolved AI-readiness issues and 1 broken link. Open its report to apply fixes.</p></div></div>';
+  h += '</div>';
+  h += navBar('checkout', 'automation', 'Continue', false, null);
+  return h;
+};
+
+/* ================= 12. Automation ================= */
+SCREENS.automation = function(){
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Automation</h1>';
+  h += '<p class="body01 t2 mt3">Regenerate documentation on every merge, and block publishing when the quality score drops below your gate.</p>';
+  h += '<div class="grid2 mt7" style="align-items:start">';
+
+  h += '<div class="tile tile--white" style="padding:24px">';
+  h += '<h2 class="h02 mb5">Trigger</h2>';
+  h += '<div class="toggle ' + (state.autoRegen ? 'on' : '') + '" onclick="toggleAuto()"><span class="track"></span><span class="body01">Auto-regenerate on merge to main</span></div>';
+  h += '<div class="field mt6"><label for="brSel">Watch branch</label><select id="brSel" class="select" onchange="state.branch=this.value">';
+  ['main', 'develop', 'release/*'].forEach(function(b){
+    h += '<option value="' + b + '"' + (state.branch === b ? ' selected' : '') + '>' + b + '</option>';
+  });
+  h += '</select></div>';
+  h += '<p class="helper">Repository: <span class="mono">' + esc(state.repo || 'acme/payments-api') + '</span> &#183; quality gate: 85</p>';
+  h += '</div>';
+
+  h += '<div class="tile tile--white" style="padding:24px">';
+  h += '<div class="row row--between mb5"><h2 class="h02">CI snippet &#183; GitHub Actions</h2>' +
+       '<button class="btn btn--tertiary btn--sm" onclick="copySnippet()">Copy snippet</button></div>';
+  h += '<div class="codeblock" style="font-size:11.5px">' + esc(CI_YAML) + '</div>';
+  h += '<p class="helper mt3">Add <span class="mono">DOCGEN_API_KEY</span> to your repository secrets first.</p>';
+  h += '</div>';
+
+  h += '</div></div>';
+  h += navBar('dashboard', 'settings', 'Continue', false, null);
+  return h;
+};
+function toggleAuto(){
+  state.autoRegen = !state.autoRegen;
+  toast(state.autoRegen ? 'success' : 'info', 'Auto-regenerate ' + (state.autoRegen ? 'enabled' : 'disabled'),
+    state.autoRegen ? 'Docs regenerate on every merge to ' + state.branch : 'Manual generation only');
+  render();
+}
+function copySnippet(){
+  try {
+    navigator.clipboard.writeText(CI_YAML).then(function(){
+      toast('success', 'Snippet copied', 'Paste into .github/workflows/docgen.yml');
+    }, function(){
+      toast('error', 'Copy failed', 'Clipboard unavailable — select the text manually');
+    });
+  } catch (e) {
+    toast('error', 'Copy failed', 'Clipboard unavailable — select the text manually');
+  }
+}
+
+/* ================= 13. Team & settings ================= */
+SCREENS.settings = function(){
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Team &amp; settings</h1>';
+  h += '<div class="tabs mt7">';
+  [['sources','Connected sources'],['team','Team'],['billing','Billing']].forEach(function(t){
+    h += '<button class="' + (state.settingsTab === t[0] ? 'on' : '') + '" onclick="state.settingsTab=\'' + t[0] + '\';render()">' + t[1] + '</button>';
+  });
+  h += '</div>';
+
+  if (state.settingsTab === 'sources') {
+    h += '<div class="stack" style="max-width:720px">';
+    var connected = [];
+    if (state.oauth) connected.push({name: state.oauth.charAt(0).toUpperCase() + state.oauth.slice(1), detail: state.repo || 'OAuth read-only', id: state.oauth});
+    if (state.source && state.source !== state.oauth && state.source !== 'jira') {
+      var sname = state.source.charAt(0).toUpperCase() + state.source.slice(1);
+      connected.push({name: sname, detail: state.repo || 'OAuth read-only', id: state.source});
+    }
+    if (state.jiraConnected) connected.push({name:'Jira', detail: state.jiraUrl || 'API token', id:'jira'});
+    if (!connected.length) connected.push({name:'GitHub', detail:'acme/payments-api', id:'github'});
+    connected.forEach(function(c){
+      h += '<div class="tile tile--white row row--between" style="padding:16px 24px">';
+      h += '<div class="row">' + srcIcon(c.id) + '<div><p class="h01">' + esc(c.name) + '</p><p class="helper mono">' + esc(c.detail) + '</p></div></div>';
+      h += '<div class="row"><span class="tag tag--green">Connected</span><button class="linkbtn">Manage</button></div></div>';
+    });
+    h += '<button class="btn btn--tertiary" onclick="go(\'source\')">Connect another source<span class="ico">+</span></button>';
+    h += '</div>';
+  } else if (state.settingsTab === 'team') {
+    var members = [
+      {n:'Praveen Jha', e: state.email || 'praveen@acme.dev', r:'Owner'},
+      {n:'Meera Krishnan', e:'meera@acme.dev', r:'Admin'},
+      {n:'Daniel Osei', e:'daniel@acme.dev', r:'Writer'},
+      {n:'Sofia Marques', e:'sofia@acme.dev', r:'Reviewer'}
+    ];
+    h += '<table class="dtable" style="max-width:720px"><thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th></tr></thead><tbody>';
+    members.forEach(function(m){
+      h += '<tr><td>' + esc(m.n) + '</td><td class="mono" style="font-size:13px">' + esc(m.e) + '</td><td><span class="tag ' + (m.r === 'Owner' ? 'tag--purple' : 'tag--gray') + '">' + m.r + '</span></td></tr>';
+    });
+    state.invited.forEach(function(e){
+      h += '<tr><td class="t2">Pending</td><td class="mono" style="font-size:13px">' + esc(e) + '</td><td><span class="tag tag--amber">Invited</span></td></tr>';
+    });
+    h += '</tbody></table>';
+    h += '<div class="row mt6" style="max-width:720px;align-items:flex-end">';
+    h += '<div class="field" style="flex:1;margin-bottom:0"><label for="invEmail">Invite by email</label><input id="invEmail" class="input" type="email" placeholder="teammate@company.com"></div>';
+    h += '<button class="btn btn--primary btn--field" onclick="inviteMember()">Send invite</button></div>';
+  } else {
+    h += '<div class="tile tile--white" style="padding:24px;max-width:560px">';
+    h += '<div class="row row--between"><h2 class="h02">Current plan</h2><span class="tag ' + (state.paid ? 'tag--blue' : 'tag--gray') + '">' + (state.paid ? 'Team' : 'Free') + '</span></div>';
+    if (state.paid) {
+      h += '<p class="body01 mt5">5 seats &#183; billed ' + (state.billing === 'annual' ? 'annually' : 'monthly') + '</p>';
+      h += '<div class="row row--between mt3"><span class="body01 t2">Next invoice</span><span class="mono">' + (state.billing === 'annual' ? 'Jul 4, 2027' : 'Aug 4, 2026') + '</span></div>';
+      h += '<div class="row row--between mt3"><span class="body01 t2">Amount</span><span class="mono">$' + (state.billing === 'annual' ? '1,560' : '160') + '</span></div>';
+    } else {
+      h += '<p class="body01 mt5 t2">5 watermarked generations per month, 1 source, PDF and Word only.</p>';
+      h += '<button class="btn btn--primary mt5" onclick="go(\'pricing\')">Upgrade to Team<span class="ico">&#8594;</span></button>';
+    }
+    h += '</div>';
+  }
+
+  h += '</div>';
+  h += navBar('automation', null, null, false, null);
+  return h;
+};
+function inviteMember(){
+  var v = ($('invEmail') ? $('invEmail').value : '').trim();
+  if (!v || v.indexOf('@') < 1) { toast('error', 'Enter a valid email', 'An address is required to send an invite'); return; }
+  state.invited.push(v);
+  toast('success', 'Invite sent', v + ' will receive an email shortly');
+  render();
+}
+/* ================= Marketing pages (outside sequence) ================= */
+SCREENS.features = function(){
+  var blocks = [
+    {tag:'SOURCE', title:'Connect once, read forever', body:'OAuth to GitHub, GitLab, or Bitbucket at signup — the same grant powers generation. Jira connects with an API token for changelog and release-note pipelines. Access is read-only: repository contents and commit history, nothing more, and your source code is never stored.'},
+    {tag:'GENERATE', title:'From repo to draft in minutes', body:'DocGen parses repo structure, extracts code comments and OpenAPI-style annotations, and drafts topic-based sections. Choose technical documentation — API references, user guides, installation guides — or marketing material like release announcements and feature one-pagers. Output in DITA, PDF, Word, or Markdown.'},
+    {tag:'VERIFY', title:'A quality gate, not a spellcheck', body:'Every generation runs through link verification, style-guide compliance derived from IBM Style conventions, and an LLM-judge AI-consumability review: short descriptions, search-optimized titles, metadata keywords, unambiguous references, and example coverage. Each finding ships with a concrete one-click fix.'},
+    {tag:'AUTOMATE', title:'Docs that never go stale', body:'A GitHub Actions snippet regenerates documentation on every merge to main and blocks publishing when the quality score drops below your gate. Writers review diffs instead of rewriting pages.'}
+  ];
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Features</h1>';
+  h += '<p class="body01 t2 mt3" style="max-width:640px">Every stage of the pipeline, in the order your team will use it.</p>';
+  h += '<div class="stack mt7">';
+  blocks.forEach(function(b){
+    h += '<div class="tile tile--white" style="padding:24px"><p class="label01 mono t2">' + b.tag + '</p>' +
+         '<h2 class="h03 mt3">' + b.title + '</h2><p class="body01 t2 mt3" style="max-width:720px">' + b.body + '</p></div>';
+  });
+  h += '</div></div>';
+  h += navBar('landing', 'signup', 'Start free', false, null);
+  return h;
+};
+
+SCREENS.integrations = function(){
+  var srcs = ['GitHub', 'GitLab', 'Bitbucket', 'Jira'];
+  var fmts = ['DITA', 'PDF', 'Word', 'Markdown'];
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Integrations</h1>';
+  h += '<p class="body01 t2 mt3">Every supported source works with every supported format. No partial matrices, no asterisks.</p>';
+  h += '<table class="matrix mt7"><thead><tr><th>SOURCE</th>';
+  fmts.forEach(function(f){ h += '<th>' + f + '</th>'; });
+  h += '</tr></thead><tbody>';
+  srcs.forEach(function(s){
+    h += '<tr><td>' + s + '</td>';
+    fmts.forEach(function(){ h += '<td><span class="check">&#10003;</span></td>'; });
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  h += '<h2 class="h02 mt9 mb3">Coming soon</h2>';
+  h += '<p class="helper mb5">Join a waitlist from the source-selection screen — it directly shapes our roadmap order.</p>';
+  h += '<div class="grid4">';
+  ['openapi','confluence','notion','azdo'].forEach(function(id){
+    var s = null, i;
+    for (i = 0; i < SOURCES.length; i++) if (SOURCES[i].id === id) s = SOURCES[i];
+    h += '<div class="tile"><div class="row row--between">' + srcIcon(id) + '<span class="tag tag--gray">Coming soon</span></div>' +
+         '<p class="h01 mt5">' + esc(s.name) + '</p><p class="helper mt2">' + esc(s.desc) + '</p></div>';
+  });
+  h += '</div></div>';
+  h += navBar('landing', 'signup', 'Start free', false, null);
+  return h;
+};
+
+SCREENS.customers = function(){
+  var quotes = [
+    {q:'We regenerate the API reference on every merge now. What used to be a 3-day post-release scramble is a 4-minute pipeline step, and the quality gate catches broken links before customers do.', n:'Head of Documentation', c:'Series C fintech, 40-person eng team', s:'11 hours saved per release'},
+    {q:'The AI-consumability check was the surprise. Our docs now answer correctly inside our customers&#39; AI assistants because every section is self-contained and titled for real queries.', n:'Platform Engineering Lead', c:'Developer tools company', s:'AI-readiness 71 to 96 in one sprint'},
+    {q:'Two writers support nine product teams. DocGen drafts, we edit. The style-guide findings alone replaced our entire manual review checklist.', n:'Technical Writing Manager', c:'Enterprise SaaS, 300 employees', s:'2.3 hours saved per document'}
+  ];
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Customer proof</h1>';
+  h += '<p class="body01 t2 mt3">Measured in hours returned to writing teams.</p>';
+  h += '<div class="grid3 mt7" style="align-items:stretch">';
+  quotes.forEach(function(x){
+    h += '<div class="tile tile--white" style="padding:24px;display:flex;flex-direction:column">';
+    h += '<span class="tag tag--teal">' + x.s + '</span>';
+    h += '<p class="body01 mt5" style="flex:1">&#8220;' + x.q + '&#8221;</p>';
+    h += '<p class="h01 mt6">' + x.n + '</p><p class="helper mt2">' + x.c + '</p>';
+    h += '</div>';
+  });
+  h += '</div></div>';
+  h += navBar('landing', 'signup', 'Start free', false, null);
+  return h;
+};
+
+SCREENS.docs = function(){
+  var cats = [
+    {t:'Getting started', items:['Connect your first source', 'Generate an API reference', 'Read a quality report']},
+    {t:'Quality pipeline', items:['How the LLM judge scores AI readiness', 'Style profiles and custom rules', 'Link verification behavior']},
+    {t:'Automation', items:['GitHub Actions setup', 'Quality gates in CI', 'Webhook events']},
+    {t:'Account & billing', items:['Roles and permissions', 'Plans and invoicing', 'SSO configuration (Enterprise)']}
+  ];
+  var h = '<div class="page">';
+  h += '<h1 class="h04">Docs &amp; help center</h1>';
+  h += '<div class="field mt7" style="max-width:480px"><label for="docSearch">Search</label><input id="docSearch" class="input" placeholder="Search guides, e.g. quality gate"></div>';
+  h += '<div class="grid4 mt6">';
+  cats.forEach(function(c){
+    h += '<div class="tile"><p class="h01 mb3">' + c.t + '</p>';
+    c.items.forEach(function(it){ h += '<p class="body01 mt3"><a onclick="toast(\'info\',\'Prototype\',\'Article stubs are not included in this build\')">' + it + '</a></p>'; });
+    h += '</div>';
+  });
+  h += '</div></div>';
+  h += navBar('landing', null, null, false, null);
+  return h;
+};
+
+/* ================= Init ================= */
+render();
+</script>
+</body>
+</html>

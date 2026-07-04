@@ -1,0 +1,19 @@
+{
+  "name": "docgen",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DocGen — documentation automation SaaS (web app: React client + Node API + SQLite via Prisma)",
+  "scripts": {
+    "setup": "npm install --prefix server && npm install --prefix client && npm run db:push --prefix server && npm run seed --prefix server",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "db:reset": "npm run db:reset --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

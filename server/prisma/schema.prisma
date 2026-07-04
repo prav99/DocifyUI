@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  name          String       @default("")
+  passwordHash  String?
+  oauthProvider String?
+  plan          String       @default("free")
+  billingCycle  String       @default("annual")
+  seats         Int          @default(5)
+  taxId         String       @default("")
+  createdAt     DateTime     @default(now())
+  sources       Source[]
+  generations   Generation[]
+  members       TeamMember[]
+  automation    Automation?
+}
+
+model Source {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String
+  detail    String   @default("")
+  status    String   @default("connected")
+  createdAt DateTime @default(now())
+}
+
+model Generation {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repo         String
+  branch       String         @default("main")
+  track        String
+  docTypes     String // JSON array of ids
+  format       String
+  instructions String         @default("")
+  files        String         @default("[]") // JSON array of filenames
+  status       String         @default("queued") // queued | running | complete | failed
+  step         Int            @default(0)
+  steps        String         @default("[]") // JSON array of step labels
+  title        String         @default("")
+  content      String         @default("")
+  score        Int            @default(0)
+  createdAt    DateTime       @default(now())
+  report       QualityReport?
+}
+
+model QualityReport {
+  id           String     @id @default(cuid())
+  generationId String     @unique
+  generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  issues       String // JSON array
+  links        String // JSON array
+  style        String // JSON array
+  fixedIds     String     @default("[]") // JSON array of resolved issue ids
+  createdAt    DateTime   @default(now())
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String   @default("")
+  email     String
+  role      String   @default("Writer")
+  status    String   @default("active") // active | invited
+  createdAt DateTime @default(now())
+}
+
+model Automation {
+  id      String  @id @default(cuid())
+  userId  String  @unique
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled Boolean @default(true)
+  branch  String  @default("main")
+  gate    Int     @default(85)
+}
+
+model Waitlist {
+  id        String   @id @default(cuid())
+  email     String
+  provider  String
+  createdAt DateTime @default(now())
+}
