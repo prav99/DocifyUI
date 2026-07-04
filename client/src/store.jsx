@@ -63,6 +63,7 @@ export function AuthProvider({ children }) {
 const FLOW_KEY = 'docgen_flow';
 const defaultFlow = {
   provider: null, repo: null,
+  sources: [], srcCfg: {},
   jiraUrl: '', jiraConnected: false,
   waitlisted: {},
   track: 'technical', docTypes: [],

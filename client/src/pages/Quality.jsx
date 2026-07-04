@@ -7,7 +7,7 @@ import { NavBar, Notif, Score, IcCheck, IcInfo } from '../ui.jsx';
 export default function Quality() {
   const nav = useNavigate();
   const { flow } = useFlow();
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState('ai');
   const [report, setReport] = useState(null);
   const [checking, setChecking] = useState(false);
 
@@ -46,11 +46,32 @@ export default function Quality() {
   return (
     <>
       <div className="page">
-        <h1 className="h04">Quality review</h1>
+        <h1 className="h04">AI quality review</h1>
         <p className="body01 t2 mt3">{report.title} · generated just now</p>
 
-        <div className="tabs mt7">
-          {[['overview', 'Overview'], ['links', 'Broken links'], ['style', 'Style guide'], ['ai', 'Check AI consumability']].map(([id, label]) => (
+        <div className="judgeband mt7">
+          <div>
+            <p className="eyebrow mb3">LLM-AS-A-JUDGE</p>
+            <h2 className="h03" style={{ color: '#fff' }}>Verified for AI consumption, not just human review</h2>
+            <p className="body01 mt3" style={{ color: '#c6c6c6', maxWidth: 560 }}>
+              An LLM judge cross-examines this document against an enterprise documentation rubric,
+              so it answers correctly in chat assistants, search, and retrieval pipelines.
+            </p>
+            <div className="row mt5" style={{ flexWrap: 'wrap' }}>
+              {['Structure', 'Titles', 'Metadata', 'Clarity', 'Examples'].map((c) => (
+                <span key={c} className="tag tag--darkoutline">{c}</span>
+              ))}
+            </div>
+          </div>
+          <div className="judgescore">
+            <span className="label01" style={{ color: '#8d8d8d' }}>AI-READINESS</span>
+            <span className="mono" style={{ fontSize: 44, lineHeight: 1.2 }}>{ai}</span>
+            <span className={'tag ' + verdict[1]}>{verdict[0]}</span>
+          </div>
+        </div>
+
+        <div className="tabs mt6">
+          {[['ai', 'AI judge review'], ['overview', 'Scores'], ['links', 'Broken links'], ['style', 'Style guide']].map(([id, label]) => (
             <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
@@ -132,6 +153,15 @@ export default function Quality() {
               <button className="btn btn--tertiary btn--field" disabled={checking} onClick={recheck}>
                 {checking ? 'Re-evaluating…' : 'Re-check with AI judge'}
               </button>
+            </div>
+
+            <div className="judgenotes mt6">
+              <p className="label01 t2">JUDGE NOTES</p>
+              <p className="body01 mt3" style={{ fontStyle: 'italic' }}>
+                {report.remaining > 0
+                  ? 'Structure and terminology are strong. Resolve the ' + report.remaining + ' open finding' + (report.remaining > 1 ? 's' : '') + ' — short descriptions and search-optimized titles carry the most retrieval weight.'
+                  : 'All rubric criteria satisfied. Sections are self-contained, titled for real queries, and retrieval-ready.'}
+              </p>
             </div>
 
             {['LLM readiness', 'Consumability'].map((cat) => (

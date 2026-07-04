@@ -1,0 +1,13 @@
+{
+  "name": "DocGen — documentation automation",
+  "short_name": "DocGen",
+  "description": "Generate and verify documentation from your codebase, judged by AI before it ships.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f62fe",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

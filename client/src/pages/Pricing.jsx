@@ -48,7 +48,8 @@ export default function Pricing() {
           </div>
         </div>
 
-        <div className="pricegrid mt7">
+        <div className="scrollx mt7">
+        <div className="pricegrid">
           <div className="phead"><span className="label01 t2">PLANS</span></div>
           <div className="phead">
             <p className="h02">Free</p><p className="h04 mono">$0</p><p className="helper">Per user, forever</p>
@@ -71,6 +72,7 @@ export default function Pricing() {
               <div className="rowlabel">{r[0]}</div><div>{r[1]}</div><div>{r[2]}</div><div>{r[3]}</div>
             </React.Fragment>
           ))}
+        </div>
         </div>
       </div>
       <NavBar back="/export" next={user ? '/checkout' : '/signup'} nextLabel="Continue to checkout"

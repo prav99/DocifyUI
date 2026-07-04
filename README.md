@@ -31,6 +31,16 @@ npm run build   # builds client into client/dist
 npm start       # API serves both the API and the built client on http://localhost:4000
 ```
 
+### Compatibility
+
+- **Desktop — Windows, macOS, Linux**: runs in any modern browser; the dev/build
+  scripts are cross-platform (Node 18+, no bash-isms, no native modules).
+- **Mobile — Android and iPhone**: the client is fully responsive (stacked layouts,
+  scrollable tables, touch-sized controls). It also ships a PWA manifest, so from
+  Chrome (Android) or Safari (iOS) users can "Add to Home Screen" and run it like
+  an installed app. To test from a phone on the same network, run
+  `npm run dev -- --host` in `client/` and open the printed LAN URL.
+
 ### Windows notes
 
 All scripts use `npm --prefix` and cross-platform Node APIs — no bash-isms.
@@ -99,6 +109,31 @@ DocifyUI/
 | GET/POST | /api/billing, /api/billing/checkout | Plan + simulated checkout |
 | GET/POST | /api/team, /api/team/invite | Members and invites |
 | GET/PUT | /api/automation | CI regeneration settings + snippet |
+
+## Enabling real GitHub OAuth
+
+Out of the box the OAuth buttons use a simulated flow (no keys needed). To make
+"Continue with GitHub" perform the real handshake:
+
+1. On GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App**
+   - Application name: `DocGen (dev)`
+   - Homepage URL: `http://localhost:5173`
+   - Authorization callback URL: `http://localhost:4000/api/auth/github/callback`
+2. Copy the **Client ID**, generate a **Client secret**, and paste both into
+   `server/.env` (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`).
+3. Apply the schema update and restart: `npm run db:push --prefix server`, then `npm run dev`.
+
+The client auto-detects the configuration (`GET /api/auth/providers`) and switches
+the GitHub buttons from simulated to real. After the user clicks Authorize on
+GitHub's consent screen, the callback exchanges the one-time code for an access
+token server-side, stores it on the Source record, signs the user in, and the
+repository picker starts listing their actual repositories. The user never types
+credentials into DocGen.
+
+Notes for production: request finer scopes via a GitHub App instead of the classic
+`repo` scope for true read-only access to private repos, encrypt stored tokens at
+rest, and serve everything over HTTPS. GitLab/Bitbucket follow the same pattern —
+add a matching authorize/callback pair in `server/src/auth.js` and a real adapter.
 
 ## Configuration
 

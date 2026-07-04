@@ -3,6 +3,11 @@ import { prisma } from './db.js';
 import { requireAuth } from './auth.js';
 import { SOURCES, DOCTYPES, FORMATS, PLANS, CI_YAML, docTypeName, formatDef } from './catalog.js';
 import { listRepos } from './adapters/github.js';
+import { listProjects as listGitlab } from './adapters/gitlab.js';
+import { listRepos as listBitbucket } from './adapters/bitbucket.js';
+import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces } from './adapters/atlassian.js';
+import { verifyNotion, listNotion } from './adapters/notion.js';
+import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, judge, aiScore } from './adapters/llm.js';
 import { charge } from './adapters/stripe.js';
 
@@ -39,11 +44,17 @@ apiRouter.post('/sources', async (req, res) => {
   const cat = SOURCES.find((s) => s.id === provider);
   if (!cat) return res.status(400).json({ error: 'Unknown source' });
   if (!cat.avail) return res.status(400).json({ error: cat.name + ' is not available yet — join the waitlist' });
-  if (provider === 'jira' && (!detail.trim() || !token.trim())) {
-    return res.status(400).json({ error: 'Jira needs an instance URL and an API token' });
+  if ((provider === 'jira' || provider === 'confluence') && (!detail.trim() || !token.trim())) {
+    return res.status(400).json({ error: cat.name + ' needs an instance URL and an API token' });
+  }
+  if (provider === 'notion' && !token.trim()) {
+    return res.status(400).json({ error: 'Notion needs an internal integration token' });
+  }
+  if (provider === 'openapi' && !detail.trim()) {
+    return res.status(400).json({ error: 'Provide the URL of your OpenAPI / Swagger spec' });
   }
   const existing = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
-  const data = { userId: req.uid, provider, detail: detail || 'OAuth read-only (contents + commit history)' };
+  const data = { userId: req.uid, provider, detail: detail || 'OAuth read-only (contents + commit history)', token: token || (existing ? existing.token : '') };
   const row = existing
     ? await prisma.source.update({ where: { id: existing.id }, data })
     : await prisma.source.create({ data });
@@ -51,7 +62,12 @@ apiRouter.post('/sources', async (req, res) => {
 });
 
 apiRouter.get('/repos', async (req, res) => {
-  res.json({ repos: await listRepos() });
+  const provider = String(req.query.provider || 'github');
+  const src = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
+  const token = src ? src.token : '';
+  if (provider === 'gitlab') return res.json({ repos: await listGitlab(token) });
+  if (provider === 'bitbucket') return res.json({ repos: await listBitbucket(token) });
+  res.json({ repos: await listRepos(token) });
 });
 
 /* Generations */

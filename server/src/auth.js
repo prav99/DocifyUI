@@ -4,6 +4,89 @@ import { Router } from 'express';
 import { prisma } from './db.js';
 
 const SECRET = process.env.JWT_SECRET || 'docgen-dev-secret';
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+const OAUTH_BASE = process.env.OAUTH_REDIRECT_BASE || 'http://localhost:4000';
+
+const OAUTH = {
+  github: { id: process.env.GITHUB_CLIENT_ID || '', secret: process.env.GITHUB_CLIENT_SECRET || '' },
+  gitlab: { id: process.env.GITLAB_CLIENT_ID || '', secret: process.env.GITLAB_CLIENT_SECRET || '' },
+  bitbucket: { id: process.env.BITBUCKET_CLIENT_ID || '', secret: process.env.BITBUCKET_CLIENT_SECRET || '' }
+};
+const realProv = (p) => Boolean(OAUTH[p] && OAUTH[p].id && OAUTH[p].secret);
+const cbUrl = (p) => OAUTH_BASE + '/api/auth/' + p + '/callback';
+
+function authorizeUrl(provider, state) {
+  const cfg = OAUTH[provider];
+  if (provider === 'github') {
+    return 'https://github.com/login/oauth/authorize?client_id=' + encodeURIComponent(cfg.id) +
+      '&redirect_uri=' + encodeURIComponent(cbUrl(provider)) +
+      '&scope=' + encodeURIComponent('read:user user:email repo') +
+      '&state=' + encodeURIComponent(state);
+  }
+  if (provider === 'gitlab') {
+    return 'https://gitlab.com/oauth/authorize?client_id=' + encodeURIComponent(cfg.id) +
+      '&redirect_uri=' + encodeURIComponent(cbUrl(provider)) +
+      '&response_type=code&scope=' + encodeURIComponent('read_user read_api read_repository') +
+      '&state=' + encodeURIComponent(state);
+  }
+  return 'https://bitbucket.org/site/oauth2/authorize?client_id=' + encodeURIComponent(cfg.id) +
+    '&response_type=code&state=' + encodeURIComponent(state);
+}
+
+async function exchangeCode(provider, code) {
+  const cfg = OAUTH[provider];
+  if (provider === 'github') {
+    const r = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ client_id: cfg.id, client_secret: cfg.secret, code })
+    });
+    return (await r.json()).access_token;
+  }
+  if (provider === 'gitlab') {
+    const r = await fetch('https://gitlab.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: cfg.id, client_secret: cfg.secret, code, grant_type: 'authorization_code', redirect_uri: cbUrl(provider) })
+    });
+    return (await r.json()).access_token;
+  }
+  const r = await fetch('https://bitbucket.org/site/oauth2/access_token', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Basic ' + Buffer.from(cfg.id + ':' + cfg.secret).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'grant_type=authorization_code&code=' + encodeURIComponent(code)
+  });
+  return (await r.json()).access_token;
+}
+
+async function fetchProfile(provider, token) {
+  const H = { Authorization: 'Bearer ' + token, 'User-Agent': 'DocGen' };
+  if (provider === 'github') {
+    const u = await (await fetch('https://api.github.com/user', { headers: H })).json();
+    let email = u.email;
+    if (!email) {
+      const es = await (await fetch('https://api.github.com/user/emails', { headers: H })).json();
+      const p = Array.isArray(es) ? (es.find((e) => e.primary) || es[0]) : null;
+      email = p ? p.email : u.login + '@users.noreply.github.com';
+    }
+    return { email, name: u.name || u.login || '', handle: u.login || 'github' };
+  }
+  if (provider === 'gitlab') {
+    const u = await (await fetch('https://gitlab.com/api/v4/user', { headers: H })).json();
+    return { email: u.email || u.username + '@users.noreply.gitlab.com', name: u.name || u.username || '', handle: u.username || 'gitlab' };
+  }
+  const u = await (await fetch('https://api.bitbucket.org/2.0/user', { headers: H })).json();
+  let email = null;
+  try {
+    const es = await (await fetch('https://api.bitbucket.org/2.0/user/emails', { headers: H })).json();
+    const p = es && es.values ? (es.values.find((e) => e.is_primary) || es.values[0]) : null;
+    email = p ? p.email : null;
+  } catch { /* endpoint may need extra scope */ }
+  return { email: email || (u.username || 'user') + '@users.noreply.bitbucket.org', name: u.display_name || u.username || '', handle: u.username || 'bitbucket' };
+}
 
 export function sign(userId) {
   return jwt.sign({ uid: userId }, SECRET, { expiresIn: '7d' });
@@ -93,6 +176,51 @@ authRouter.post('/login', async (req, res) => {
   }
   await bootstrapUser(user);
   res.json({ token: sign(user.id), user: publicUser(user) });
+});
+
+// Which providers have REAL OAuth configured (vs the simulated flow).
+authRouter.get('/providers', (req, res) => {
+  res.json({ github: realProv('github'), gitlab: realProv('gitlab'), bitbucket: realProv('bitbucket') });
+});
+
+// Step 1 of real OAuth: send the user to the provider's consent screen.
+authRouter.get('/oauth/:provider(github|gitlab|bitbucket)', (req, res) => {
+  const provider = req.params.provider;
+  if (!realProv(provider)) return res.status(404).json({ error: provider + ' OAuth is not configured — see README' });
+  const state = jwt.sign({ t: 'oauth', p: provider }, SECRET, { expiresIn: '10m' });
+  res.redirect(authorizeUrl(provider, state));
+});
+
+// Step 2: the provider redirects back with a one-time code; exchange it server-side.
+authRouter.get('/:provider(github|gitlab|bitbucket)/callback', async (req, res) => {
+  const provider = req.params.provider;
+  try {
+    const { code, state } = req.query;
+    const st = jwt.verify(String(state || ''), SECRET); // CSRF protection
+    if (st.p !== provider) throw new Error('State mismatch');
+    const accessToken = await exchangeCode(provider, code);
+    if (!accessToken) throw new Error('Token exchange failed');
+    const prof = await fetchProfile(provider, accessToken);
+    const email = String(prof.email).toLowerCase();
+    let user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      user = await prisma.user.create({ data: { email, name: prof.name, oauthProvider: provider } });
+    } else if (!user.oauthProvider) {
+      user = await prisma.user.update({ where: { id: user.id }, data: { oauthProvider: provider } });
+    }
+    const data = {
+      userId: user.id, provider,
+      detail: 'OAuth read-only (as ' + prof.handle + ')',
+      token: accessToken
+    };
+    const existing = await prisma.source.findFirst({ where: { userId: user.id, provider } });
+    if (existing) await prisma.source.update({ where: { id: existing.id }, data });
+    else await prisma.source.create({ data });
+    await bootstrapUser(user);
+    res.redirect(CLIENT_ORIGIN + '/oauth/complete#token=' + encodeURIComponent(sign(user.id)) + '&provider=' + provider);
+  } catch (e) {
+    res.redirect(CLIENT_ORIGIN + '/oauth/complete#error=' + encodeURIComponent(e.message || 'OAuth failed'));
+  }
 });
 
 authRouter.get('/me', requireAuth, async (req, res) => {

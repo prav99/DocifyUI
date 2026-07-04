@@ -2,6 +2,19 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './store.jsx';
 
+/* ---------- Logo: a generated document, verified ---------- */
+export function LogoMark({ size = 24 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M6 2h13l7 7v21H6z" fill="#0f62fe" />
+      <path d="M19 2v7h7z" fill="#002d9c" />
+      <rect x="11" y="13" width="12" height="2.5" fill="#ffffff" />
+      <rect x="11" y="18" width="9" height="2.5" fill="#ffffff" opacity=".65" />
+      <path d="M12 25.5l2.8 2.8 6.2-6.2" stroke="#42be65" strokeWidth="2.8" fill="none" strokeLinecap="square" />
+    </svg>
+  );
+}
+
 /* ---------- Icons ---------- */
 export const IcCheck = ({ c = '#24a148' }) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill={c}><path d="M6.5 12.3 2.7 8.5l1.1-1.1 2.7 2.7 5.7-5.7 1.1 1.1z" /></svg>
@@ -49,16 +62,6 @@ export function Score({ label, num, helper, kind = 'good' }) {
 /* ---------- Top bar ---------- */
 // The step counter only tracks the actual document workflow, not marketing/account pages.
 const STEPS = ['/source', '/doctype', '/format', '/generate', '/quality', '/export'];
-const CRUMBS = {
-  '/': 'docgen / home', '/signup': 'docgen / onboarding / signup', '/login': 'docgen / login',
-  '/source': 'docgen / onboarding / source-select', '/doctype': 'docgen / onboarding / document-type',
-  '/format': 'docgen / onboarding / output-format', '/generate': 'docgen / generate',
-  '/quality': 'docgen / quality-review', '/export': 'docgen / export', '/pricing': 'docgen / pricing',
-  '/checkout': 'docgen / checkout', '/dashboard': 'docgen / dashboard', '/automation': 'docgen / automation',
-  '/settings': 'docgen / settings', '/features': 'docgen / features', '/integrations': 'docgen / integrations',
-  '/customers': 'docgen / customers', '/docs': 'docgen / docs'
-};
-
 export function TopBar() {
   const loc = useLocation();
   const nav = useNavigate();
@@ -68,8 +71,10 @@ export function TopBar() {
   const marketing = ['/pricing', '/docs'];
   return (
     <header className="topbar">
-      <span className="logo" onClick={() => nav('/')}><span className="mark">D</span>DocGen</span>
-      <span className="crumb">{CRUMBS[path] || 'docgen'}</span>
+      <span className="logo" onClick={() => nav('/')}>
+        <LogoMark size={22} />
+        <span className="logotext">Doc<span className="logogen">Gen</span></span>
+      </span>
       <nav className="topnav">
         {marketing.map((m) => (
           <a key={m} className={path === m ? 'on' : ''} onClick={() => nav(m)}>

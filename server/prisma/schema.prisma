@@ -30,6 +30,7 @@ model Source {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider  String
   detail    String   @default("")
+  token     String   @default("") // OAuth access token or API token. Encrypt at rest in production.
   status    String   @default("connected")
   createdAt DateTime @default(now())
 }

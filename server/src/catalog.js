@@ -5,9 +5,9 @@ export const SOURCES = [
   { id: 'gitlab', name: 'GitLab', desc: 'Projects, wikis, merge request context', avail: true },
   { id: 'bitbucket', name: 'Bitbucket', desc: 'Repositories and pipelines metadata', avail: true },
   { id: 'jira', name: 'Jira', desc: 'Issues, epics, release versions for changelogs', avail: true },
-  { id: 'openapi', name: 'OpenAPI / Swagger', desc: 'Spec-first API reference generation', avail: false },
-  { id: 'confluence', name: 'Confluence', desc: 'Existing pages as source material', avail: false },
-  { id: 'notion', name: 'Notion', desc: 'Docs and databases as source material', avail: false },
+  { id: 'openapi', name: 'OpenAPI / Swagger', desc: 'Spec-first API reference generation', avail: true },
+  { id: 'confluence', name: 'Confluence', desc: 'Existing pages as source material', avail: true },
+  { id: 'notion', name: 'Notion', desc: 'Docs and databases as source material', avail: true },
   { id: 'azdo', name: 'Azure DevOps', desc: 'Repos, boards, and wikis', avail: false }
 ];
 

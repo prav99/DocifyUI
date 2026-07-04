@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { NavBar } from '../ui.jsx';
+import { NavBar, LogoMark } from '../ui.jsx';
 
 /* ---------- Scroll-reveal wrapper ---------- */
 function Reveal({ children, delay = 0, className = '' }) {
@@ -48,9 +48,134 @@ function CountUp({ to, decimals = 0, suffix = '' }) {
   return <span ref={ref}>{val.toFixed(decimals)}{suffix}</span>;
 }
 
+/* ---------- Narration audio: curated voice + soft ambient score ---------- */
+let musicCtx = null, musicNodes = null;
+
+function musicStart() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!musicCtx) musicCtx = new AC();
+    if (musicCtx.state === 'suspended') musicCtx.resume();
+    if (musicNodes) return;
+    const ctx = musicCtx;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, ctx.currentTime);
+    master.gain.linearRampToValueAtTime(0.032, ctx.currentTime + 4);
+    master.connect(ctx.destination);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = 0.3;
+    lp.connect(master);
+    // Sustained ambient pad: two soft chords morphing into each other, very low in the mix.
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.06;
+    const lfoGain = ctx.createGain(); lfoGain.gain.value = 120;
+    lfo.connect(lfoGain); lfoGain.connect(lp.frequency); lfo.start();
+    const chords = [
+      [130.81, 196.0, 329.63, 493.88], // Cmaj7, widely spread
+      [110.0, 164.81, 261.63, 392.0],  // Am7, widely spread
+      [87.31, 174.61, 261.63, 440.0]   // Fmaj7, widely spread
+    ];
+    const oscs = chords[0].map((f, i) => {
+      const o = ctx.createOscillator();
+      o.type = i < 2 ? 'sine' : 'triangle';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = i < 2 ? 0.5 : 0.2;
+      o.connect(g); g.connect(lp); o.start();
+      return o;
+    });
+    let step = 0;
+    const iv = setInterval(() => {
+      step++;
+      const ch = chords[step % chords.length];
+      const t = ctx.currentTime;
+      oscs.forEach((o, i) => o.frequency.setTargetAtTime(ch[i], t, 2.5));
+    }, 9000);
+    musicNodes = { master, oscs, lfo, iv };
+  } catch { /* audio unavailable */ }
+}
+
+function musicStop() {
+  try {
+    if (!musicNodes || !musicCtx) return;
+    clearInterval(musicNodes.iv);
+    const t = musicCtx.currentTime;
+    musicNodes.master.gain.cancelScheduledValues(t);
+    musicNodes.master.gain.setTargetAtTime(0.0001, t, 0.4);
+    const n = musicNodes;
+    musicNodes = null;
+    setTimeout(() => { try { n.oscs.forEach((o) => o.stop()); n.lfo.stop(); n.master.disconnect(); } catch { /* ignore */ } }, 1600);
+  } catch { /* ignore */ }
+}
+
+let cachedVoice = null;
+function pickVoice() {
+  try {
+    const vs = window.speechSynthesis.getVoices();
+    if (!vs || !vs.length) return null;
+    // Prefer the most natural, humanoid voices each platform offers.
+    const prefs = [
+      /Google UK English Female/i, /Google US English/i,
+      /(Aria|Jenny|Sonia|Libby|Emma).*(Natural|Online)/i,
+      /Samantha/i, /Serena/i, /Karen/i, /Moira/i, /Tessa/i, /Daniel/i
+    ];
+    for (const rx of prefs) { const v = vs.find((x) => rx.test(x.name)); if (v) return v; }
+    return vs.find((x) => x.lang && x.lang.indexOf('en') === 0) || vs[0];
+  } catch { return null; }
+}
+try {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => { cachedVoice = pickVoice(); };
+  }
+} catch { /* ignore */ }
+
+// Speak a line and report when it truly finishes — playback sync is driven by this.
+function narrate(text, onEnd) {
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    if (!cachedVoice) cachedVoice = pickVoice();
+    if (cachedVoice) u.voice = cachedVoice;
+    u.rate = 0.9;  // unhurried, documentary pacing
+    u.pitch = 1;   // natural human register
+    u.volume = 1;
+    let done = false;
+    const finish = () => { if (!done) { done = true; if (onEnd) onEnd(); } };
+    u.onend = finish;
+    u.onerror = finish;
+    window.speechSynthesis.speak(u);
+  } catch { if (onEnd) onEnd(); }
+}
+
+function stopAllAudio() {
+  try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+  musicStop();
+}
+
+/* Opening title slate — tells the viewer what the demo is about before it plays */
+function TitleSlate({ kicker, title, sub }) {
+  return (
+    <div className="slate">
+      <div className="slate-mark"><LogoMark size={32} /></div>
+      <p className="slate-kicker">{kicker}</p>
+      <h3 className="slate-title">{title}</h3>
+      <p className="slate-sub">{sub}</p>
+      <p className="slate-note">Sound recommended — turn on the voiceover</p>
+    </div>
+  );
+}
+
 /* ---------- Self-playing product demo ---------- */
-const DEMO_STEPS = ['Connect source', 'Configure', 'Generate', 'Quality review', 'Automate'];
-const DEMO_DUR = [3600, 3800, 4400, 4800, 5200];
+const DEMO_STEPS = ['Intro', 'Connect source', 'Configure', 'Generate', 'Quality review', 'Automate'];
+const DEMO_DUR = [7000, 9000, 9500, 10500, 10500, 9500];
+const DEMO_VO = [
+  'Welcome. Over the next minute, watch DocGen turn a live code repository into a verified API reference — automatically, and judged by AI before it ships.',
+  'Meet DocGen. It starts with the repository you already have — connected once, read gently, never stored.',
+  'Choose what you need: an API reference, delivered in DITA. That is the only decision to make.',
+  'Now DocGen reads your code — its structure, its comments, its history — and quietly writes every section.',
+  'Before anything ships, an AI judge reviews the draft… and with a single click, the score rises to ninety-six.',
+  'From now on, this happens on every merge — automatically, behind a quality gate. Your documentation, always current.'
+];
 
 function DemoScore() {
   const [v, setV] = useState(70);
@@ -59,12 +184,12 @@ function DemoScore() {
     const d = setTimeout(() => {
       const t0 = performance.now();
       const tick = (t) => {
-        const p = Math.min(1, (t - t0) / 2200);
+        const p = Math.min(1, (t - t0) / 3600);
         setV(Math.round(70 + 26 * (1 - Math.pow(1 - p, 3))));
         if (p < 1) raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
-    }, 1400);
+    }, 2800);
     return () => { clearTimeout(d); if (raf) cancelAnimationFrame(raf); };
   }, []);
   return <>{v}</>;
@@ -72,35 +197,73 @@ function DemoScore() {
 
 function ProductDemo() {
   const [scene, setScene] = useState(0);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const [started, setStarted] = useState(false);
+  const [sound, setSound] = useState(true);
+  const [runId, setRunId] = useState(0);
   const ref = useRef(null);
 
+  // A scene ends only when BOTH its visuals have had their minimum time AND
+  // its narration has finished — audio and video stay in step, like a real film.
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) { setStarted(true); io.disconnect(); }
-    }, { threshold: 0.35 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+    if (!playing) return;
+    let alive = true;
+    let advanced = false;
+    let speechDone = !sound;
+    let minDone = false;
+    const tryAdvance = () => {
+      if (!alive || advanced || !speechDone || !minDone) return;
+      advanced = true;
+      setTimeout(() => { if (alive) setScene((s) => (s + 1) % DEMO_STEPS.length); }, 900);
+    };
+    const tMin = setTimeout(() => { minDone = true; tryAdvance(); }, DEMO_DUR[scene]);
+    if (sound) narrate(DEMO_VO[scene], () => { speechDone = true; tryAdvance(); });
+    const tGuard = setTimeout(() => { speechDone = true; minDone = true; tryAdvance(); }, DEMO_DUR[scene] + 20000);
+    return () => { alive = false; clearTimeout(tMin); clearTimeout(tGuard); };
+  }, [scene, playing, sound, runId]);
 
-  useEffect(() => {
-    if (!playing || !started) return;
-    const t = setTimeout(() => setScene((s) => (s + 1) % DEMO_STEPS.length), DEMO_DUR[scene]);
-    return () => clearTimeout(t);
-  }, [scene, playing, started]);
+  useEffect(() => () => { stopAllAudio(); }, []);
 
-  const jump = (i) => { setScene(i); setPlaying(true); setStarted(true); };
+  const play = () => {
+    setStarted(true);
+    setPlaying(true);
+    if (sound) musicStart();
+    setRunId((n) => n + 1); // replay the current scene from its start
+  };
+  const pause = () => {
+    setPlaying(false);
+    stopAllAudio();
+  };
+  const jump = (i) => {
+    setStarted(true);
+    setPlaying(true);
+    if (sound) musicStart();
+    try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+    setScene(i);
+    setRunId((n) => n + 1);
+  };
+  const toggleSound = () => {
+    setSound((v) => {
+      const nv = !v;
+      if (!nv) { stopAllAudio(); }
+      else if (playing) { musicStart(); setRunId((n) => n + 1); }
+      return nv;
+    });
+  };
   const pipeline = ['Parsing repo structure', 'Extracting code comments', 'Drafting sections', 'Running quality checks'];
 
   return (
     <div className="demo-window" ref={ref}>
+      {!started && (
+        <button className="vid-poster" onClick={play} aria-label="Play demo with sound">
+          <span className="vid-playbtn">▶</span>
+          <span className="vid-postertxt">Play demo · sound on</span>
+        </button>
+      )}
       <div className="demo-chrome">
-        <span className="demo-dot" /><span className="demo-dot" /><span className="demo-dot" />
-        <span className="demo-url mono">app.docgen.dev — API reference · acme/payments-api</span>
-        <span className="tag tag--blue">demo</span>
+        <span className="demo-shellname">DocGen</span>
+        <span className="crumb">docgen / generate / api-reference</span>
+        <span className="spacer" style={{ flex: 1 }} />
       </div>
       <div className="demo-body">
         <aside className="demo-rail">
@@ -110,20 +273,26 @@ function ProductDemo() {
             </button>
           ))}
         </aside>
-        <div className="demo-stage" key={scene}>
+        <div className={'demo-stage' + (scene === 0 ? ' demo-stage--slate' : '')} key={scene + '-' + runId}>
           {scene === 0 && (
+            <TitleSlate kicker="PRODUCT DEMO" title="Generating an API reference, end to end"
+              sub="From a connected repository to a verified, export-ready document — the complete DocGen flow in under a minute." />
+          )}
+          {scene === 1 && (
             <div>
               <p className="h01 mb5">Select a repository</p>
               {['acme/webhooks-gateway', 'acme/payments-api', 'acme/sdk-python'].map((r, i) => (
                 <div key={r} className={'demo-row' + (i === 1 ? ' demo-pick' : '')}>
-                  <span className="rdot" /><span className="mono" style={{ fontSize: 13 }}>{r}</span>
+                  <span className="rdot" />
+                  <span className="mono" style={{ fontSize: 13 }}>{r}</span>
+                  <span className="tag tag--outline">main</span>
                   {i === 1 && <span className="demo-pickcheck check">✓ selected</span>}
                 </div>
               ))}
               <p className="helper mt5 demo-late">Read-only grant from signup — no extra authorization needed.</p>
             </div>
           )}
-          {scene === 1 && (
+          {scene === 2 && (
             <div>
               <p className="h01 mb5">Document type &amp; output format</p>
               <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -134,29 +303,34 @@ function ProductDemo() {
               <div className="row mt5" style={{ flexWrap: 'wrap' }}>
                 {['DITA', 'PDF', 'Word', 'Markdown'].map((c, i) => (
                   <span key={c} className={'demo-chip demo-fmt' + (i === 0 ? ' demo-chipon' : '')}
-                    style={{ animationDelay: (0.9 + i * 0.15) + 's' }}>{c}</span>
+                    style={{ animationDelay: (2.6 + i * 0.45) + 's' }}>{c}</span>
                 ))}
               </div>
               <p className="helper mt5 demo-late">DITA selected — topic-based XML for enterprise pipelines.</p>
             </div>
           )}
-          {scene === 2 && (
+          {scene === 3 && (
             <div>
               <p className="h01 mb5">Generating from acme/payments-api</p>
               {pipeline.map((s, i) => (
-                <div key={s} className="demo-pipe" style={{ animationDelay: (i * 0.85) + 's' }}>
-                  <span className="check demo-pipecheck" style={{ animationDelay: (i * 0.85 + 0.6) + 's' }}>✓</span> {s}
+                <div key={s} className="demo-pipe" style={{ animationDelay: (i * 1.8) + 's' }}>
+                  <span className="sicon">
+                    <span className="demo-spinhold" style={{ animationDelay: (i * 1.8 + 1.45) + 's' }}><span className="spin" /></span>
+                    <span className="check demo-pipecheck" style={{ animationDelay: (i * 1.8 + 1.55) + 's' }}>✓</span>
+                  </span>
+                  {s}
                 </div>
               ))}
               <p className="helper mt5 demo-late">Draft ready — every section traced back to source.</p>
             </div>
           )}
-          {scene === 3 && (
+          {scene === 4 && (
             <div>
               <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
-                <div className="demo-scorebox">
-                  <span className="label01 t2">AI-readiness</span>
-                  <span className="mono demo-scorenum"><DemoScore />/100</span>
+                <div className="score score--good" style={{ minWidth: 170 }}>
+                  <span className="label01 t2">AI-readiness score</span>
+                  <span className="num"><DemoScore /></span>
+                  <span className="helper">LLM-judge evaluation</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <div className="demo-issue">
@@ -170,7 +344,7 @@ function ProductDemo() {
               <p className="helper mt5 demo-late">Each finding ships with a one-click fix — the score updates live.</p>
             </div>
           )}
-          {scene === 4 && (
+          {scene === 5 && (
             <div>
               <p className="h01 mb5">Automate: regenerate on every merge</p>
               <div className="row" style={{ alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
@@ -192,21 +366,26 @@ function ProductDemo() {
           )}
         </div>
       </div>
+      <div className="jd-cap">
+        <span className="label01" style={{ color: '#0043ce' }}>VOICEOVER</span>
+        <span className="jd-capline">{DEMO_VO[scene]}</span>
+      </div>
       <div className="demo-bar">
-        <button className="demo-ctl" onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause' : 'Play'}>
+        <button className="demo-ctl" onClick={() => (playing ? pause() : play())} aria-label={playing ? 'Pause' : 'Play'}>
           {playing ? '❚❚' : '▶'}
         </button>
-        <button className="demo-ctl" onClick={() => jump(0)} aria-label="Replay">↺</button>
+        <button className="demo-ctl" onClick={() => { pause(); setScene(0); setStarted(false); }} aria-label="Stop">■</button>
+        <button className="demo-ctl demo-ctl--wide" onClick={toggleSound}>{sound ? 'Sound on' : 'Muted'}</button>
         <div className="demo-track">
           {DEMO_STEPS.map((s, i) => (
             <button key={s} className="demo-seg" onClick={() => jump(i)} aria-label={s}>
               {i === scene && started
-                ? <span className="demo-segfill" style={{ animationDuration: DEMO_DUR[i] + 'ms', animationPlayState: playing ? 'running' : 'paused' }} />
+                ? <span className="demo-segfill" style={{ animationDuration: Math.round(DEMO_DUR[i] * 1.4) + 'ms', animationPlayState: playing ? 'running' : 'paused' }} />
                 : i < scene ? <span className="demo-segdone" /> : null}
             </button>
           ))}
         </div>
-        <span className="helper">{'0' + (scene + 1)} / 05 · {DEMO_STEPS[scene]}</span>
+        <span className="helper">{'0' + (scene + 1)} / 06 · {DEMO_STEPS[scene]}</span>
       </div>
     </div>
   );
@@ -368,27 +547,199 @@ function IlluAutomate() {
   );
 }
 
+/* ---------- AI judge demo with voiceover ---------- */
+const JUDGE_SCENES = [
+  { label: 'Intro', vo: 'This is the heart of DocGen: an AI judge that reviews every document before it ships. Here is one verdict, from start to finish.' },
+  { label: 'Submit', vo: 'Every document DocGen writes is first submitted to an AI judge.' },
+  { label: 'Rubric', vo: 'The judge takes its time — scoring structure, titles, metadata, clarity, and examples, one by one.' },
+  { label: 'Fixes', vo: 'Where it finds a gap, it offers a fix. One click… and the score rises.' },
+  { label: 'Verdict', vo: 'The verdict: AI consumable. Ready for people, and ready for machines.' }
+];
+const JUDGE_DUR = [7000, 9000, 11500, 10500, 9000];
+
+function JudgeScore() {
+  const [v, setV] = useState(70);
+  useEffect(() => {
+    let raf;
+    const d = setTimeout(() => {
+      const t0 = performance.now();
+      const tick = (t) => {
+        const p = Math.min(1, (t - t0) / 3800);
+        setV(Math.round(70 + 26 * (1 - Math.pow(1 - p, 3))));
+        if (p < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }, 2200);
+    return () => { clearTimeout(d); if (raf) cancelAnimationFrame(raf); };
+  }, []);
+  return <>{v}/100</>;
+}
+
+function AIJudgeDemo() {
+  const [scene, setScene] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [sound, setSound] = useState(true);
+  const [runId, setRunId] = useState(0);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!playing) return;
+    let alive = true;
+    let advanced = false;
+    let speechDone = !sound;
+    let minDone = false;
+    const tryAdvance = () => {
+      if (!alive || advanced || !speechDone || !minDone) return;
+      advanced = true;
+      setTimeout(() => { if (alive) setScene((s) => (s + 1) % JUDGE_SCENES.length); }, 900);
+    };
+    const tMin = setTimeout(() => { minDone = true; tryAdvance(); }, JUDGE_DUR[scene]);
+    if (sound) narrate(JUDGE_SCENES[scene].vo, () => { speechDone = true; tryAdvance(); });
+    const tGuard = setTimeout(() => { speechDone = true; minDone = true; tryAdvance(); }, JUDGE_DUR[scene] + 20000);
+    return () => { alive = false; clearTimeout(tMin); clearTimeout(tGuard); };
+  }, [scene, playing, sound, runId]);
+
+  useEffect(() => () => { stopAllAudio(); }, []);
+
+  const play = () => {
+    setStarted(true);
+    setPlaying(true);
+    if (sound) musicStart();
+    setRunId((n) => n + 1);
+  };
+  const pause = () => {
+    setPlaying(false);
+    stopAllAudio();
+  };
+  const jump = (i) => {
+    setStarted(true);
+    setPlaying(true);
+    if (sound) musicStart();
+    try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+    setScene(i);
+    setRunId((n) => n + 1);
+  };
+  const toggleSound = () => {
+    setSound((v) => {
+      const nv = !v;
+      if (!nv) { stopAllAudio(); }
+      else if (playing) { musicStart(); setRunId((n) => n + 1); }
+      return nv;
+    });
+  };
+
+  const CRITERIA = [
+    ['Short description', 'miss'], ['Search-optimized title', 'miss'], ['Metadata keywords', 'ok'],
+    ['Unambiguous references', 'miss'], ['Code examples', 'ok']
+  ];
+
+  return (
+    <div className="jd-window" ref={ref}>
+      {!started && (
+        <button className="vid-poster" onClick={play} aria-label="Play demo with sound">
+          <span className="vid-playbtn">▶</span>
+          <span className="vid-postertxt">Play demo · sound on</span>
+        </button>
+      )}
+      <div className="jd-head">
+        <span className="jd-badge">AI JUDGE</span>
+        <span className="helper">rubric: enterprise documentation guidelines · gate ≥ 85</span>
+        <span className="spacer" style={{ flex: 1 }} />
+      </div>
+      <div className={'jd-stage' + (scene === 0 ? ' jd-stage--slate' : '')} key={scene + '-' + runId}>
+        {scene === 0 && (
+          <TitleSlate kicker="THE AI JUDGE" title="Inside an AI quality verdict"
+            sub="Watch a generated document be scored against an enterprise rubric — and leave with a verdict." />
+        )}
+        {scene === 1 && (
+          <div className="jd-scene0">
+            <div className="jd-doc">
+              <p className="label01 t2">API-REFERENCE.DITA</p>
+              <div className="jd-line w90" /><div className="jd-line" /><div className="jd-line w60" /><div className="jd-line w80" />
+            </div>
+            <span className="demo-looparrow" style={{ fontSize: 24 }}>→</span>
+            <div className="jd-judgebox"><span>LLM</span><span>JUDGE</span></div>
+          </div>
+        )}
+        {scene === 2 && (
+          <div>
+            {CRITERIA.map((c, i) => (
+              <div key={c[0]} className="jd-crit" style={{ animationDelay: (i * 1.8) + 's' }}>
+                <span>{c[0]}</span>
+                <span className={'jd-mark ' + c[1]} style={{ animationDelay: (i * 1.8 + 1.1) + 's' }}>
+                  {c[1] === 'ok' ? '✓ pass' : '! fix suggested'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {scene === 3 && (
+          <div className="jd-scene2">
+            <div className="jd-scorebig">
+              <span className="label01 t2">AI-READINESS</span>
+              <span className="mono"><JudgeScore /></span>
+            </div>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              {['Short description added', 'Title rewritten for search', 'Pronoun reference resolved'].map((f, i) => (
+                <div key={f} className="jd-fix" style={{ animationDelay: (1.6 + i * 1.6) + 's' }}>✓ {f}</div>
+              ))}
+            </div>
+          </div>
+        )}
+        {scene === 4 && (
+          <div className="jd-scene3">
+            <span className="jd-verdict">AI-consumable</span>
+            <p className="body01 mt3 t2">Quality gate passed at 96 / 100 — cleared for export and automation.</p>
+          </div>
+        )}
+      </div>
+      <div className="jd-cap">
+        <span className="label01" style={{ color: '#0043ce' }}>VOICEOVER</span>
+        <span className="jd-capline">{JUDGE_SCENES[scene].vo}</span>
+      </div>
+      <div className="demo-bar jd-bar">
+        <button className="demo-ctl" onClick={() => (playing ? pause() : play())} aria-label={playing ? 'Pause' : 'Play'}>
+          {playing ? '❚❚' : '▶'}
+        </button>
+        <button className="demo-ctl" onClick={() => { pause(); setScene(0); setStarted(false); }} aria-label="Stop">■</button>
+        <button className="demo-ctl demo-ctl--wide" onClick={toggleSound}>{sound ? 'Sound on' : 'Muted'}</button>
+        <div className="demo-track">
+          {JUDGE_SCENES.map((s, i) => (
+            <button key={s.label} className="demo-seg" onClick={() => jump(i)} aria-label={s.label}>
+              {i === scene && started
+                ? <span className="demo-segfill" style={{ animationDuration: Math.round(JUDGE_DUR[i] * 1.4) + 'ms', animationPlayState: playing ? 'running' : 'paused' }} />
+                : i < scene ? <span className="demo-segdone" /> : null}
+            </button>
+          ))}
+        </div>
+        <span className="helper">{JUDGE_SCENES[scene].label}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Page data ---------- */
 
 const FEATURES = [
   {
-    eyebrow: '01 · SOURCE', title: 'Connect once, read forever',
-    body: 'Authorize GitHub, GitLab, or Bitbucket at signup — the same grant powers generation. Jira connects with an API token for changelog and release-note pipelines. Access is read-only: repository contents and commit history, nothing more. Your source code is never stored.',
+    eyebrow: 'CHAPTER 01 · CONNECT', title: 'It starts where your truth already lives',
+    body: 'One authorization — the same grant that signs you in. DocGen reads your repository the way your best writer would: structure, comments, commit history, API annotations. Read-only, never stored, nothing to configure.',
     illu: <IlluSource />
   },
   {
-    eyebrow: '02 · GENERATE', title: 'From repo to draft in minutes',
-    body: 'DocGen parses repo structure, extracts code comments and API annotations, and drafts topic-based sections. Choose technical documentation — API references, user guides, installation guides — or marketing material like release announcements. Output in DITA, PDF, Word, or Markdown.',
+    eyebrow: 'CHAPTER 02 · GENERATE', title: 'Minutes later, there is a draft',
+    body: 'Not a template with blanks — a real document. API references, user guides, installation guides, or release announcements, drafted topic by topic from what the code actually says. In DITA, PDF, Word, or Markdown.',
     illu: <IlluGenerate />
   },
   {
-    eyebrow: '03 · VERIFY', title: 'A quality gate, not a spellcheck',
-    body: 'Every generation runs through link verification, style-guide compliance, and an LLM-judge AI-consumability review: short descriptions, search-optimized titles, metadata keywords, unambiguous references, and example coverage. Each finding ships with a concrete one-click fix.',
+    eyebrow: 'CHAPTER 03 · VERIFY', title: 'Then comes the cross-examination',
+    body: 'Before anything ships, an AI judge reads every section the way a machine will. Does the title match real queries? Does each passage stand alone? Is there an example where a reader expects one? Every finding arrives with a one-click fix.',
     illu: <IlluVerify />
   },
   {
-    eyebrow: '04 · AUTOMATE', title: 'Docs that never go stale',
-    body: 'A CI snippet regenerates documentation on every merge to main and blocks publishing when the quality score drops below your gate. Writers review diffs instead of rewriting pages.',
+    eyebrow: 'CHAPTER 04 · AUTOMATE', title: 'And then you never do this again',
+    body: 'Wire it into CI once. Every merge to main regenerates the docs, and the quality gate blocks anything below your score. From that Friday on, the release and its documentation ship together.',
     illu: <IlluAutomate />
   }
 ];
@@ -404,6 +755,19 @@ const FMTS = ['DITA', 'PDF', 'Word', 'Markdown'];
 
 export default function Landing() {
   const nav = useNavigate();
+  const chapter = (i) => (
+    <Reveal>
+      <div className="featrow">
+        {i % 2 === 0 ? <div className="illuwrap">{FEATURES[i].illu}</div> : null}
+        <div>
+          <p className="eyebrow eyebrow--blue mb3">{FEATURES[i].eyebrow}</p>
+          <h2 className="feathead">{FEATURES[i].title}</h2>
+          <p className="lead t2 mt5" style={{ maxWidth: 480 }}>{FEATURES[i].body}</p>
+        </div>
+        {i % 2 === 1 ? <div className="illuwrap">{FEATURES[i].illu}</div> : null}
+      </div>
+    </Reveal>
+  );
   return (
     <>
       {/* Hero */}
@@ -430,8 +794,23 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* The problem — story opening */}
+      <div className="page" style={{ paddingTop: 72, paddingBottom: 0 }}>
+        <Reveal>
+          <p className="eyebrow eyebrow--blue mb3">THE STORY EVERY TEAM KNOWS</p>
+          <h2 className="feathead" style={{ maxWidth: 720 }}>The code ships on Friday. The documentation catches up — eventually.</h2>
+          <p className="lead t2 mt5" style={{ maxWidth: 680 }}>
+            A quiet 404 in the quick start. A guide describing a screen that was redesigned two sprints
+            ago. A support queue answering questions the docs were supposed to answer. Nobody chose this —
+            it is simply what happens when documentation is a manual step in an automated world.
+          </p>
+          <p className="lead mt5" style={{ maxWidth: 680 }}>DocGen ends that story. Here is the new one, in four chapters.</p>
+        </Reveal>
+      </div>
+
       {/* Logos strip */}
-      <div className="page" style={{ paddingBottom: 0, paddingTop: 32 }}>
+      <div className="page" style={{ paddingBottom: 0, paddingTop: 40 }}>
+        <div className="divider" style={{ marginTop: 0, marginBottom: 24 }} />
         <Reveal>
           <div className="row row--between" style={{ flexWrap: 'wrap', gap: 16 }}>
             <p className="label01 t2">WORKS WITH</p>
@@ -442,37 +821,49 @@ export default function Landing() {
             </div>
           </div>
         </Reveal>
-        <div className="divider" style={{ marginBottom: 0 }} />
+        <div className="divider" style={{ marginBottom: 0, marginTop: 24 }} />
       </div>
 
-      {/* Demo recording */}
-      <div className="page" style={{ paddingTop: 72, paddingBottom: 16 }}>
+      {/* Chapters 1–2 */}
+      <div className="page featlist" style={{ paddingTop: 8, paddingBottom: 0 }}>
+        {chapter(0)}
+        {chapter(1)}
+      </div>
+
+      {/* Demo: chapters 1–2 in motion */}
+      <div className="page" style={{ paddingTop: 24, paddingBottom: 32 }}>
         <Reveal>
-          <p className="eyebrow eyebrow--blue mb3">PRODUCT DEMO · SELF-PLAYING</p>
-          <h2 className="feathead">Watch an API reference go end to end</h2>
+          <p className="eyebrow eyebrow--blue mb3">SEE IT HAPPEN</p>
+          <h2 className="feathead">Chapters one and two, in motion</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
-            From repository to a verified document, then set to regenerate on every merge — this is the
-            actual flow, replayed. Click any step to jump.
+            A repository goes in. A verified API reference comes out. This is the actual flow, replayed —
+            press play, or click any step to skip ahead.
           </p>
         </Reveal>
-        <Reveal delay={120}><ProductDemo /></Reveal>
+        <Reveal delay={120}><div className="vidwrap"><ProductDemo /></div></Reveal>
       </div>
 
-      {/* Feature rows */}
-      <div className="page featlist" style={{ paddingTop: 24, paddingBottom: 56 }}>
-        {FEATURES.map((f, i) => (
-          <Reveal key={f.eyebrow}>
-            <div className="featrow">
-              {i % 2 === 0 ? <div className="illuwrap">{f.illu}</div> : null}
-              <div>
-                <p className="eyebrow eyebrow--blue mb3">{f.eyebrow}</p>
-                <h2 className="feathead">{f.title}</h2>
-                <p className="lead t2 mt5" style={{ maxWidth: 480 }}>{f.body}</p>
-              </div>
-              {i % 2 === 1 ? <div className="illuwrap">{f.illu}</div> : null}
-            </div>
-          </Reveal>
-        ))}
+      {/* Chapter 3 */}
+      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 0 }}>
+        {chapter(2)}
+      </div>
+
+      {/* Judge demo: the verdict, live */}
+      <div className="page" style={{ paddingTop: 24, paddingBottom: 32 }}>
+        <Reveal>
+          <p className="eyebrow eyebrow--blue mb3">THE VERDICT, LIVE</p>
+          <h2 className="feathead">Sit in on an AI judgment</h2>
+          <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
+            Chapter three, playing out in real time — rubric, findings, fixes, verdict. Turn on the
+            voiceover and let the judge narrate its own ruling.
+          </p>
+        </Reveal>
+        <Reveal delay={120}><div className="vidwrap"><AIJudgeDemo /></div></Reveal>
+      </div>
+
+      {/* Chapter 4 */}
+      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 56 }}>
+        {chapter(3)}
       </div>
 
       {/* Metrics band */}

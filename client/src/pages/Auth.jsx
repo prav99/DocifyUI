@@ -1,8 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, setToken } from '../api.js';
 import { useAuth, toast } from '../store.jsx';
 import { IcCheck } from '../ui.jsx';
+
+// Detect which providers have REAL OAuth configured on the server.
+function useProviders() {
+  const [prov, setProv] = useState({ github: false });
+  useEffect(() => {
+    api('/auth/providers').then(setProv).catch(() => {});
+  }, []);
+  return prov;
+}
 
 const PROVIDERS = [
   { id: 'github', mark: 'GH', name: 'Continue with GitHub', sub: 'Most teams start here' },
@@ -31,8 +40,14 @@ export function Signup() {
     (/\d|[^A-Za-z0-9]/.test(password) ? 1 : 0);
   const strengthLabel = password.length === 0 ? '' : strength <= 1 ? 'Weak' : strength === 2 ? 'Good' : 'Strong';
   const canSubmit = validEmail && password.length >= 8 && !busy;
+  const providers = useProviders();
 
   async function oauth(provider) {
+    // Real OAuth configured? Hand the browser to the provider's consent screen.
+    if (providers[provider]) {
+      window.location.href = '/api/auth/oauth/' + provider;
+      return;
+    }
     setBusy(true);
     try {
       const d = await api('/auth/signup', { method: 'POST', body: { provider } });
@@ -159,14 +174,57 @@ export function Signup() {
   );
 }
 
+// Landing pad after the provider redirects back: token arrives in the URL hash.
+export function OAuthComplete() {
+  const nav = useNavigate();
+  const { login } = useAuth();
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    const h = new URLSearchParams(window.location.hash.slice(1));
+    const token = h.get('token');
+    const error = h.get('error');
+    const prov = h.get('provider') || 'github';
+    const provName = prov.charAt(0).toUpperCase() + prov.slice(1);
+    window.history.replaceState(null, '', '/oauth/complete'); // don't leave the token in history
+    if (error) { setErr(error); return; }
+    if (!token) { nav('/signup'); return; }
+    setToken(token);
+    api('/auth/me')
+      .then((d) => {
+        login(token, d.user);
+        toast('success', provName + ' connected', 'Authorized as a read-only source');
+        nav('/source');
+      })
+      .catch(() => setErr('Could not complete sign-in — please try again.'));
+  }, [nav, login]);
+  return (
+    <div className="page page--narrow">
+      {err ? (
+        <>
+          <h1 className="h04">Sign-in didn&apos;t complete</h1>
+          <p className="body01 t2 mt3">{err}</p>
+          <p className="body01 mt5"><a onClick={() => nav('/signup')}>← Back to signup</a></p>
+        </>
+      ) : (
+        <p className="body01 t2">Completing sign-in…</p>
+      )}
+    </div>
+  );
+}
+
 export function Login() {
   const nav = useNavigate();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const providers = useProviders();
 
   async function submit(provider) {
+    if (provider === 'github' && providers.github) {
+      window.location.href = '/api/auth/oauth/github';
+      return;
+    }
     setBusy(true);
     try {
       const body = provider ? { provider } : { email, password };

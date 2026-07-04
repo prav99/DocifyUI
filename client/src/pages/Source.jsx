@@ -4,32 +4,98 @@ import { api, getCatalog } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, Modal, SrcMark, IcCheck } from '../ui.jsx';
 
+// How each source gets configured.
+const KIND = {
+  github: 'picker', gitlab: 'picker', bitbucket: 'picker',
+  openapi: 'url', jira: 'tokenurl', confluence: 'tokenurl', notion: 'token'
+};
+const PICKER_LABEL = { github: 'Repository', gitlab: 'Project', bitbucket: 'Repository' };
+
 export default function Source() {
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
   const { user } = useAuth();
   const [catalog, setCatalog] = useState(null);
-  const [repos, setRepos] = useState([]);
-  const [waitlistFor, setWaitlistFor] = useState(null); // source object
+  const [lists, setLists] = useState({}); // provider -> repo/project list
+  const [waitlistFor, setWaitlistFor] = useState(null);
   const [wlEmail, setWlEmail] = useState(user ? user.email : '');
-  const [jiraUrl, setJiraUrl] = useState(flow.jiraUrl || '');
-  const [jiraToken, setJiraToken] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const sources = flow.sources || [];
+  const cfg = flow.srcCfg || {};
+
   useEffect(() => { getCatalog().then(setCatalog); }, []);
+
+  // Lazily load pick-lists for every selected code source.
   useEffect(() => {
-    if (flow.provider === 'github') api('/repos').then((d) => setRepos(d.repos)).catch(() => {});
-  }, [flow.provider]);
+    sources
+      .filter((p) => KIND[p] === 'picker' && lists[p] === undefined)
+      .forEach((p) => {
+        setLists((l) => ({ ...l, [p]: null })); // mark loading
+        api('/repos?provider=' + p)
+          .then((d) => setLists((l) => ({ ...l, [p]: d.repos })))
+          .catch(() => setLists((l) => ({ ...l, [p]: [] })));
+      });
+  }, [sources]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
-  function pick(s) {
+  const byId = (id) => catalog.sources.find((x) => x.id === id);
+  const setCfg = (id, patch) =>
+    setFlow((f) => ({ srcCfg: { ...(f.srcCfg || {}), [id]: { ...((f.srcCfg || {})[id] || {}), ...patch } } }));
+
+  function toggle(s) {
     if (!s.avail) {
       if (flow.waitlisted[s.id]) return toast('info', 'Already on the list', 'We will email you when ' + s.name + ' support ships');
       setWaitlistFor(s);
       return;
     }
-    setFlow({ provider: s.id, repo: s.id === 'github' ? flow.repo : null });
+    setFlow((f) => ({
+      sources: (f.sources || []).includes(s.id)
+        ? (f.sources || []).filter((x) => x !== s.id)
+        : [...(f.sources || []), s.id]
+    }));
+  }
+
+  const isReady = (id) => {
+    const c = cfg[id] || {};
+    if (KIND[id] === 'picker') return !!c.sel;
+    if (KIND[id] === 'url') return /^https?:\/\/.+/.test(c.url || '');
+    return !!c.connected;
+  };
+
+  async function connectToken(id) {
+    const c = cfg[id] || {};
+    const needsUrl = KIND[id] === 'tokenurl';
+    if ((needsUrl && !(c.url || '').trim()) || !(c.token || '').trim()) {
+      return toast('error', 'Missing details', needsUrl ? 'Instance URL and API token are both required' : 'A token is required');
+    }
+    setBusy(true);
+    try {
+      await api('/sources', { method: 'POST', body: { provider: id, detail: (c.url || '').trim(), token: (c.token || '').trim() } });
+      setCfg(id, { connected: true, token: '' }); // never keep the token in browser state
+      toast('success', byId(id).name + ' connected', c.url || 'Token accepted');
+    } catch (e) { toast('error', 'Connection failed', e.message); }
+    finally { setBusy(false); }
+  }
+
+  const allReady = sources.length > 0 && sources.every(isReady);
+  const pending = sources.filter((id) => !isReady(id)).map((id) => byId(id).name);
+  const primary = sources.find((id) => KIND[id] === 'picker' || KIND[id] === 'url');
+
+  async function next() {
+    setBusy(true);
+    try {
+      for (const id of sources) {
+        const c = cfg[id] || {};
+        if (KIND[id] === 'picker') await api('/sources', { method: 'POST', body: { provider: id, detail: c.sel } });
+        if (KIND[id] === 'url') await api('/sources', { method: 'POST', body: { provider: id, detail: (c.url || '').trim() } });
+      }
+      const pc = cfg[primary] || {};
+      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null });
+      nav('/doctype');
+    } catch (e) { toast('error', 'Could not save sources', e.message); }
+    finally { setBusy(false); }
   }
 
   async function joinWaitlist() {
@@ -42,100 +108,118 @@ export default function Source() {
     } catch (e) { toast('error', 'Could not join waitlist', e.message); }
   }
 
-  async function connectJira() {
-    if (!jiraUrl.trim() || !jiraToken.trim()) return toast('error', 'Missing details', 'Instance URL and API token are both required');
-    setBusy(true);
-    try {
-      await api('/sources', { method: 'POST', body: { provider: 'jira', detail: jiraUrl.trim(), token: jiraToken.trim() } });
-      setFlow({ jiraUrl: jiraUrl.trim(), jiraConnected: true });
-      toast('success', 'Jira connected', jiraUrl.trim());
-    } catch (e) { toast('error', 'Jira connection failed', e.message); }
-    finally { setBusy(false); }
-  }
-
-  async function next() {
-    setBusy(true);
-    try {
-      if (flow.provider !== 'jira') {
-        await api('/sources', {
-          method: 'POST',
-          body: { provider: flow.provider, detail: flow.provider === 'github' ? flow.repo : '' }
-        });
-      }
-      nav('/doctype');
-    } catch (e) { toast('error', 'Could not save source', e.message); }
-    finally { setBusy(false); }
-  }
-
-  const ready =
-    flow.provider === 'gitlab' || flow.provider === 'bitbucket' ||
-    (flow.provider === 'github' && !!flow.repo) ||
-    (flow.provider === 'jira' && flow.jiraConnected);
-  const note = !flow.provider ? 'Select a source to continue'
-    : flow.provider === 'github' && !flow.repo ? 'Select a repository to continue'
-    : flow.provider === 'jira' && !flow.jiraConnected ? 'Connect Jira to continue' : null;
-
   return (
     <>
       <div className="page">
         <h1 className="h04">Where does your source of truth live?</h1>
-        <p className="body01 t2 mt3">DocGen reads structure, comments, and history from your source to draft documentation. Pick one to start — you can add more later in Settings.</p>
+        <p className="body01 t2 mt3">Select every source you want DocGen to read — combine a repository with Jira for changelogs, or a spec with Confluence pages. Configure each one below.</p>
 
         <div className="grid4 mt7">
-          {catalog.sources.map((s) => (
-            <div key={s.id}
-              className={'tile tile--click' + (flow.provider === s.id ? ' tile--selected' : '') + (s.avail ? '' : ' tile--disabled')}
-              onClick={() => pick(s)}>
-              <div className="row row--between">
-                <SrcMark id={s.id} />
-                {!s.avail
-                  ? (flow.waitlisted[s.id]
-                    ? <span className="tag tag--green">You&apos;re on the list ✓</span>
-                    : <span className="tag tag--gray">Coming soon</span>)
-                  : (user && user.oauthProvider === s.id ? <span className="tag tag--green">Authorized at signup</span> : null)}
+          {catalog.sources.map((s) => {
+            const on = sources.includes(s.id);
+            return (
+              <div key={s.id}
+                className={'tile tile--click cbtile' + (on ? ' tile--selected' : '') + (s.avail ? '' : ' tile--disabled')}
+                onClick={() => toggle(s)}>
+                <span className="cb">{on ? <IcCheck c="#ffffff" /> : null}</span>
+                <div className="row row--between" style={{ paddingRight: 8 }}>
+                  <SrcMark id={s.id} />
+                  {!s.avail
+                    ? (flow.waitlisted[s.id]
+                      ? <span className="tag tag--green">You&apos;re on the list ✓</span>
+                      : <span className="tag tag--gray">Coming soon</span>)
+                    : (user && user.oauthProvider === s.id ? <span className="tag tag--green">Authorized at signup</span> : null)}
+                </div>
+                <p className="h01 mt5">{s.name}</p>
+                <p className="helper mt2">{s.desc}</p>
               </div>
-              <p className="h01 mt5">{s.name}</p>
-              <p className="helper mt2">{s.desc}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        {flow.provider === 'github' && (
+        {sources.length > 0 && (
           <div className="mt7">
-            <h2 className="h02 mb3">Pick a repository</h2>
-            <p className="helper mb5">Showing repositories readable by your GitHub authorization.</p>
-            <div style={{ border: '1px solid var(--border-subtle)' }}>
-              {repos.map((r) => (
-                <div key={r.name} className={'radioline' + (flow.repo === r.name ? ' on' : '')}
-                  onClick={() => setFlow({ repo: r.name })}>
-                  <span className="rdot" />
-                  <span className="mono" style={{ fontSize: 13 }}>{r.name}</span>
-                  <span className="tag tag--outline">{r.branch}</span>
-                  <span className="helper">{r.lang}</span>
-                  <span className="helper" style={{ marginLeft: 'auto' }}>updated {r.updated}</span>
-                </div>
-              ))}
+            <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <h2 className="h02">Configure your sources</h2>
+              <span className="helper">{sources.filter(isReady).length} of {sources.length} ready</span>
             </div>
-          </div>
-        )}
+            <p className="helper mt2 mb5">Each source needs one detail. The first code source becomes the primary input for generation.</p>
+            <div className="stack">
+              {sources.map((id) => {
+                const s = byId(id);
+                const c = cfg[id] || {};
+                const ready = isReady(id);
+                return (
+                  <div key={id} className="srccard" style={{ borderLeftColor: ready ? 'var(--support-success)' : 'var(--support-warning)' }}>
+                    <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
+                      <div className="row">
+                        <SrcMark id={id} />
+                        <div>
+                          <p className="h01">
+                            {s.name}
+                            {primary === id && sources.length > 1 ? <span className="tag tag--blue" style={{ marginLeft: 8 }}>Primary</span> : null}
+                          </p>
+                          <p className="helper">
+                            {KIND[id] === 'picker' ? 'Pick the ' + PICKER_LABEL[id].toLowerCase() + ' to document'
+                              : KIND[id] === 'url' ? 'Point DocGen at your spec'
+                              : 'Authenticate with a token'}
+                          </p>
+                        </div>
+                      </div>
+                      {ready ? <span className="tag tag--green">Ready ✓</span> : <span className="tag tag--amber">Needs setup</span>}
+                    </div>
 
-        {flow.provider === 'jira' && (
-          <div className="mt7 tile tile--white" style={{ maxWidth: 560, padding: 24 }}>
-            <h2 className="h02">Connect Jira</h2>
-            <p className="helper mt2">Jira uses an API token instead of OAuth. Generate one from your Atlassian account settings.</p>
-            <div className="field mt5">
-              <label htmlFor="jiraUrl">Instance URL</label>
-              <input id="jiraUrl" className="input" placeholder="https://yourteam.atlassian.net"
-                value={jiraUrl} onChange={(e) => setJiraUrl(e.target.value)} />
+                    <div className="mt5">
+                      {KIND[id] === 'picker' && (
+                        <div className="field" style={{ maxWidth: 520, marginBottom: 0 }}>
+                          <label htmlFor={'sel-' + id}>{PICKER_LABEL[id]}</label>
+                          <select id={'sel-' + id} className="select" value={c.sel || ''} onChange={(e) => setCfg(id, { sel: e.target.value })}>
+                            <option value="" disabled>
+                              {lists[id] === null || lists[id] === undefined ? 'Loading…' : 'Choose a ' + PICKER_LABEL[id].toLowerCase() + '…'}
+                            </option>
+                            {(lists[id] || []).map((r) => (
+                              <option key={r.name} value={r.name}>
+                                {r.name} · {r.branch}{r.updated ? ' · updated ' + r.updated : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {KIND[id] === 'url' && (
+                        <div className="field" style={{ maxWidth: 520, marginBottom: 0 }}>
+                          <label htmlFor={'url-' + id}>Spec URL</label>
+                          <input id={'url-' + id} className="input" placeholder="https://api.acme.dev/openapi.json"
+                            value={c.url || ''} onChange={(e) => setCfg(id, { url: e.target.value })} />
+                        </div>
+                      )}
+
+                      {(KIND[id] === 'tokenurl' || KIND[id] === 'token') && (
+                        c.connected ? (
+                          <div className="row"><IcCheck /><span className="body01">Connected{c.url ? ' to ' + c.url : ''}</span></div>
+                        ) : (
+                          <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+                            {KIND[id] === 'tokenurl' && (
+                              <div className="field" style={{ flex: '1 1 240px', marginBottom: 0 }}>
+                                <label htmlFor={'iu-' + id}>Instance URL</label>
+                                <input id={'iu-' + id} className="input" placeholder="https://yourteam.atlassian.net"
+                                  value={c.url || ''} onChange={(e) => setCfg(id, { url: e.target.value })} />
+                              </div>
+                            )}
+                            <div className="field" style={{ flex: '1 1 200px', marginBottom: 0 }}>
+                              <label htmlFor={'tk-' + id}>{id === 'notion' ? 'Integration token' : 'API token'}</label>
+                              <input id={'tk-' + id} className="input" type="password" placeholder="Paste token"
+                                value={c.token || ''} onChange={(e) => setCfg(id, { token: e.target.value })} />
+                            </div>
+                            <button className="btn btn--tertiary btn--field" disabled={busy} onClick={() => connectToken(id)}>Connect</button>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="field">
-              <label htmlFor="jiraToken">API token</label>
-              <input id="jiraToken" className="input" type="password" placeholder="Paste token"
-                value={jiraToken} onChange={(e) => setJiraToken(e.target.value)} />
-            </div>
-            {flow.jiraConnected
-              ? <div className="row"><IcCheck /><span className="body01">Connected to {flow.jiraUrl || 'your instance'}</span></div>
-              : <button className="btn btn--tertiary btn--field" disabled={busy} onClick={connectJira}>Connect Jira</button>}
           </div>
         )}
       </div>
@@ -166,7 +250,11 @@ export default function Source() {
         )}
       </Modal>
 
-      <NavBar back="/signup" disabled={!ready || busy} note={note} onNext={next} nextLabel="Continue" />
+      <NavBar back="/signup" disabled={!allReady || busy}
+        note={sources.length === 0 ? 'Select at least one source'
+          : !allReady ? 'Finish setup: ' + pending.join(', ')
+          : sources.length + ' source' + (sources.length > 1 ? 's' : '') + ' ready'}
+        onNext={next} nextLabel="Continue" />
     </>
   );
 }

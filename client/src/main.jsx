@@ -5,7 +5,7 @@ import './styles.css';
 import { AuthProvider, FlowProvider, Toasts, useAuth } from './store.jsx';
 import { TopBar } from './ui.jsx';
 import Landing from './pages/Landing.jsx';
-import { Signup, Login } from './pages/Auth.jsx';
+import { Signup, Login, OAuthComplete } from './pages/Auth.jsx';
 import Source from './pages/Source.jsx';
 import DocType from './pages/DocType.jsx';
 import Format from './pages/Format.jsx';
@@ -45,6 +45,7 @@ function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/oauth/complete" element={<OAuthComplete />} />
               <Route path="/source" element={<RequireAuth><Source /></RequireAuth>} />
               <Route path="/doctype" element={<RequireAuth><DocType /></RequireAuth>} />
               <Route path="/format" element={<RequireAuth><Format /></RequireAuth>} />
