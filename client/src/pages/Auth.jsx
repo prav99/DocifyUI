@@ -33,6 +33,8 @@ export function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sentTo, setSentTo] = useState(''); // verification code sent to this address
+  const [otp, setOtp] = useState('');
 
   const validEmail = /.+@.+\..+/.test(email);
   const strength =
@@ -69,10 +71,36 @@ export function Signup() {
     setBusy(true);
     try {
       const d = await api('/auth/signup', { method: 'POST', body: { email, password } });
+      if (d.pendingVerification) {
+        // Corporate flow with SMTP configured: verify before first login.
+        setSentTo(d.email);
+        toast('success', 'Almost there', 'Verification email sent to ' + d.email);
+        return;
+      }
       login(d.token, d.user);
       toast('success', 'Account created', 'Welcome to DocGen');
       nav('/source');
     } catch (e) { toast('error', 'Signup failed', e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function resend() {
+    try {
+      await api('/auth/resend', { method: 'POST', body: { email: sentTo } });
+      setOtp('');
+      toast('info', 'New code sent', 'Check ' + sentTo + ' (and its spam folder)');
+    } catch { toast('error', 'Could not resend', 'Try again in a moment'); }
+  }
+
+  async function verifyOtp() {
+    if (!/^\d{6}$/.test(otp.trim())) return toast('error', 'Enter the 6-digit code', 'Exactly six digits, from the email we sent');
+    setBusy(true);
+    try {
+      const d = await api('/auth/verify-otp', { method: 'POST', body: { email: sentTo, code: otp.trim() } });
+      login(d.token, d.user);
+      toast('success', 'Account activated', 'Welcome to DocGen');
+      nav('/source');
+    } catch (e) { toast('error', 'Verification failed', e.message); }
     finally { setBusy(false); }
   }
 
@@ -133,6 +161,31 @@ export function Signup() {
             <p className="helper">
               We only request read access to repository contents and commit history. We never store your source code.
             </p>
+          </div>
+        ) : sentTo ? (
+          <div className="mt6 tile" style={{ padding: 24 }}>
+            <div className="row"><IcCheck /><p className="h02">Enter your verification code</p></div>
+            <p className="body01 t2 mt3">
+              We emailed a 6-digit code to <span className="mono">{sentTo}</span>. Enter it below to
+              activate your account — the code expires in 10 minutes.
+            </p>
+            <div className="row mt5" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+              <div className="field" style={{ marginBottom: 0, width: 200 }}>
+                <label htmlFor="otpCode">Verification code</label>
+                <input id="otpCode" className="input mono" inputMode="numeric" maxLength={6}
+                  placeholder="000000" style={{ letterSpacing: 6, fontSize: 18 }}
+                  value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => e.key === 'Enter' && verifyOtp()} />
+              </div>
+              <button className="btn btn--primary btn--field" disabled={busy} onClick={verifyOtp}>
+                Activate account<span className="ico">→</span>
+              </button>
+            </div>
+            <div className="row mt5" style={{ flexWrap: 'wrap' }}>
+              <button className="linkbtn" onClick={resend}>Resend code</button>
+              <span className="helper">·</span>
+              <button className="linkbtn" onClick={() => { setSentTo(''); setOtp(''); }}>Wrong address? Start over</button>
+            </div>
           </div>
         ) : (
           <div className="mt6">
@@ -229,7 +282,17 @@ export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [needOtp, setNeedOtp] = useState(false);
+  const [otp, setOtp] = useState('');
   const providers = useProviders();
+
+  useEffect(() => {
+    const h = new URLSearchParams(window.location.hash.slice(1));
+    const v = h.get('verified');
+    if (v === '1') toast('success', 'Email verified', 'Your account is active — log in below');
+    if (v === '0') toast('error', 'Verification link invalid', 'It may have expired — sign up again or resend');
+    if (v !== null) window.history.replaceState(null, '', '/login');
+  }, []);
 
   async function submit(provider) {
     if (provider === 'github' && providers.github) {
@@ -243,7 +306,27 @@ export function Login() {
       login(d.token, d.user);
       toast('success', 'Logged in', 'Welcome back');
       nav('/dashboard');
-    } catch (e) { toast('error', 'Login failed', e.message); }
+    } catch (e) {
+      if (e.message.indexOf('Verify your email') === 0) {
+        setNeedOtp(true);
+        try { await api('/auth/resend', { method: 'POST', body: { email } }); } catch { /* ignore */ }
+        toast('info', 'Verification needed', 'We sent a fresh 6-digit code to ' + email);
+      } else {
+        toast('error', 'Login failed', e.message);
+      }
+    }
+    finally { setBusy(false); }
+  }
+
+  async function verifyOtp() {
+    if (!/^\d{6}$/.test(otp.trim())) return toast('error', 'Enter the 6-digit code', 'Exactly six digits, from the email we sent');
+    setBusy(true);
+    try {
+      const d = await api('/auth/verify-otp', { method: 'POST', body: { email, code: otp.trim() } });
+      login(d.token, d.user);
+      toast('success', 'Verified and logged in', 'Welcome to DocGen');
+      nav('/dashboard');
+    } catch (e) { toast('error', 'Verification failed', e.message); }
     finally { setBusy(false); }
   }
 
@@ -267,6 +350,20 @@ export function Login() {
         <button className="btn btn--primary" style={{ width: '100%' }} disabled={busy} onClick={() => submit()}>
           Log in<span className="ico">→</span>
         </button>
+        {needOtp && (
+          <div className="tile mt5" style={{ padding: 16 }}>
+            <p className="h01">Enter the verification code</p>
+            <p className="helper mt2">Sent to {email} · expires in 10 minutes</p>
+            <div className="row mt3" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+              <input className="input mono" inputMode="numeric" maxLength={6} placeholder="000000"
+                style={{ letterSpacing: 6, fontSize: 18, width: 170 }}
+                value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                onKeyDown={(e) => e.key === 'Enter' && verifyOtp()} aria-label="Verification code" />
+              <button className="btn btn--primary btn--field" disabled={busy} onClick={verifyOtp}>Verify &amp; log in</button>
+            </div>
+            <p className="helper mt3"><button className="linkbtn" onClick={() => submit()}>Resend code</button></p>
+          </div>
+        )}
         <div className="divider" style={{ margin: '24px 0' }} />
         <button className="btn btn--secondary btn--center" style={{ width: '100%' }} disabled={busy} onClick={() => submit('github')}>
           Continue with GitHub

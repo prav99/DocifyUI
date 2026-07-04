@@ -599,6 +599,21 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .vid-postertxt{color:#fff;font-size:13px;letter-spacing:.32px}
 .demo-ctl--wide{width:auto;padding:0 10px;font-size:12px;white-space:nowrap}
 
+/* ============ Unified customization composer ============ */
+.composer{padding:0;overflow:hidden}
+.composer:focus-within{outline:2px solid var(--focus);outline-offset:-2px}
+.composer-top{padding:24px 24px 0}
+.composer-ta{width:100%;border:none;background:transparent;font-family:inherit;font-size:14px;line-height:1.5;color:var(--text-primary);padding:16px 0 12px;min-height:96px;resize:vertical;display:block}
+.composer-ta::placeholder{color:var(--text-placeholder)}
+.composer-ta:focus{outline:none}
+.composer-chips{display:flex;flex-wrap:wrap;gap:8px;padding:0 24px 14px;align-items:center}
+.filechip--skill{background:#defbe6;border-color:#24a148;color:#0e6027;font-weight:600}
+.filechip--skill svg{flex:none}
+.composer-bar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;border-top:1px solid var(--border-subtle);padding:8px 16px;background:var(--layer-01)}
+.attachbtn{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;font-size:13px;letter-spacing:.16px;color:var(--button-primary);background:transparent;border:none;cursor:pointer;font-family:inherit}
+.attachbtn:hover{background:var(--layer-hover)}
+.attachbtn:focus-within{outline:2px solid var(--focus);outline-offset:-2px}
+
 /* ============ Output options accordion ============ */
 .acc{border-top:1px solid var(--border-subtle)}
 .acc-item{border-bottom:1px solid var(--border-subtle)}

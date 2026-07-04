@@ -137,51 +137,31 @@ export default function DocType() {
           </div>
         )}
 
-        <div className="tile tile--white mt7" style={{ padding: 24 }}>
-          <h2 className="h02">Additional instructions</h2>
-          <p className="helper mt2">Optional. Anything you write here is applied across every selected document type in this run.</p>
-          <textarea className="textarea mt5" rows={5} placeholder={PLACEHOLDER}
-            defaultValue={flow.instructions} onInput={(e) => setFlow({ instructions: e.target.value })} />
-
-          <div className="fileup mt5" style={{ borderColor: flow.skillName ? 'var(--support-success)' : 'var(--button-primary)' }}>
+        <div className="tile tile--white composer mt7">
+          <div className="composer-top">
             <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
-              <p className="label01 t2">SKILL FILE · SKILL.MD</p>
+              <h2 className="h02">Customize the generation</h2>
               {flow.skillName
-                ? <span className="tag tag--green">Skill loaded ✓</span>
-                : <span className="tag tag--blue">Recommended</span>}
+                ? <span className="tag tag--green">Skill active ✓</span>
+                : <span className="tag tag--blue">SKILL.md recommended</span>}
             </div>
             <p className="helper mt2">
-              Teach DocGen exactly how you want documents written: your preferred sections, tone, target
-              audience, and terminology rules. Upload a SKILL.md and every document in this run follows it —
-              the outline, the wording rules, all of it.
+              Optional — one place for everything. Write instructions, attach a SKILL.md to control
+              sections, tone and terminology, or add reference files. Applies to every document in this run.
             </p>
-            {flow.skillName ? (
-              <div className="row mt3" style={{ flexWrap: 'wrap' }}>
-                <span className="filechip">
-                  {flow.skillName}
-                  <button aria-label="Remove skill" onClick={() => setFlow({ skillName: '', skillContent: '', genId: null })}>✕</button>
-                </span>
-                <span className="helper">{Math.max(1, Math.round((flow.skillContent || '').length / 1024))} KB · applied to this run</span>
-              </div>
-            ) : (
-              <div className="row mt3" style={{ flexWrap: 'wrap' }}>
-                <label className="btn btn--primary btn--field" style={{ cursor: 'pointer' }}>
-                  Upload SKILL.md
-                  <input type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} onChange={(e) => readSkill(e.target)} />
-                </label>
-                <button className="linkbtn" onClick={downloadSkillTemplate}>Download the SKILL.md template</button>
-              </div>
-            )}
+            <textarea className="composer-ta" rows={4} placeholder={PLACEHOLDER}
+              defaultValue={flow.instructions} onInput={(e) => setFlow({ instructions: e.target.value })} />
           </div>
 
-          <div className="fileup mt5">
-            <p className="label01 t2">Reference files</p>
-            <p className="helper mt2">Style guides, existing docs, or templates. Max 5 MB per file: .pdf, .docx, .md, .txt</p>
-            <label className="btn btn--tertiary btn--field mt3" style={{ cursor: 'pointer' }}>
-              Add files
-              <input type="file" multiple style={{ display: 'none' }} onChange={(e) => addFiles(e.target)} />
-            </label>
-            <div>
+          {(flow.skillName || flow.files.length > 0) && (
+            <div className="composer-chips">
+              {flow.skillName && (
+                <span className="filechip filechip--skill">
+                  <IcCheck />
+                  {flow.skillName} · {Math.max(1, Math.round((flow.skillContent || '').length / 1024))} KB
+                  <button aria-label="Remove skill" onClick={() => setFlow({ skillName: '', skillContent: '', genId: null })}>✕</button>
+                </span>
+              )}
               {flow.files.map((f, i) => (
                 <span key={f + i} className="filechip">
                   {f}
@@ -190,6 +170,22 @@ export default function DocType() {
                 </span>
               ))}
             </div>
+          )}
+
+          <div className="composer-bar">
+            <label className="attachbtn" title="Controls sections, tone, audience, and terminology rules">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9 1H3v14h10V5L9 1zm0 1.5L11.5 5H9V2.5zM5 8h6v1H5V8zm0 3h6v1H5v-1z"/></svg>
+              {flow.skillName ? 'Replace SKILL.md' : 'Attach SKILL.md'}
+              <input type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} onChange={(e) => readSkill(e.target)} />
+            </label>
+            <label className="attachbtn" title="Style guides, existing docs, or templates · max 5 MB each">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M10.6 2.6a2.5 2.5 0 0 1 3.5 3.5l-7 7a4 4 0 0 1-5.7-5.6L7.8 1l.9.9-6.4 6.5a2.7 2.7 0 0 0 3.9 3.8l7-7a1.2 1.2 0 0 0-1.7-1.7L5.3 9.7a.3.3 0 0 0 .4.4L11 4.8l.9.9-5.3 5.3a1.6 1.6 0 0 1-2.2-2.2l6.2-6.2z"/></svg>
+              Add reference files
+              <input type="file" multiple style={{ display: 'none' }} onChange={(e) => addFiles(e.target)} />
+            </label>
+            <button className="linkbtn" style={{ fontSize: 13, padding: '0 8px' }} onClick={downloadSkillTemplate}>SKILL.md template</button>
+            <span style={{ flex: 1 }} />
+            <span className="helper">.md · .pdf · .docx · .txt</span>
           </div>
         </div>
       </div>

@@ -105,7 +105,9 @@ function serializeGen(g) {
     docTypes: j(g.docTypes, []), format: g.format, instructions: g.instructions,
     files: j(g.files, []), skillName: g.skillName || '',
     status: g.status, step: g.step, steps: j(g.steps, []),
-    title: g.title, content: g.content, score: g.score, createdAt: g.createdAt
+    title: g.title, content: g.content, preview: g.preview || '',
+    output: j(g.output, {}), brief: j(g.brief, {}),
+    score: g.score, createdAt: g.createdAt
   };
 }
 
@@ -131,12 +133,18 @@ async function runPipeline(genId) {
       await sleep(900);
       await prisma.generation.update({ where: { id: genId }, data: { step: i } });
     }
-    const { title, content } = generateDocument({
+    const genArgs = {
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
       repo: gen.repo, instructions: gen.instructions,
       skill: gen.skill || '', skillName: gen.skillName || '',
       brief: j(gen.brief, {}), output: j(gen.output, {})
-    });
+    };
+    const { title, content } = generateDocument(genArgs);
+    // Rendered preview for the UI: same engine, HTML target, same options —
+    // so the preview shows exactly what the user configured, for every format.
+    const previewHtml = gen.format === 'html'
+      ? content
+      : generateDocument({ ...genArgs, format: 'html' }).content;
     const report = judge();
     await prisma.qualityReport.create({
       data: {
@@ -148,7 +156,7 @@ async function runPipeline(genId) {
     });
     await prisma.generation.update({
       where: { id: genId },
-      data: { status: 'complete', title, content, score: aiScore(report.issues.length, 0) }
+      data: { status: 'complete', title, content, preview: previewHtml, score: aiScore(report.issues.length, 0) }
     });
   } catch (e) {
     await prisma.generation.update({ where: { id: genId }, data: { status: 'failed' } }).catch(() => {});

@@ -135,6 +135,21 @@ Notes for production: request finer scopes via a GitHub App instead of the class
 rest, and serve everything over HTTPS. GitLab/Bitbucket follow the same pattern —
 add a matching authorize/callback pair in `server/src/auth.js` and a real adapter.
 
+## Corporate email signup
+
+Email signup works out of the box (bcrypt + JWT). Two optional layers in `server/.env`:
+
+- **Verification emails** — set `SMTP_HOST/PORT/USER/PASS/FROM` and new accounts
+  must click an emailed link (48 h expiry) before they can log in; resend and
+  invalid-link handling included. With `SMTP_HOST` empty (dev mode), accounts are
+  auto-verified and the mail is printed to the server console.
+- **Domain policy** — `ALLOWED_EMAIL_DOMAINS="acme.com,acme.dev"` restricts signup
+  to those domains; `BLOCK_FREE_EMAIL="true"` rejects personal providers
+  (gmail, yahoo, outlook, …) with a "use your corporate email" message.
+
+OAuth accounts are treated as verified by their provider. After changing these,
+run `npm install --prefix server` once (adds nodemailer) and restart.
+
 ## Configuration
 
 `server/.env` — `DATABASE_URL`, `JWT_SECRET`, `PORT`. Defaults work out of the box

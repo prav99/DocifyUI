@@ -12,6 +12,10 @@ model User {
   email         String       @unique
   name          String       @default("")
   passwordHash  String?
+  emailVerified Boolean      @default(false)
+  otpHash       String       @default("") // bcrypt hash of the current signup OTP
+  otpExpires    DateTime?
+  otpAttempts   Int          @default(0)
   oauthProvider String?
   plan          String       @default("free")
   billingCycle  String       @default("annual")
@@ -57,6 +61,7 @@ model Generation {
   steps        String         @default("[]") // JSON array of step labels
   title        String         @default("")
   content      String         @default("")
+  preview      String         @default("") // rendered HTML preview honoring all output options
   score        Int            @default(0)
   createdAt    DateTime       @default(now())
   report       QualityReport?

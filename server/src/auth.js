@@ -1,7 +1,9 @@
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { Router } from 'express';
 import { prisma } from './db.js';
+import { sendMail, mailEnabled } from './adapters/mailer.js';
 
 const SECRET = process.env.JWT_SECRET || 'docgen-dev-secret';
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -184,8 +186,45 @@ async function bootstrapUser(user) {
 function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, oauthProvider: u.oauthProvider,
+    emailVerified: !!u.emailVerified,
     plan: u.plan, billingCycle: u.billingCycle, seats: u.seats
   };
+}
+
+/* ---- Corporate signup policy (configurable via .env) ---- */
+const FREE_DOMAINS = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'proton.me', 'protonmail.com', 'gmx.com', 'mail.com'];
+
+function domainPolicyError(email) {
+  const domain = String(email).split('@')[1] || '';
+  const allowed = (process.env.ALLOWED_EMAIL_DOMAINS || '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (allowed.length && !allowed.includes(domain)) {
+    return 'Signups are restricted to: ' + allowed.join(', ');
+  }
+  if (String(process.env.BLOCK_FREE_EMAIL).toLowerCase() === 'true' && FREE_DOMAINS.includes(domain)) {
+    return 'Please use your corporate email address — personal mail providers are not accepted';
+  }
+  return null;
+}
+
+// Issue a 6-digit OTP: hash stored server-side, 10-minute expiry, 5 attempts.
+// The email also carries a one-click fallback link.
+async function issueOtp(user) {
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      otpHash: await bcrypt.hash(code, 8),
+      otpExpires: new Date(Date.now() + 10 * 60 * 1000),
+      otpAttempts: 0
+    }
+  });
+  const token = jwt.sign({ v: user.email }, SECRET, { expiresIn: '2d' });
+  const link = OAUTH_BASE + '/api/auth/verify?token=' + encodeURIComponent(token);
+  await sendMail(user.email, 'Your DocGen verification code',
+    '<p>Welcome to DocGen. Your verification code:</p>' +
+    '<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace">' + code + '</p>' +
+    '<p>It expires in 10 minutes. You can also <a href="' + link + '">verify with one click</a>.</p>');
 }
 
 export const authRouter = Router();
@@ -200,6 +239,10 @@ authRouter.post('/signup', async (req, res) => {
   if (!provider && (!password || String(password).length < 8)) {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
+  if (!provider) {
+    const policyError = domainPolicyError(finalEmail);
+    if (policyError) return res.status(400).json({ error: policyError });
+  }
   let user = await prisma.user.findUnique({ where: { email: finalEmail } });
   if (user && !provider) return res.status(409).json({ error: 'An account with this email already exists — log in instead' });
   if (!user) {
@@ -208,6 +251,9 @@ authRouter.post('/signup', async (req, res) => {
         email: finalEmail,
         name: name || '',
         oauthProvider: provider || null,
+        // OAuth identities are verified by the provider; email accounts are
+        // verified by link when SMTP is configured, auto-verified in dev mode.
+        emailVerified: provider ? true : !mailEnabled(),
         passwordHash: provider ? null : await bcrypt.hash(String(password), 10)
       }
     });
@@ -222,7 +268,66 @@ authRouter.post('/signup', async (req, res) => {
     }
   }
   await bootstrapUser(user);
+  if (!provider && mailEnabled() && !user.emailVerified) {
+    try {
+      await issueOtp(user);
+    } catch (e) {
+      console.error('SMTP send failed:', e.message);
+      return res.status(502).json({ error: 'Could not send the verification email — contact your administrator (SMTP settings)' });
+    }
+    return res.json({ pendingVerification: true, email: finalEmail, method: 'otp' });
+  }
   res.json({ token: sign(user.id), user: publicUser(user) });
+});
+
+// GET /api/auth/verify?token=...  — from the verification email.
+authRouter.get('/verify', async (req, res) => {
+  try {
+    const { v } = jwt.verify(String(req.query.token || ''), SECRET);
+    await prisma.user.update({ where: { email: String(v) }, data: { emailVerified: true } });
+    res.redirect(CLIENT_ORIGIN + '/login#verified=1');
+  } catch {
+    res.redirect(CLIENT_ORIGIN + '/login#verified=0');
+  }
+});
+
+// POST /api/auth/verify-otp  { email, code } — activates the account and logs in.
+authRouter.post('/verify-otp', async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  const code = String((req.body || {}).code || '').trim();
+  const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+  if (!user) return res.status(400).json({ error: 'Unknown email — sign up first' });
+  if (user.emailVerified) {
+    await bootstrapUser(user);
+    return res.json({ token: sign(user.id), user: publicUser(user) });
+  }
+  if (!user.otpHash || !user.otpExpires || new Date(user.otpExpires) < new Date()) {
+    return res.status(400).json({ error: 'Code expired — request a new one' });
+  }
+  if (user.otpAttempts >= 5) {
+    return res.status(429).json({ error: 'Too many attempts — request a new code' });
+  }
+  const ok = /^\d{6}$/.test(code) && await bcrypt.compare(code, user.otpHash);
+  if (!ok) {
+    await prisma.user.update({ where: { id: user.id }, data: { otpAttempts: user.otpAttempts + 1 } });
+    return res.status(400).json({ error: 'Incorrect code — ' + Math.max(0, 4 - user.otpAttempts) + ' attempt' + (4 - user.otpAttempts === 1 ? '' : 's') + ' left' });
+  }
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { emailVerified: true, otpHash: '', otpExpires: null, otpAttempts: 0 }
+  });
+  await bootstrapUser(updated);
+  res.json({ token: sign(updated.id), user: publicUser(updated) });
+});
+
+// POST /api/auth/resend  { email }
+authRouter.post('/resend', async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+  if (user && !user.emailVerified && mailEnabled()) {
+    try { await issueOtp(user); } catch (e) { console.error('SMTP send failed:', e.message); }
+  }
+  res.json({ ok: true }); // same response either way — no account enumeration
 });
 
 // POST /api/auth/login  { email, password }  (or { provider } for mock OAuth login)
@@ -240,6 +345,9 @@ authRouter.post('/login', async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email: finalEmail } });
   if (!user || !user.passwordHash || !(await bcrypt.compare(String(password || ''), user.passwordHash))) {
     return res.status(401).json({ error: 'Invalid email or password' });
+  }
+  if (mailEnabled() && !user.emailVerified) {
+    return res.status(403).json({ error: 'Verify your email first — check your inbox for the link', unverified: true });
   }
   await bootstrapUser(user);
   res.json({ token: sign(user.id), user: publicUser(user) });
@@ -272,9 +380,9 @@ authRouter.get('/:provider(github|gitlab|bitbucket)/callback', async (req, res) 
     const email = String(prof.email).toLowerCase();
     let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      user = await prisma.user.create({ data: { email, name: prof.name, oauthProvider: provider } });
+      user = await prisma.user.create({ data: { email, name: prof.name, oauthProvider: provider, emailVerified: true } });
     } else if (!user.oauthProvider) {
-      user = await prisma.user.update({ where: { id: user.id }, data: { oauthProvider: provider } });
+      user = await prisma.user.update({ where: { id: user.id }, data: { oauthProvider: provider, emailVerified: true } });
     }
     const data = {
       userId: user.id, provider,
