@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api, setToken } from '../api.js';
 import { useAuth, useFlow, toast } from '../store.jsx';
 import { IcCheck, SrcMark } from '../ui.jsx';
@@ -27,8 +27,12 @@ const VALUE_POINTS = [
 
 export function Signup() {
   const nav = useNavigate();
+  const loc = useLocation();
   const { login } = useAuth();
   const { setFlow } = useFlow();
+  // Where the user was headed before the auth wall (e.g. /automation from the
+  // landing page). Honored after login, signup, and OAuth alike.
+  const dest = (loc.state && loc.state.from) || '';
   const [authMode, setAuthMode] = useState('signup'); // signup | login — one page, both doors
   const [mode, setMode] = useState('oauth');
   const [email, setEmail] = useState('');
@@ -63,6 +67,8 @@ export function Signup() {
   async function oauth(provider) {
     // Real OAuth configured? Hand the browser to the provider's consent screen.
     if (providers[provider]) {
+      // Full-page redirect loses router state — stash the destination.
+      if (dest) { try { sessionStorage.setItem('authDest', dest); } catch { /* ignore */ } }
       window.location.href = '/api/auth/oauth/' + provider;
       return;
     }
@@ -76,7 +82,7 @@ export function Signup() {
         sources: (f.sources || []).includes(provider) ? f.sources : [...(f.sources || []), provider]
       }));
       toast('success', 'Account created', provider.charAt(0).toUpperCase() + provider.slice(1) + ' connected as a source');
-      nav('/source');
+      nav(dest || '/source');
     } catch (e) { toast('error', 'Signup failed', e.message); }
     finally { setBusy(false); }
   }
@@ -94,7 +100,7 @@ export function Signup() {
       }
       login(d.token, d.user);
       toast('success', 'Account created', 'Welcome to DocGen');
-      nav('/source');
+      nav(dest || '/source');
     } catch (e) { toast('error', 'Signup failed', e.message); }
     finally { setBusy(false); }
   }
@@ -114,7 +120,7 @@ export function Signup() {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email: sentTo, code: otp.trim() } });
       login(d.token, d.user);
       toast('success', 'Account activated', 'Welcome to DocGen');
-      nav('/source');
+      nav(dest || '/source');
     } catch (e) { toast('error', 'Verification failed', e.message); }
     finally { setBusy(false); }
   }
@@ -126,7 +132,7 @@ export function Signup() {
       const d = await api('/auth/login', { method: 'POST', body: { email, password } });
       login(d.token, d.user);
       toast('success', 'Logged in', 'Welcome back');
-      nav('/dashboard');
+      nav(dest || '/dashboard');
     } catch (e) {
       if (e.message.indexOf('Verify your email') === 0) {
         setNeedOtp(true);
@@ -146,7 +152,7 @@ export function Signup() {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email, code: otp.trim() } });
       login(d.token, d.user);
       toast('success', 'Verified and logged in', 'Welcome to DocGen');
-      nav('/dashboard');
+      nav(dest || '/dashboard');
     } catch (e) { toast('error', 'Verification failed', e.message); }
     finally { setBusy(false); }
   }
@@ -365,7 +371,9 @@ export function OAuthComplete() {
           sources: (f.sources || []).includes(prov) ? f.sources : [...(f.sources || []), prov]
         }));
         toast('success', provName + ' connected', 'Authorized as a read-only source');
-        nav('/source');
+        let stashed = '';
+        try { stashed = sessionStorage.getItem('authDest') || ''; sessionStorage.removeItem('authDest'); } catch { /* ignore */ }
+        nav(stashed || '/source');
       })
       .catch(() => setErr('Could not complete sign-in — please try again.'));
   }, [nav, login]);

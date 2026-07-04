@@ -657,6 +657,32 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .blendrow{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-secondary);margin-top:7px}
 .blendbar{flex:1;height:4px;background:var(--border-subtle);min-width:40px}
 .blendbar>div{height:4px;background:var(--button-primary);transition:width .6s var(--ease)}
+/* ============ Hero feature pill (landing) ============ */
+.herofeat{display:inline-flex;align-items:center;gap:12px;max-width:560px;text-align:left;background:rgba(15,98,254,.12);border:1px solid #4589ff;color:#d0e2ff;font-family:inherit;font-size:13.5px;line-height:1.45;padding:10px 16px;cursor:pointer;transition:background .11s var(--ease),border-color .11s var(--ease),transform .11s var(--ease)}
+.herofeat:hover{background:rgba(15,98,254,.22);border-color:#78a9ff;transform:translateX(3px)}
+.herofeat-new{background:var(--support-success);color:#fff;font-size:10px;letter-spacing:1.2px;padding:3px 8px;font-weight:600;flex:none}
+.herofeat-arrow{color:#78a9ff;font-size:16px;flex:none}
+.topnav .navnew{color:var(--support-success);font-size:8px;vertical-align:top;margin-left:4px}
+
+/* ============ Wizard: live pipeline preview + sliders ============ */
+.wizgrid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start;max-width:1104px}
+@media(max-width:1000px){.wizgrid{grid-template-columns:1fr}}
+.piperail{background:#161616;border-left:4px solid var(--button-primary);padding:20px;position:sticky;top:64px}
+@media(max-width:1000px){.piperail{position:static}}
+.pr-block{background:#1f1f1f;border:1px solid #393939;padding:10px 14px;margin-top:0;transition:border-color .2s var(--ease),box-shadow .2s var(--ease)}
+.pr-block.on{border-color:var(--button-primary);box-shadow:0 0 0 1px var(--button-primary)}
+.pr-label{display:block;font-size:10px;letter-spacing:1.4px;color:#78a9ff}
+.pr-line{display:block;font-size:12.5px;color:#e0e0e0;margin-top:4px;line-height:1.4;animation:lgin .35s var(--ease)}
+.pr-arrow{color:#4589ff;text-align:center;line-height:1;padding:4px 0;font-size:14px}
+.pr-block.on .pr-label{color:#a6c8ff}
+.rngrow{display:flex;gap:16px;align-items:center}
+.rng{-webkit-appearance:none;appearance:none;flex:1;height:2px;background:#8d8d8d;outline:none;cursor:pointer}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--button-primary);border:none;transition:transform .11s var(--ease)}
+.rng::-webkit-slider-thumb:hover{transform:scale(1.25)}
+.rng::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--button-primary);border:none}
+.rng:focus-visible{outline:2px solid var(--focus);outline-offset:6px}
+.rngval{font-size:18px;min-width:58px;text-align:right}
+
 /* ============ Automation module: wizard, profiles, runs, trends ============ */
 .wizhead{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border-subtle)}
 .wizstep{display:flex;align-items:center;gap:8px;font-family:inherit;font-size:13px;color:var(--text-secondary);background:none;border:none;border-bottom:2px solid transparent;padding:10px 14px 12px 2px;margin-right:14px;cursor:pointer;white-space:nowrap}

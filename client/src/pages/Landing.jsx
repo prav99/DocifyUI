@@ -809,8 +809,9 @@ const FEATURES = [
   },
   {
     eyebrow: 'CHAPTER 05 · AUTOMATE', title: 'And then you never do this again',
-    body: 'Point a webhook at DocGen once. Every merge regenerates the documentation, the judge re-scores it, and the quality gate blocks anything below your bar. From that Friday on, the release and its documentation ship together — and keep ranking.',
-    illu: <IlluAutomate />
+    body: 'Build a pipeline once in the six-step wizard: repository, branch, triggers, documents, AI thresholds, publishing. Every merge then regenerates the documentation, the judge re-scores it, the ranking updates, and the gate blocks anything below your bar. The release and its documentation ship together — and keep ranking.',
+    illu: <IlluAutomate />,
+    cta: ['Build your pipeline', '/automation']
   }
 ];
 
@@ -833,6 +834,11 @@ export default function Landing() {
           <p className="eyebrow eyebrow--blue mb3">{FEATURES[i].eyebrow}</p>
           <h2 className="feathead">{FEATURES[i].title}</h2>
           <p className="lead t2 mt5" style={{ maxWidth: 480 }}>{FEATURES[i].body}</p>
+          {FEATURES[i].cta && (
+            <button className="btn btn--tertiary mt5" onClick={() => nav(FEATURES[i].cta[1])}>
+              {FEATURES[i].cta[0]}<span className="ico">→</span>
+            </button>
+          )}
         </div>
         {i % 2 === 1 ? <div className="illuwrap">{FEATURES[i].illu}</div> : null}
       </div>
@@ -856,7 +862,12 @@ export default function Landing() {
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free<span className="ico">→</span></button>
               <button className="btn btn--ghostdark" onClick={() => nav('/pricing')}>View pricing</button>
             </div>
-            <p className="helper mt6" style={{ color: '#8d8d8d' }}>
+            <button className="herofeat mt6" onClick={() => nav('/automation')}>
+              <span className="herofeat-new mono">NEW</span>
+              <span>Automation pipelines — documentation that regenerates, re-judges, and re-ranks itself on every merge</span>
+              <span className="herofeat-arrow">→</span>
+            </button>
+            <p className="helper mt5" style={{ color: '#8d8d8d' }}>
               Read-only access · your source code is never stored · no credit card required
             </p>
           </div>

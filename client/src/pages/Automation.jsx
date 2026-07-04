@@ -54,6 +54,76 @@ function Tog({ on, label, sub, onClick }) {
   );
 }
 
+/* ---------------- Live pipeline preview: builds itself as you configure ---------------- */
+function PipelinePreview({ cfg, step, name }) {
+  const blocks = [
+    {
+      steps: [0, 1, 2], label: 'ON MERGE',
+      lines: [
+        cfg.repo || '· choose a repository',
+        'branch ' + cfg.branch,
+        [cfg.events.push && 'pushes', cfg.events.mergedPr && 'merged PRs'].filter(Boolean).join(' + ') || '⚠ no trigger events enabled',
+        cfg.pathFilter ? 'paths: ' + cfg.pathFilter : null
+      ]
+    },
+    {
+      steps: [3], label: 'GENERATE OR UPDATE',
+      lines: [
+        cfg.docTypes.length ? cfg.docTypes.join(', ') : '· choose document types',
+        (cfg.format ? cfg.format.toUpperCase() : '· format') + ' · policy: ' + cfg.updatePolicy +
+          (cfg.updatePolicy === 'auto' || cfg.updatePolicy === 'version' ? ' · ' + cfg.versioning : '')
+      ]
+    },
+    {
+      steps: [4], label: 'JUDGE & RANK',
+      lines: [
+        'quality gate ≥ ' + cfg.gate + (cfg.minAssistant ? ' · AI rank ≥ ' + cfg.minAssistant + '%' : ''),
+        (cfg.autoFix ? 'auto-fix every finding' : 'fixes stay manual') + (cfg.requireApproval ? ' · human approval' : '')
+      ]
+    },
+    {
+      steps: [5], label: 'PUBLISH & NOTIFY',
+      lines: [
+        cfg.publishTo === 'workspace' ? 'workspace + export center' : 'export center only',
+        'notify ' + (cfg.notifyEmail || 'account email') + ' · ' +
+          [cfg.notifyOn.success && 'published', cfg.notifyOn.blocked && 'blocked', cfg.notifyOn.failure && 'failed'].filter(Boolean).join(', ')
+      ]
+    }
+  ];
+  return (
+    <aside className="piperail">
+      <p className="label01" style={{ color: '#78a9ff' }}>YOUR PIPELINE — LIVE PREVIEW</p>
+      <p className="h01 mt2" style={{ color: '#ffffff' }}>{name}</p>
+      {blocks.map((b, k) => (
+        <React.Fragment key={b.label}>
+          {k > 0 && <div className="pr-arrow">↓</div>}
+          <div className={'pr-block' + (b.steps.includes(step) ? ' on' : '')}>
+            <span className="pr-label mono">{b.label}</span>
+            {b.lines.filter(Boolean).map((l) => <span key={l} className="pr-line">{l}</span>)}
+          </div>
+        </React.Fragment>
+      ))}
+      <p className="helper mt3" style={{ color: '#8d8d8d' }}>
+        This exact flow executes on every merge — updating live as you configure.
+      </p>
+    </aside>
+  );
+}
+
+/* Carbon-style slider with a live mono readout */
+function Slider({ id, label, min, max, value, onChange, suffix = '' }) {
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="rngrow">
+        <input id={id} className="rng" type="range" min={min} max={max} value={value}
+          onChange={(e) => onChange(Number(e.target.value))} />
+        <span className="rngval mono">{value}{suffix}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- The 6-step wizard ---------------- */
 function Wizard({ existing, catalog, onDone }) {
   const [step, setStep] = useState(0);
@@ -107,7 +177,8 @@ function Wizard({ existing, catalog, onDone }) {
         ))}
       </div>
 
-      <div className="tile tile--white mt5" style={{ padding: 24, maxWidth: 760 }}>
+      <div className="wizgrid mt5">
+      <div className="tile tile--white" style={{ padding: 24 }}>
         {step === 0 && (
           <>
             <h2 className="h02 mb2">Step 1 · Connect repository</h2>
@@ -235,18 +306,10 @@ function Wizard({ existing, catalog, onDone }) {
           <>
             <h2 className="h02 mb2">Step 5 · AI quality &amp; ranking checks</h2>
             <p className="helper mb5">Every run is judged across six dimensions and ranked against ChatGPT, Claude, and Gemini. These thresholds decide what publishes.</p>
-            <div className="grid2">
-              <div className="field">
-                <label htmlFor="wzgate">Quality gate (overall score, 0–100)</label>
-                <input id="wzgate" className="input" type="number" min="0" max="100" defaultValue={cfg.gate}
-                  onBlur={(e) => set({ gate: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} />
-              </div>
-              <div className="field">
-                <label htmlFor="wzrank">Minimum AI ranking estimate (%, 0 = off)</label>
-                <input id="wzrank" className="input" type="number" min="0" max="97" defaultValue={cfg.minAssistant}
-                  onBlur={(e) => set({ minAssistant: Math.max(0, Math.min(97, Number(e.target.value) || 0)) })} />
-              </div>
-            </div>
+            <Slider id="wzgate" label="Quality gate — overall score required to publish" min={0} max={100}
+              value={cfg.gate} onChange={(v) => set({ gate: v })} />
+            <Slider id="wzrank" label="Minimum AI ranking estimate across ChatGPT, Claude, Gemini (0 = off)" min={0} max={97}
+              value={cfg.minAssistant} onChange={(v) => set({ minAssistant: v })} suffix="%" />
             <div className="stack mt3">
               <Tog on={cfg.autoFix} label="Auto-apply the judge's fixes"
                 sub="Every suggested fix is applied and the document re-rendered before thresholds are checked"
@@ -298,6 +361,8 @@ function Wizard({ existing, catalog, onDone }) {
             ? <button className="btn btn--primary" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>Next<span className="ico">→</span></button>
             : <button className="btn btn--primary" disabled={saving} onClick={saveProfile}>{saving ? 'Saving…' : existing ? 'Save changes' : 'Create pipeline'}<span className="ico">✓</span></button>}
         </div>
+      </div>
+      <PipelinePreview cfg={cfg} step={step} name={name} />
       </div>
     </div>
   );

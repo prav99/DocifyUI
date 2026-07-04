@@ -160,6 +160,11 @@ export function TopBar() {
             {m.slice(1).charAt(0).toUpperCase() + m.slice(2)}
           </a>
         ))}
+        {user && (
+          <a className={path === '/automation' ? 'on' : ''} onClick={() => nav('/automation')}>
+            Automation<span className="navnew">●</span>
+          </a>
+        )}
       </nav>
       <span className="spacer" />
       {idx >= 0 && (
