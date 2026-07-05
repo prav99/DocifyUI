@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Automation from './pages/Automation.jsx';
 import Settings from './pages/Settings.jsx';
 import { Docs, DocArticle } from './pages/Docs.jsx';
+import Help from './pages/Help.jsx';
 
 function RequireAuth({ children }) {
   const { user, ready } = useAuth();
@@ -59,6 +60,8 @@ function App() {
               <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/docs/:slug" element={<DocArticle />} />
+              <Route path="/help" element={<Help />} />
+              <Route path="/help/:topic" element={<Help />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

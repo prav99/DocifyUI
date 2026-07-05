@@ -43,6 +43,24 @@ export function PreviewFrame({ html, title = 'Document preview' }) {
   return <iframe ref={ref} title={title} sandbox="allow-same-origin" srcDoc={html} onLoad={wire} />;
 }
 
+/* ---------- Contextual help link: one per screen, topic = /help/<id> ---------- */
+export function HelpLink({ topic, style = {} }) {
+  const nav = useNavigate();
+  return (
+    <a
+      onClick={() => nav('/help/' + topic)}
+      title="Open the help article for this page"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', ...style }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="7" fill="none" stroke="#0f62fe" strokeWidth="1.5" />
+        <path fill="#0f62fe" d="M8.75 9.5h-1.5c0-1.9 1.6-1.9 1.6-3.1 0-.6-.5-1-1.1-1-.6 0-1 .4-1.1 1H5.1C5.2 5 6.3 4 7.8 4c1.5 0 2.6 1 2.6 2.4 0 1.7-1.65 1.8-1.65 3.1zM8 12.4a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z" />
+      </svg>
+      Help
+    </a>
+  );
+}
+
 /* ---------- Icons ---------- */
 export const IcCheck = ({ c = '#24a148' }) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill={c}><path d="M6.5 12.3 2.7 8.5l1.1-1.1 2.7 2.7 5.7-5.7 1.1 1.1z" /></svg>

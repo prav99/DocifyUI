@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { toast } from '../store.jsx';
-import { NavBar, SrcMark } from '../ui.jsx';
+import { NavBar, SrcMark, HelpLink } from '../ui.jsx';
 
 export default function Settings() {
   const nav = useNavigate();
@@ -31,7 +31,10 @@ export default function Settings() {
   return (
     <>
       <div className="page">
-        <h1 className="h04">Team &amp; settings</h1>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h1 className="h04">Team &amp; settings</h1>
+          <HelpLink topic="settings" />
+        </div>
         <div className="tabs mt7">
           {[['sources', 'Connected sources'], ['team', 'Team'], ['billing', 'Billing']].map(([id, label]) => (
             <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>

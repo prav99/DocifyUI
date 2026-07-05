@@ -1094,7 +1094,7 @@ function qStyleHTML(){
     {t:'Oxford comma usage', d:'Consistent across all list constructions.', tag:'<span class="tag tag--green">Pass</span>'},
     {t:'Latin abbreviations', d:'No "e.g." or "i.e." in body text; expanded forms used throughout.', tag:'<span class="tag tag--green">Pass</span>'}
   ];
-  var h = '<p class="body01 t2 mb5">Checked against your default style profile (IBM Style-derived). 2 findings need review, 3 checks pass.</p>';
+  var h = '<p class="body01 t2 mb5">Checked against your default enterprise style profile. 2 findings need review, 3 checks pass.</p>';
   rows.forEach(function(r){
     h += '<div class="issue" style="border-left-color:' + (r.tag.indexOf('green') >= 0 ? 'var(--support-success)' : 'var(--support-warning)') + '">';
     h += '<div class="row row--between"><p class="h01">' + r.t + '</p>' + r.tag + '</div>';
@@ -1119,7 +1119,7 @@ function qAiHTML(){
   h += '</div>';
 
   h += '<div class="row row--between mt7" style="flex-wrap:wrap;gap:12px">';
-  h += '<div class="row">' + svgInfo() + '<span class="body01">Evaluated by LLM judge, aligned to IBM Docs guidelines</span><span class="tag ' + vtag + '">' + verdict + '</span></div>';
+  h += '<div class="row">' + svgInfo() + '<span class="body01">Evaluated by LLM judge, aligned to enterprise documentation guidelines</span><span class="tag ' + vtag + '">' + verdict + '</span></div>';
   h += '<button class="btn btn--tertiary btn--field" id="btnRecheck" onclick="recheckAI()">Re-check with AI judge</button>';
   h += '</div>';
 
@@ -1156,7 +1156,7 @@ function recheckAI(){
   b.textContent = 'Re-evaluating…';
   setTimeout(function(){
     if ($('btnRecheck')) { $('btnRecheck').disabled = false; $('btnRecheck').textContent = 'Re-check with AI judge'; }
-    toast('info', 'AI judge re-confirmed', 'Score verified at ' + aiScore() + ' / 100 against IBM Docs guidelines');
+    toast('info', 'AI judge re-confirmed', 'Score verified at ' + aiScore() + ' / 100 against the enterprise guideline set');
   }, 800);
 }
 /* ================= 8. Export ================= */
@@ -1444,7 +1444,7 @@ SCREENS.features = function(){
   var blocks = [
     {tag:'SOURCE', title:'Connect once, read forever', body:'OAuth to GitHub, GitLab, or Bitbucket at signup — the same grant powers generation. Jira connects with an API token for changelog and release-note pipelines. Access is read-only: repository contents and commit history, nothing more, and your source code is never stored.'},
     {tag:'GENERATE', title:'From repo to draft in minutes', body:'DocGen parses repo structure, extracts code comments and OpenAPI-style annotations, and drafts topic-based sections. Choose technical documentation — API references, user guides, installation guides — or marketing material like release announcements and feature one-pagers. Output in DITA, PDF, Word, or Markdown.'},
-    {tag:'VERIFY', title:'A quality gate, not a spellcheck', body:'Every generation runs through link verification, style-guide compliance derived from IBM Style conventions, and an LLM-judge AI-consumability review: short descriptions, search-optimized titles, metadata keywords, unambiguous references, and example coverage. Each finding ships with a concrete one-click fix.'},
+    {tag:'VERIFY', title:'A quality gate, not a spellcheck', body:'Every generation runs through link verification, style-guide compliance derived from established enterprise style conventions, and an LLM-judge AI-consumability review: short descriptions, search-optimized titles, metadata keywords, unambiguous references, and example coverage. Each finding ships with a concrete one-click fix.'},
     {tag:'AUTOMATE', title:'Docs that never go stale', body:'A GitHub Actions snippet regenerates documentation on every merge to main and blocks publishing when the quality score drops below your gate. Writers review diffs instead of rewriting pages.'}
   ];
   var h = '<div class="page">';

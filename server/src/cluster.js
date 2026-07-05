@@ -3,6 +3,7 @@
 // failing request never takes the service down. Scale within one machine by
 // core count (WEB_CONCURRENCY overrides), and across machines by running this
 // behind any load balancer — the API is stateless (JWT auth, DB-backed state).
+import './env.js'; // CWD-independent .env loading — must stay the first import
 import cluster from 'node:cluster';
 import os from 'node:os';
 

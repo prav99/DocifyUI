@@ -1,4 +1,7 @@
-import 'dotenv/config';
+// './env.js' must stay the FIRST import: ES module imports execute in order,
+// and it loads server/.env (CWD-independent) before any module reads
+// process.env at import time.
+import './env.js';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';

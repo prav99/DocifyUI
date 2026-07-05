@@ -870,12 +870,12 @@ function renderPreviewLayout({ layout, card, title, sections, oc, org, std, date
 }
 
 /* ---------------- Document generation ---------------- */
-export function generateDocument({ track, docTypes, format, repo, instructions, skill = '', skillName = '', brief = null, output = null, fixes = [] }) {
+export function generateDocument({ track, docTypes, format, repo, instructions, skill = '', skillName = '', brief = null, output = null, fixes = [], aiDocs = null }) {
   const id = docTypes[0];
   let title = docTypeName(track, id);
   const sk = parseSkill(skill);
   const c = {
-    product: 'Payments API',
+    product: aiDocs ? (String(repo).split('/').pop() || 'this project') : 'Payments API',
     version: '2.4.0',
     date: new Date().toISOString().slice(0, 10),
     repo,
@@ -883,14 +883,30 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   };
   const tpl = TEMPLATES[id];
   const oc = normOut(output);
+  if (docTypes.length > 1 && !(oc.title && oc.title.trim())) {
+    title = title + ' + ' + (docTypes.length - 1) + ' more (documentation set)';
+  }
   if (oc.title && oc.title.trim()) title = oc.title.trim();
   const org = [oc.company, oc.trademark].filter((x) => x && x.trim()).map((x) => x.trim()).join(' ');
 
-  // Skill outline overrides the template outline; the standard is still noted.
+  // Section outline priority: real AI content > skill outline > templates.
+  // Every selected doc type contributes its sections — multi-type runs
+  // produce the full set, with headings prefixed by the document name.
+  const prefix = (name, secs) => (docTypes.length > 1 ? secs.map(([h, b]) => [name + ' — ' + h, b]) : secs);
+  const mockSectionsFor = (t) => {
+    const tp = TEMPLATES[t];
+    return tp ? tp.sections(c) : [['Overview', 'Drafted from repository analysis.']];
+  };
   let sections;
-  if (sk.sections.length) sections = sk.sections.map((s) => [s, skillSectionBody(s, sk)]);
-  else if (tpl) sections = tpl.sections(c);
-  else sections = [['Overview', 'Drafted from repository analysis.']];
+  if (aiDocs && aiDocs.length) {
+    sections = [];
+    for (const d of aiDocs) sections.push(...prefix(docTypeName(track, d.type), d.sections));
+  } else if (sk.sections.length) {
+    sections = sk.sections.map((s) => [s, skillSectionBody(s, sk)]);
+  } else {
+    sections = [];
+    for (const t of docTypes) sections.push(...prefix(docTypeName(track, t), mockSectionsFor(t)));
+  }
 
   // ---- Apply the user's accepted fixes: real content repairs ----
   const fxSet = new Set(fixes || []);
@@ -952,13 +968,20 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   if (oc.showDate) coverRows.push(['Date', fmtDate(oc)]);
   parts.push('> Standard: ' + (tpl ? tpl.standard : 'DocGen default') + ' · Source: `' + repo + '`' + (oc.showDate ? ' · ' + fmtDate(oc) : ''));
   if (!noFurniture) {
-    parts.push('', 'The ' + c.product + ' lets you create, capture, and refund charges programmatically.');
+    parts.push('', aiDocs
+      ? 'Documentation for `' + repo + '`, generated from the repository source.'
+      : 'The ' + c.product + ' lets you create, capture, and refund charges programmatically.');
   }
   if (fxSet.has('shortdesc')) {
-    parts.push('', '**Short description.** The ' + c.product + ' lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling.');
+    parts.push('', aiDocs
+      ? '**Short description.** ' + title + ' for `' + repo + '`, generated from and grounded in the repository source files.'
+      : '**Short description.** The ' + c.product + ' lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling.');
   }
   if (fxSet.has('keywords')) {
-    parts.push('', 'Keywords: payments-api, REST authentication, refunds, webhook events.');
+    const kwProduct = (String(repo || '').split('/').pop() || c.product || 'product').toLowerCase();
+    parts.push('', aiDocs
+      ? 'Keywords: ' + kwProduct + ', ' + [...new Set((docTypes || []).map((d) => String(d)))].join(', ') + ', documentation, reference.'
+      : 'Keywords: payments-api, REST authentication, refunds, webhook events.');
   }
   if (skillName) {
     parts.push('', '> Skill applied: ' + skillName +
@@ -1307,72 +1330,149 @@ export const FIX_DIFFS = {
 };
 
 /* ---------------- LLM-as-judge ---------------- */
-export function judge() {
-  return {
-    issues: [
-      {
-        id: 'shortdesc', cat: 'LLM readiness', dim: 'llm', title: 'Missing short description',
-        body: 'No short description was found at the top of the document. AI systems and search results rely on it to summarize the page — without one, retrieval quality drops and snippets are generated from arbitrary body text.',
-        fix: 'Add under the title: "The Payments API lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling."'
-      },
-      {
-        id: 'title', cat: 'LLM readiness', dim: 'llm', title: 'Title is not search-optimized',
-        body: 'The current title "Reference" is too generic to match real queries. Users and LLMs search with product and task terms, not document-type labels.',
-        fix: 'Rename to "Payments API reference — endpoints, authentication, and errors".'
-      },
-      {
-        id: 'keywords', cat: 'LLM readiness', dim: 'llm', title: 'Missing metadata keywords',
-        body: 'No keywords or tags are attached to the document, reducing discoverability in both site search and vector retrieval.',
-        fix: 'Add keywords: payments-api, REST authentication, refunds, webhook events.'
-      },
-      {
-        id: 'pronoun', cat: 'Readability', dim: 'readability', title: 'Ambiguous pronoun reference',
-        body: 'In the Refunds section, the sentence "It must be rotated every 90 days" follows mentions of both the API key and the signing secret. Retrieved out of context, "It" does not resolve.',
-        fix: 'Replace with "The API signing secret must be rotated every 90 days."'
-      },
-      {
-        id: 'longsent', cat: 'Readability', dim: 'readability', title: 'Sentence length above threshold',
-        body: 'Three sentences in the Authentication section exceed 28 words. Long sentences reduce comprehension and degrade chunk quality for retrieval.',
-        fix: 'Split each flagged sentence at the conjunction; target a mean of 18 words per sentence.'
-      },
-      {
-        id: 'example', cat: 'Completeness', dim: 'completeness', title: 'Missing example',
-        body: 'The "Create a charge" section describes the request body but includes no code example. Sections without examples are retrieved less often and answered less accurately by LLMs.',
-        fix: 'Add a curl example showing a minimal POST /v1/charges request with amount, currency, and source fields.'
-      },
-      {
-        id: 'prereq', cat: 'Completeness', dim: 'completeness', title: 'Missing prerequisites section',
-        body: 'No prerequisites are stated before the first task. Readers discover missing requirements mid-procedure, and assistants cannot answer "what do I need first".',
-        fix: 'Add a "Before you begin" list: an active account, an API key from the console, and curl 8+.'
-      },
-      {
-        id: 'limitations', cat: 'Completeness', dim: 'completeness', title: 'Missing limitations section',
-        body: 'The document never states rate limits, size caps, or unsupported scenarios, leaving readers to find the edges by trial and error.',
-        fix: 'Add a "Limitations" section: 100 req/s per key, 10 MB request cap, refunds only within 180 days.'
-      },
-      {
-        id: 'term', cat: 'Consistency', dim: 'consistency', title: 'Terminology mismatch: "sandbox" vs "test mode"',
-        body: 'Both terms are used for the same environment. Mixed terminology fragments search results and confuses retrieval.',
-        fix: 'Standardize on "sandbox" everywhere; reserve "test mode" only for the dashboard toggle label.'
-      },
-      {
-        id: 'dupe', cat: 'Consistency', dim: 'consistency', title: 'Duplicated paragraph across sections',
-        body: 'The token-rotation paragraph appears in both Authentication and Refunds. Duplicates compete against each other in retrieval and drift out of sync over time.',
-        fix: 'Keep the paragraph in Authentication and replace the copy in Refunds with a cross-reference link.'
+/* Content-aware judge. Every check runs against the ACTUAL generated
+ * document, so scores and recommendations vary with the content instead of
+ * being demo constants. Issue IDs stay within the fix-engine vocabulary
+ * (applyFixes / FIX_DIFFS), so auto-fix keeps working unchanged.
+ * Called without content (legacy callers, seeds), it degrades to the full
+ * checklist so nothing downstream breaks. */
+export function judge(doc = {}) {
+  const raw = String(doc.content || '');
+  const repo = String(doc.repo || '');
+  const product = (repo.split('/').pop() || 'the product').replace(/[-_]/g, ' ');
+  const h1 = (raw.match(/^#\s+(.+)$/m) || [])[1] || String(doc.title || '');
+
+  // Text views: body without code fences (for prose checks).
+  const noCode = raw.replace(/```[\s\S]*?```/g, '');
+  const prose = noCode
+    .replace(/^#{1,6}\s.+$/gm, '')                     // headings
+    .replace(/^\s*[->|*]\s?.*$/gm, '')                 // bullets, quotes, tables
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');          // link targets
+  const sentences = prose.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.split(/\s+/).length > 2);
+  const words = (s) => s.split(/\s+/).filter(Boolean).length;
+
+  const issues = [];
+  const push = (id, cat, dim, title, body, fix) => issues.push({ id, cat, dim, title, body, fix });
+
+  // If there is no content to inspect (legacy call), report the full
+  // checklist exactly as before.
+  const inspect = raw.length > 0;
+
+  // --- LLM readiness ---
+  const afterTitle = raw.split(/^#\s.+$/m)[1] || '';
+  const firstProse = afterTitle.split('\n').map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#') && !l.startsWith('>') && !l.startsWith('-') && !l.startsWith('!'))[0] || '';
+  if (!inspect || firstProse.length < 40) {
+    push('shortdesc', 'LLM readiness', 'llm', 'Missing short description',
+      'No short description was found at the top of the document. AI systems and search results rely on it to summarize the page — without one, retrieval quality drops and snippets are generated from arbitrary body text.',
+      'Add a 1–2 sentence summary of ' + product + ' directly under the title, stating what it does and what this document covers.');
+  }
+  if (!inspect || words(h1) < 3) {
+    push('title', 'LLM readiness', 'llm', 'Title is not search-optimized',
+      'The current title "' + (h1 || 'Untitled') + '" is too generic to match real queries. Users and LLMs search with product and task terms, not document-type labels.',
+      'Rename to "' + product + ' — <primary tasks this document answers>".');
+  }
+  if (!inspect || !/^\s*keywords\s*:/im.test(noCode)) {
+    push('keywords', 'LLM readiness', 'llm', 'Missing metadata keywords',
+      'No keywords or tags are attached to the document, reducing discoverability in both site search and vector retrieval.',
+      'Add a "Keywords:" line naming ' + product + ' and its main tasks and synonyms.');
+  }
+
+  // --- Readability ---
+  if (!inspect || /\bIt must be rotated every 90 days\b/.test(noCode)) {
+    push('pronoun', 'Readability', 'readability', 'Ambiguous pronoun reference',
+      'The sentence "It must be rotated every 90 days" follows mentions of more than one noun. Retrieved out of context, "It" does not resolve.',
+      'Replace with "The API signing secret must be rotated every 90 days."');
+  }
+  const longOnes = sentences.filter((s) => words(s) > 28);
+  if (!inspect || longOnes.length > 0) {
+    push('longsent', 'Readability', 'readability', 'Sentence length above threshold',
+      (inspect ? longOnes.length : 'Several') + ' sentence(s) exceed 28 words' + (inspect && longOnes[0] ? ' (e.g., "' + longOnes[0].slice(0, 90) + '…")' : '') + '. Long sentences reduce comprehension and degrade chunk quality for retrieval.',
+      'Split each flagged sentence at the conjunction; target a mean of 18 words per sentence.');
+  }
+
+  // --- Completeness ---
+  if (!inspect || !/```/.test(raw)) {
+    push('example', 'Completeness', 'completeness', 'Missing code example',
+      'The document includes no fenced code example. Sections without examples are retrieved less often and answered less accurately by LLMs.',
+      'Add at least one runnable example (install command, minimal request, or config snippet) for ' + product + '.');
+  }
+  if (doc.track !== 'marketing' && (!inspect || !/^#{1,3}\s+.*(before you begin|prerequisit)/im.test(raw))) {
+    push('prereq', 'Completeness', 'completeness', 'Missing prerequisites section',
+      'No prerequisites are stated before the first task. Readers discover missing requirements mid-procedure, and assistants cannot answer "what do I need first".',
+      'Add a "Before you begin" list with the runtime, account, and tooling requirements.');
+  }
+  if (doc.track !== 'marketing' && (!inspect || !/^#{1,3}\s+.*(limitation|rate limit|constraint)/im.test(raw))) {
+    push('limitations', 'Completeness', 'completeness', 'Missing limitations section',
+      'The document never states rate limits, size caps, or unsupported scenarios, leaving readers to find the edges by trial and error.',
+      'Add a "Limitations" section listing rate limits, size caps, and unsupported scenarios.');
+  }
+
+  // --- Consistency ---
+  if (!inspect || (/\bsandbox\b/i.test(noCode) && /\btest mode\b/i.test(noCode))) {
+    push('term', 'Consistency', 'consistency', 'Terminology mismatch: "sandbox" vs "test mode"',
+      'Both terms are used for the same environment. Mixed terminology fragments search results and confuses retrieval.',
+      'Standardize on "sandbox" everywhere; reserve "test mode" only for the dashboard toggle label.');
+  }
+  const paras = noCode.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 80);
+  const dupePara = paras.find((p, i) => paras.indexOf(p) !== i);
+  if (!inspect || dupePara) {
+    push('dupe', 'Consistency', 'consistency', 'Duplicated paragraph across sections',
+      'The same paragraph appears in more than one section' + (inspect && dupePara ? ' ("' + dupePara.slice(0, 70) + '…")' : '') + '. Duplicates compete against each other in retrieval and drift out of sync over time.',
+      'Keep the paragraph in its primary section and replace the copies with a cross-reference link.');
+  }
+
+  // --- Link integrity: derived from the document's real links ---
+  const links = [];
+  if (inspect) {
+    const seen = new Set();
+    let m;
+    const linkRe = /\[[^\]]*\]\((\/[^)#\s]+|https?:\/\/[^)\s]+)\)/g;
+    while ((m = linkRe.exec(noCode)) && links.length < 5) {
+      const url = m[1];
+      if (seen.has(url)) continue;
+      seen.add(url);
+      if (url.startsWith('http://')) {
+        links.push({ file: 'document body', url, why: 'Insecure http:// link — browsers and crawlers may block or downgrade it.', status: 'Insecure' });
+      } else if (url.startsWith('/')) {
+        links.push({ file: 'document body', url, why: 'Relative link — cannot be resolved outside the publishing site; verify the target exists.', status: 'Unverified' });
       }
-    ],
-    links: [
+    }
+  } else {
+    links.push(
       { file: 'authentication.md, line 24', url: '/docs/token-rotation-guide', why: 'Target page was removed in v2.3 docs restructure. Returns 404.', status: '404' },
       { file: 'webhooks.md, line 108', url: 'https://status.acme.dev/webhooks', why: 'Host resolves but path redirects 3 times, then times out.', status: 'Timeout' }
-    ],
-    style: [
-      { t: 'Passive voice above threshold', d: 'Sections 2 and 4 use passive voice in 31% of sentences; the style guide caps it at 20%. Example: "Tokens are issued by the console" — prefer "The console issues tokens."', pass: false },
-      { t: 'Inconsistent terminology: "API key" vs "token"', d: 'Both terms refer to the same credential. The glossary prefers "API key". 6 occurrences of "token" flagged outside code samples.', pass: false },
+    );
+  }
+
+  // --- Style guide: measured on the real prose ---
+  let style;
+  if (inspect) {
+    const passiveHits = sentences.filter((s) => /\b(is|are|was|were|be|been|being)\s+\w+(ed|en)\b/i.test(s)).length;
+    const passivePct = sentences.length ? Math.round((100 * passiveHits) / sentences.length) : 0;
+    const latin = /\b(e\.g\.|i\.e\.)/.test(prose);
+    const headings = [...raw.matchAll(/^#{2,4}\s+(.+)$/gm)].map((x) => x[1]);
+    const titleCased = headings.filter((h) => {
+      const ws = h.replace(/[`*_]/g, '').split(/\s+/);
+      return ws.length > 1 && ws.slice(1).filter((w) => /^[A-Z][a-z]/.test(w)).length > ws.length / 2;
+    });
+    style = [
+      { t: 'Passive voice', d: passivePct + '% of sentences use passive constructions; the style guide caps it at 20%.', pass: passivePct <= 20 },
+      { t: 'Latin abbreviations', d: latin ? '"e.g." or "i.e." found in body text; the style guide prefers expanded forms.' : 'No "e.g." or "i.e." in body text; expanded forms used throughout.', pass: !latin },
+      { t: 'Sentence case in headings', d: titleCased.length ? titleCased.length + ' heading(s) use Title Case (e.g., "' + titleCased[0] + '"); the convention is sentence case.' : 'All headings comply with sentence-case convention.', pass: titleCased.length === 0 },
+      { t: 'Average sentence length', d: (sentences.length ? Math.round(sentences.reduce((a, s) => a + words(s), 0) / sentences.length) : 0) + ' words per sentence (target ≤ 22).', pass: !sentences.length || sentences.reduce((a, s) => a + words(s), 0) / sentences.length <= 22 }
+    ];
+  } else {
+    style = [
+      { t: 'Passive voice above threshold', d: 'Sections 2 and 4 use passive voice in 31% of sentences; the style guide caps it at 20%.', pass: false },
+      { t: 'Inconsistent terminology: "API key" vs "token"', d: 'Both terms refer to the same credential. The glossary prefers "API key".', pass: false },
       { t: 'Sentence case in headings', d: 'All headings comply with sentence-case convention.', pass: true },
       { t: 'Oxford comma usage', d: 'Consistent across all list constructions.', pass: true },
       { t: 'Latin abbreviations', d: 'No "e.g." or "i.e." in body text; expanded forms used throughout.', pass: true }
-    ]
-  };
+    ];
+  }
+
+  return { issues, links, style };
 }
 
 export const AI_BASE_SCORE = 70;
@@ -1384,4 +1484,141 @@ export function aiScore(issueCount, fixedCount) {
 
 function slug(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+/* ---------------- Real LLM generation (Anthropic API) ----------------
+ * Active when ANTHROPIC_API_KEY is set in server/.env AND repository files
+ * were fetched. Produces the same { title, content, structure } shape as the
+ * template engine, so every downstream format/preview/quality path is reused.
+ * On ANY failure it falls back to the template engine — the app never breaks.
+ */
+const AI_MODEL = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+
+// ---- Concurrency limiter ----------------------------------------------
+// The API rate-limits bursts. Cap simultaneous in-flight requests (override
+// with AI_CONCURRENCY) so a batch of generations queues instead of stampeding
+// and getting 429s. This is what caused template fallbacks under load.
+const AI_MAX_INFLIGHT = Math.max(1, Number(process.env.AI_CONCURRENCY) || 2);
+let aiInFlight = 0;
+const aiWaiters = [];
+function acquireSlot () {
+  if (aiInFlight < AI_MAX_INFLIGHT) { aiInFlight++; return Promise.resolve(); }
+  return new Promise((resolve) => aiWaiters.push(resolve));
+}
+function releaseSlot () {
+  const next = aiWaiters.shift();
+  if (next) next(); // hand the slot to the next waiter (count stays the same)
+  else aiInFlight = Math.max(0, aiInFlight - 1);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Anthropic call with retry + exponential backoff on transient failures
+// (429 rate limit, 529 overloaded, 5xx). Honors Retry-After when present.
+async function anthropicRequest (key, body, attempt = 0) {
+  const MAX_RETRIES = 4;
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (r.ok) return r.json();
+  const retryable = r.status === 429 || r.status === 529 || r.status >= 500;
+  if (retryable && attempt < MAX_RETRIES) {
+    const hdr = Number(r.headers.get('retry-after'));
+    const backoff = Number.isFinite(hdr) && hdr > 0
+      ? hdr * 1000
+      : Math.min(16000, 500 * Math.pow(2, attempt)) + Math.floor(Math.random() * 400);
+    await sleep(backoff);
+    return anthropicRequest(key, body, attempt + 1);
+  }
+  throw new Error('Anthropic API: HTTP ' + r.status + ' ' + (await r.text()).slice(0, 200));
+}
+
+async function aiSections({ docType, track, repo, files, brief, instructions, key }) {
+  const tpl = TEMPLATES[docType];
+  const outline = tpl ? tpl.sections({ product: 'X', version: '', date: '', repo, brief: {} }).map(([h]) => h) : ['Overview'];
+  const fileBlock = files.map((f) => '### FILE: ' + f.path + '\n```\n' + f.content + '\n```').join('\n\n');
+  const b = brief || {};
+  const sys = 'You are a senior technical writer. Write documentation grounded ONLY in the provided repository files. ' +
+    'Never invent endpoints, functions, options, or version numbers that are not visible in the files. ' +
+    'Respond with ONLY a JSON array of [heading, markdownBody] pairs — no prose around it.';
+  const user = 'Repository: ' + repo + '\nDocument type: ' + docTypeName(track, docType) +
+    (tpl ? ' (standard: ' + tpl.standard + ')' : '') +
+    '\nSuggested outline (adapt as the code warrants): ' + outline.join(' · ') +
+    (b.audience ? '\nAudience: ' + b.audience : '') + (b.tone ? '\nTone: ' + b.tone : '') +
+    (instructions ? '\nInstructions: ' + String(instructions).slice(0, 500) : '') +
+    '\nUse markdown: ## is NOT needed in bodies (headings come from the pairs); tables, fenced code blocks, and lists are encouraged.' +
+    '\n\nRepository files:\n\n' + fileBlock;
+  await acquireSlot();
+  let d;
+  try {
+    // 4096 tokens truncated verbose documents mid-JSON ("Unterminated string
+    // at position ~13000"), which threw and silently degraded the whole run
+    // to template content. 8192 covers real documents comfortably.
+    d = await anthropicRequest(key, { model: AI_MODEL(), max_tokens: 8192, system: sys, messages: [{ role: 'user', content: user }] });
+  } finally {
+    releaseSlot();
+  }
+  const text = (d.content || []).map((c) => c.text || '').join('');
+  const m = text.match(/\[[\s\S]*\]?/);
+  if (!m) throw new Error('No JSON array in model response');
+  const arr = parseSectionsArray(m[0]);
+  if (!Array.isArray(arr) || !arr.length) throw new Error('Empty sections from model');
+  return arr.filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [String(p[0]), String(p[1])]);
+}
+
+// Parse the model's [[heading, body], …] array; if the output was cut off
+// mid-stream (max_tokens), salvage every COMPLETE pair instead of throwing
+// the whole document away. A doc missing its last section beats boilerplate.
+function parseSectionsArray(raw) {
+  try { return JSON.parse(raw); } catch { /* fall through to salvage */ }
+  for (let i = raw.length; i > 2; ) {
+    const cut = raw.lastIndexOf(']', i - 1);
+    if (cut <= 1) break;
+    try {
+      const arr = JSON.parse(raw.slice(0, cut + 1) + ']');
+      if (Array.isArray(arr) && arr.length) {
+        console.warn('aiSections: salvaged ' + arr.length + ' complete section(s) from truncated model output');
+        return arr;
+      }
+    } catch { /* keep walking back */ }
+    i = cut;
+  }
+  throw new Error('Unparseable sections array from model');
+}
+
+// Drop-in async wrapper: real AI when possible, template engine otherwise.
+// Also returns aiDocs so callers can persist them for fix-regeneration and
+// HTML preview rendering without re-calling the API.
+export async function generateDocumentSmart(args) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  const files = args.files || [];
+  if (args.aiDocs && args.aiDocs.length) {
+    return { ...generateDocument(args), aiDocs: args.aiDocs };
+  }
+  if (!key || !files.length) {
+    return { ...generateDocument(args), aiDocs: null };
+  }
+  // Generate each document type independently: one failed call must not
+  // degrade the whole set to template content. A type that fails is retried
+  // once; only if EVERY type fails does the template fallback kick in.
+  const aiDocs = [];
+  for (const t of args.docTypes) {
+    const attempt = () => aiSections({ docType: t, track: args.track, repo: args.repo, files, brief: args.brief, instructions: args.instructions, key });
+    try {
+      aiDocs.push({ type: t, sections: await attempt() });
+    } catch (e1) {
+      try {
+        aiDocs.push({ type: t, sections: await attempt() });
+      } catch (e2) {
+        console.error('AI generation failed for "' + t + '" (kept remaining types):', e2.message);
+      }
+    }
+  }
+  if (!aiDocs.length) {
+    console.error('AI generation failed — template fallback: all document types failed');
+    return { ...generateDocument(args), aiDocs: null };
+  }
+  return { ...generateDocument({ ...args, aiDocs }), aiDocs };
 }

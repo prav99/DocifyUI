@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, download, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, IcCheck, PreviewFrame } from '../ui.jsx';
+import { NavBar, IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
 import { buildChips } from './Generate.jsx';
 
 export default function ExportPage() {
@@ -43,7 +43,10 @@ export default function ExportPage() {
   return (
     <>
       <div className="page">
-        <h1 className="h04">Export</h1>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h1 className="h04">Export</h1>
+          <HelpLink topic="export" />
+        </div>
         <p className="body01 t2 mt3">
           Overall score {overall} / 100{verdict ? ' · ' + verdict : ''} — every download below is built from the
           latest corrected content, so the fixes you applied are already in.

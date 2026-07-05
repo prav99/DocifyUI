@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
-import { NavBar } from '../ui.jsx';
+import { NavBar, HelpLink } from '../ui.jsx';
 
 export default function Checkout() {
   const nav = useNavigate();
@@ -36,7 +36,10 @@ export default function Checkout() {
   return (
     <>
       <div className="page">
-        <h1 className="h04">Checkout</h1>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h1 className="h04">Checkout</h1>
+          <HelpLink topic="checkout" />
+        </div>
         <div className="grid2 mt7" style={{ alignItems: 'start' }}>
           <div className="tile tile--white" style={{ padding: 24 }}>
             <h2 className="h02 mb5">Payment details</h2>

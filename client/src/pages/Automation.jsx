@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, ScoreTag, IcCheck } from '../ui.jsx';
+import { NavBar, ScoreTag, IcCheck, HelpLink } from '../ui.jsx';
 
 /* =====================================================================
    Auto-regenerate on merge — the orchestration module.
@@ -193,11 +193,19 @@ function Wizard({ existing, catalog, onDone }) {
             <div className="field mt5">
               <label htmlFor="wzrepo">Repository</label>
               {repos === null ? <p className="helper">Loading repositories…</p> : (
-                <select id="wzrepo" className="select" value={cfg.repo} onChange={(e) => set({ repo: e.target.value })}>
+                <select id="wzrepo" className="select" value={repos.some((r) => r.name === cfg.repo) ? cfg.repo : ''}
+                  onChange={(e) => set({ repo: e.target.value })}>
                   <option value="">Select a repository…</option>
                   {repos.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
                 </select>
               )}
+            </div>
+            <div className="field">
+              <label htmlFor="wzrepocustom">Or any public repository (owner/name)</label>
+              <input id="wzrepocustom" className="input" placeholder="e.g. expressjs/express"
+                value={repos && repos.some((r) => r.name === cfg.repo) ? '' : cfg.repo}
+                onChange={(e) => set({ repo: e.target.value.trim() })} />
+              <p className="helper">Public repositories work without connecting an account — documentation is generated from their real source files.</p>
             </div>
           </>
         )}
@@ -521,6 +529,7 @@ function Detail({ id, onBack, onEdit }) {
                   {r.status === 'failed' && <span className="tag tag--red">Failed</span>}
                   {r.status === 'complete' && <ScoreTag n={r.overall} />}
                   {r.status === 'complete' && cls && <span className={'tag ' + cls}>{label}</span>}
+                  {r.status === 'complete' && r.grounded === false && <span className="tag tag--red">Template fallback</span>}
                   <span style={{ flex: 1 }} />
                   {r.outcome === 'awaiting-approval' && (
                     <button className="btn btn--primary btn--sm" onClick={() => approve(r.id)}>Approve &amp; publish</button>
@@ -532,6 +541,7 @@ function Detail({ id, onBack, onEdit }) {
                 <p className="helper mt2">
                   {r.commit ? String(r.commit).slice(0, 7) + ' on ' + r.branch + ' · ' : ''}{r.reason}
                   {r.holdWhy ? ' — held: ' + r.holdWhy : ''}
+                  {r.groundedWhy ? ' — ⚠ ' + r.groundedWhy : ''}
                   {r.error ? ' — ' + r.error : ''}
                 </p>
                 {r.status === 'complete' && r.assistants && (
@@ -596,7 +606,10 @@ export default function Automation() {
           <>
             <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <h1 className="h04">Auto-regenerate on merge</h1>
+                <div className="row" style={{ alignItems: 'baseline', gap: 16 }}>
+                  <h1 className="h04">Auto-regenerate on merge</h1>
+                  <HelpLink topic="automation" />
+                </div>
                 <p className="body01 t2 mt3" style={{ maxWidth: 700 }}>
                   Reusable automation pipelines: a merge lands, the saved profile executes — generate or
                   update the mapped documents, judge them, rank them against ChatGPT, Claude, and Gemini,

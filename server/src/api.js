@@ -8,7 +8,8 @@ import { listRepos as listBitbucket, listBranches as bbBranches } from './adapte
 import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces } from './adapters/atlassian.js';
 import { verifyNotion, listNotion } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
-import { generateDocument, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, FRAMEWORK } from './adapters/llm.js';
+import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, FRAMEWORK } from './adapters/llm.js';
+import { fetchRepoFiles } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
@@ -166,6 +167,7 @@ apiRouter.post('/sources', async (req, res) => {
   if (!cat.avail) return res.status(400).json({ error: cat.name + ' is not available yet — join the waitlist' });
 
   let storedToken = token;
+  let storedDetail = detail;
   let info = null;
   try {
     if (provider === 'jira' || provider === 'confluence') {
@@ -173,15 +175,17 @@ apiRouter.post('/sources', async (req, res) => {
         return res.status(400).json({ error: cat.name + ' needs the site URL, your Atlassian account email, and an API token' });
       }
       const cred = email.trim() + ':' + token.trim();
-      if (provider === 'jira') await verifyJira(detail, cred);
-      else await verifyConfluence(detail, cred);
-      storedToken = cred; // Basic-auth credential; encrypt at rest in production
+      info = provider === 'jira' ? await verifyJira(detail, cred) : await verifyConfluence(detail, cred);
+      storedDetail = info.site;   // normalized origin — what /repos will use
+      storedToken = cred;         // Basic-auth credential; encrypt at rest in production
     } else if (provider === 'notion') {
-      if (!token.trim()) return res.status(400).json({ error: 'Notion needs an internal integration token' });
-      await verifyNotion(token.trim());
+      info = await verifyNotion(token); // validates presence + format + live check
+      storedToken = String(token).trim();
+      storedDetail = detail || 'Notion workspace (integration token)';
     } else if (provider === 'openapi') {
       if (!detail.trim()) return res.status(400).json({ error: 'Provide the URL of your OpenAPI / Swagger spec' });
       info = await inspectSpec(detail);
+      storedDetail = (await import('./adapters/openapi.js')).normalizeSpecUrl(detail);
     }
   } catch (e) {
     return res.status(400).json({ error: e.message });
@@ -190,13 +194,19 @@ apiRouter.post('/sources', async (req, res) => {
   const existing = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
   const data = {
     userId: req.uid, provider,
-    detail: detail || 'OAuth read-only (contents + commit history)',
+    detail: storedDetail || 'OAuth read-only (contents + commit history)',
     token: storedToken || (existing ? existing.token : '')
   };
   const row = existing
     ? await prisma.source.update({ where: { id: existing.id }, data })
     : await prisma.source.create({ data });
   res.json({ source: row, info });
+});
+
+// Disconnect a source (e.g. to re-enter credentials). Idempotent.
+apiRouter.delete('/sources/:provider', async (req, res) => {
+  await prisma.source.deleteMany({ where: { userId: req.uid, provider: req.params.provider } });
+  res.json({ ok: true });
 });
 
 apiRouter.get('/repos', async (req, res) => {
@@ -259,19 +269,41 @@ async function runPipeline(genId) {
       await sleep(900);
       await prisma.generation.update({ where: { id: genId }, data: { step: i } });
     }
+    // Real repository content when available: authenticated via a connected
+    // Source token when possible, unauthenticated for public repos otherwise.
+    let srcToken = '';
+    try {
+      const src = await prisma.source.findFirst({ where: { userId: gen.userId, provider: gen.provider } });
+      if (src && src.token) srcToken = await freshToken(src);
+    } catch { /* public-repo fallback */ }
+    const repoFiles = await fetchRepoFiles(gen.provider, gen.repo, gen.branch, srcToken);
     const genArgs = {
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
       repo: gen.repo, instructions: gen.instructions,
       skill: gen.skill || '', skillName: gen.skillName || '',
-      brief: j(gen.brief, {}), output: j(gen.output, {})
+      brief: j(gen.brief, {}), output: j(gen.output, {}), files: repoFiles
     };
-    const { title, content, structure } = generateDocument(genArgs);
+    let { title, content, structure, aiDocs } = await generateDocumentSmart(genArgs);
+    // NEVER replace a previously grounded document with template fallback:
+    // if this regeneration could not ground (repo fetch or AI failure) but
+    // the existing row carries real AI sections from an earlier run, keep
+    // them and re-render from those sections instead of degrading.
+    const prevAiDocs = j(gen.aiDocs, []);
+    if (!(aiDocs && aiDocs.length) && prevAiDocs.length) {
+      aiDocs = prevAiDocs;
+      const kept = generateDocument({ ...genArgs, aiDocs });
+      title = kept.title;
+      content = kept.content;
+      structure = kept.structure;
+    }
     // Rendered preview for the UI: same engine, HTML target, same options —
     // so the preview shows exactly what the user configured, for every format.
+    // aiDocs (when real generation ran) are reused — no second API call.
     const previewHtml = gen.format === 'html'
       ? content
-      : generateDocument({ ...genArgs, format: 'html' }).content;
-    const report = judge();
+      : generateDocument({ ...genArgs, format: 'html', aiDocs }).content;
+    // Judge the ACTUAL document (content-aware checks), not a canned sample.
+    const report = judge({ content, title, repo: gen.repo, track: gen.track });
     // Upsert so the pipeline can re-run on the SAME generation (automation
     // "update in place" and "sections" actions) without duplicating reports.
     await prisma.qualityReport.upsert({
@@ -293,7 +325,11 @@ async function runPipeline(genId) {
     });
     await prisma.generation.update({
       where: { id: genId },
-      data: { status: 'complete', title, content, preview: previewHtml, score: aiScore(report.issues.length, 0) }
+      data: {
+        status: 'complete', title, content, preview: previewHtml,
+        aiDocs: JSON.stringify(aiDocs || []),
+        score: aiScore(report.issues.length, 0)
+      }
     });
   } catch (e) {
     await prisma.generation.update({ where: { id: genId }, data: { status: 'failed' } }).catch(() => {});
@@ -312,6 +348,7 @@ apiRouter.post('/generations', async (req, res) => {
   const gen = await prisma.generation.create({
     data: {
       userId: req.uid, repo: repo || provider, branch, track,
+      provider: ['github', 'gitlab', 'bitbucket'].includes(provider) ? provider : 'github',
       docTypes: JSON.stringify(docTypes), format, instructions,
       files: JSON.stringify(files), skillName: String(skillName), skill: String(skill),
       brief: JSON.stringify(brief || {}),
@@ -449,11 +486,15 @@ apiRouter.post('/quality/:id/fix', async (req, res) => {
   const ser = serializeReport(updated, genRow);
   if (genRow) {
     const fixesArr = [...fixed];
+    const storedAiDocs = j(genRow.aiDocs, []);
     const genArgs = {
       track: genRow.track, docTypes: j(genRow.docTypes, []), format: genRow.format,
       repo: genRow.repo, instructions: genRow.instructions,
       skill: genRow.skill || '', skillName: genRow.skillName || '',
-      brief: j(genRow.brief, {}), output: j(genRow.output, {}), fixes: fixesArr
+      brief: j(genRow.brief, {}), output: j(genRow.output, {}), fixes: fixesArr,
+      // Real AI content is regenerated from the STORED sections — fixes apply
+      // as content repairs without another model call.
+      aiDocs: storedAiDocs.length ? storedAiDocs : null
     };
     const { title, content } = generateDocument(genArgs);
     const previewHtml = genRow.format === 'html'
@@ -760,7 +801,10 @@ async function profileRun(profile, event) {
     const out = tplRow ? j(tplRow.output, {}) : {};
     let version = null;
     if (decision.action === 'version') {
-      version = bumpVersion(out.version, cfg.versioning);
+      // A release merge that names its version ("release: v3.1.0") wins over
+      // the configured bump strategy — the docs should match the release.
+      const tagged = String(event.message || '').match(/\bv?(\d+\.\d+\.\d+)\b/);
+      version = tagged ? tagged[1] : bumpVersion(out.version, cfg.versioning);
       out.version = version;
     }
     const steps = [
@@ -769,6 +813,10 @@ async function profileRun(profile, event) {
     ];
     const data = {
       repo: cfg.repo || (tplRow ? tplRow.repo : 'unmapped'), branch: event.branch || cfg.branch,
+      // The pipeline's code host — without this, repository files were always
+      // fetched from GitHub (the schema default), so GitLab and Bitbucket
+      // pipelines could never produce repo-grounded content.
+      provider: ['github', 'gitlab', 'bitbucket'].includes(cfg.provider) ? cfg.provider : 'github',
       track: cfg.track, docTypes: JSON.stringify(cfg.docTypes), format: cfg.format,
       instructions: tplRow ? tplRow.instructions : '', files: '[]',
       skillName: tplRow ? tplRow.skillName || '' : '', skill: tplRow ? tplRow.skill || '' : '',
@@ -784,6 +832,14 @@ async function profileRun(profile, event) {
     await save({ genId: gen.id, version });
     await runPipeline(gen.id);
 
+    // Re-read the row runPipeline just wrote: it carries the AI-generated
+    // sections (aiDocs) when repository files were fetched and real
+    // generation ran. Every re-render below MUST pass them through —
+    // otherwise the template engine silently replaces repo-grounded content.
+    const genRow = await prisma.generation.findUnique({ where: { id: gen.id } });
+    const storedAiDocs = j(genRow ? genRow.aiDocs : '[]', []);
+    const grounded = storedAiDocs.length > 0;
+
     // Step 5a — auto-apply every suggested fix, then re-render and re-score.
     let rep = await prisma.qualityReport.findUnique({ where: { generationId: gen.id } });
     if (!rep) throw new Error('Pipeline produced no quality report');
@@ -793,7 +849,8 @@ async function profileRun(profile, event) {
       const genArgs = {
         track: cfg.track, docTypes: cfg.docTypes, format: cfg.format, repo: data.repo,
         instructions: data.instructions, skill: data.skill, skillName: data.skillName,
-        brief: j(data.brief, {}), output: j(data.output, {}), fixes: allIds
+        brief: j(data.brief, {}), output: j(data.output, {}),
+        aiDocs: grounded ? storedAiDocs : null, fixes: allIds
       };
       const fixed = generateDocument(genArgs);
       const previewHtml = cfg.format === 'html' ? fixed.content : generateDocument({ ...genArgs, format: 'html' }).content;
@@ -815,7 +872,14 @@ async function profileRun(profile, event) {
     const outcome = !gateOk || !rankOk ? 'held' : cfg.requireApproval ? 'awaiting-approval' : 'published';
     const holdWhy = !gateOk ? 'overall ' + q.overall + ' is below the gate (' + cfg.gate + ')'
       : !rankOk ? 'lowest AI ranking estimate ' + minProb + '% is below the threshold (' + cfg.minAssistant + '%)' : '';
-    await save({ status: 'complete', overall: q.overall, assistants: probs, gatePassed: gateOk, outcome, holdWhy });
+    await save({
+      status: 'complete', overall: q.overall, assistants: probs, gatePassed: gateOk, outcome, holdWhy,
+      // Honest provenance: was this document generated from real repository
+      // files, or did the engine fall back to template content (repo/branch
+      // unreachable, rate limit, AI unavailable)? Surfaced in run history.
+      grounded,
+      groundedWhy: grounded ? '' : 'Repository files could not be fetched or AI generation was unavailable — template content was used. Check repo/branch and code-host rate limits.'
+    });
 
     const user = await prisma.user.findUnique({ where: { id: uid } });
     const to = cfg.notifyEmail || (user ? user.email : '');

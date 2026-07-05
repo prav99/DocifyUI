@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api, setToken } from '../api.js';
 import { useAuth, useFlow, toast } from '../store.jsx';
-import { IcCheck, SrcMark } from '../ui.jsx';
+import { IcCheck, SrcMark, HelpLink } from '../ui.jsx';
 
 // Detect which providers have REAL OAuth configured on the server.
 function useProviders() {
@@ -187,7 +187,10 @@ export function Signup() {
       <section className="authright">
         {authMode === 'login' ? (
           <>
-            <h2 className="h04">Welcome back</h2>
+            <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <h2 className="h04">Welcome back</h2>
+              <HelpLink topic="login" />
+            </div>
             <p className="body01 t2 mt3">Log in to reach your dashboard, documents, and pipelines.</p>
             <div className="mt6">
               <div className="field">
@@ -244,7 +247,10 @@ export function Signup() {
           </>
         ) : (
           <>
-        <h2 className="h04">Create your account</h2>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h2 className="h04">Create your account</h2>
+          <HelpLink topic="login" />
+        </div>
         <p className="body01 t2 mt3">
           Signing in with a code host also authorizes that source — one step instead of two.
         </p>

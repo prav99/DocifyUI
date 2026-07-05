@@ -48,6 +48,8 @@ model Generation {
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   repo         String
   branch       String         @default("main")
+  provider     String         @default("github") // code host the repo lives on
+  aiDocs       String         @default("[]") // JSON [[docType, sections]] from real AI generation
   track        String
   docTypes     String // JSON array of ids
   format       String

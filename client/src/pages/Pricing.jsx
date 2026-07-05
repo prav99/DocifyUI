@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
-import { NavBar } from '../ui.jsx';
+import { NavBar, HelpLink } from '../ui.jsx';
 
 const ROWS = [
   ['Sources', '1 source', 'All sources', 'All sources'],
@@ -39,7 +39,10 @@ export default function Pricing() {
       <div className="page">
         <div className="row row--between" style={{ flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <h1 className="h04">Pricing</h1>
+            <div className="row" style={{ alignItems: 'baseline', gap: 16 }}>
+              <h1 className="h04">Pricing</h1>
+              <HelpLink topic="pricing" />
+            </div>
             <p className="body01 t2 mt3">Start free. Upgrade when the whole team wants their docs to write themselves.</p>
           </div>
           <div className="row" style={{ gap: 0 }}>

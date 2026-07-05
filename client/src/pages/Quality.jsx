@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, Notif, Score, IcCheck, IcInfo } from '../ui.jsx';
+import { NavBar, Notif, Score, IcCheck, IcInfo, HelpLink } from '../ui.jsx';
 
 const CAT_DESC = {
   'LLM readiness': 'Whether AI systems can find, summarize, and cite this document.',
@@ -191,7 +191,10 @@ export default function Quality() {
   return (
     <>
       <div className="page">
-        <h1 className="h04">AI quality review</h1>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h1 className="h04">AI quality review</h1>
+          <HelpLink topic="quality" />
+        </div>
         <p className="body01 t2 mt3">{report.title} · generated just now</p>
 
         <div className="judgeband mt7">

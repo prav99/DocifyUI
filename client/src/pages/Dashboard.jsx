@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow } from '../store.jsx';
-import { NavBar, Notif, Score, ScoreTag } from '../ui.jsx';
+import { NavBar, Notif, Score, ScoreTag, HelpLink } from '../ui.jsx';
 
 export default function Dashboard() {
   const nav = useNavigate();
@@ -31,7 +31,10 @@ export default function Dashboard() {
       <div className="page">
         <div className="row row--between" style={{ flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <h1 className="h04">Dashboard</h1>
+            <div className="row" style={{ alignItems: 'baseline', gap: 16 }}>
+              <h1 className="h04">Dashboard</h1>
+              <HelpLink topic="dashboard" />
+            </div>
             <p className="body01 t2 mt3">Recent generations across your connected sources.</p>
           </div>
           <div className="row">

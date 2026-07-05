@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, Notif } from '../ui.jsx';
+import { NavBar, Notif, HelpLink } from '../ui.jsx';
 
 // Mirrors DEFAULT_OUTPUT on the server (server/src/adapters/llm.js).
 const OUT_DEFAULTS = {
@@ -96,7 +96,10 @@ export default function Format() {
   return (
     <>
       <div className="page">
-        <h1 className="h04">Choose an output format</h1>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h1 className="h04">Choose an output format</h1>
+          <HelpLink topic="format" />
+        </div>
         <p className="body01 t2 mt3">Formats differ by track. Everything on the roadmap is listed — items marked coming soon are visible so you can tell us they matter.</p>
 
         <div className="grid4 mt7">

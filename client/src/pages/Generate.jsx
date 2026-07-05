@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { IcCheck, PreviewFrame } from '../ui.jsx';
+import { IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
 
 /* ---------- Source-view syntax highlighting (escape first, then wrap) ---------- */
 function escHtml(s) {
@@ -107,7 +107,10 @@ export default function Generate() {
   return (
     <>
       <div className="page" style={{ maxWidth: 1200 }}>
-        <h1 className="h04">Generating {done && gen.title ? gen.title.toLowerCase() : 'your document'}</h1>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h1 className="h04">Generating {done && gen.title ? gen.title.toLowerCase() : 'your document'}</h1>
+          <HelpLink topic="generate" />
+        </div>
         <p className="body01 t2 mt3">
           From <span className="mono">{gen.repo}</span> → {gen.format.toUpperCase()}
           {gen.docTypes.length > 1 ? ' · ' + gen.docTypes.length + ' documents in this set' : ''}
