@@ -1,7 +1,7 @@
 {
   "build": {
     "builder": "nixpacks",
-    "buildCommand": "cd server && npm install"
+    "buildCommand": "npm install && npm run build && cd server && npm install"
   },
   "deploy": {
     "startCommand": "cd server && (npx prisma migrate deploy || true) && npm start",
