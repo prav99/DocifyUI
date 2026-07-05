@@ -50,8 +50,9 @@ export async function listJiraProjects(siteUrl, cred) {
 export async function verifyConfluence(siteUrl, cred) {
   const site = normalizeSite(siteUrl);
   const d = await get(site + '/wiki/rest/api/space?limit=1', cred, 'Confluence');
-  const me = await get(site + '/rest/api/3/myself', cred, 'Confluence').catch(() => null);
-  return { site, account: me ? (me.displayName || me.emailAddress || '') : '', spaces: d.size };
+  // Confluence-native identity endpoint (works on Confluence-only sites too).
+  const me = await get(site + '/wiki/rest/api/user/current', cred, 'Confluence').catch(() => null);
+  return { site, account: me ? (me.displayName || me.publicName || '') : '', spaces: d.size };
 }
 
 export async function listConfluenceSpaces(siteUrl, cred) {

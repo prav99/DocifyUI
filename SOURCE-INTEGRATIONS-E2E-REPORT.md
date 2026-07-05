@@ -48,17 +48,27 @@ Make the four non-code sources fully configurable with a seamless customer exper
 ### Jira & Confluence — live against real Atlassian cloud
 | Test | Result |
 |---|---|
+| **Confluence success path** — real API token, bare-host input `praveenjha004.atlassian.net` | ✅ normalized to `https://praveenjha004.atlassian.net`, credentials verified, real spaces listed ("MFS — My first space", personal space), space selected → Ready ✓ |
+| **Jira success path** — real API token, site `praveenjha004-1783235848200.atlassian.net` | ✅ "Connected as Praveen Chandra Jha"; real project listed ("KAN — My IT Team"), selected → Ready ✓ |
+| Jira URL pasted with full path (`…/jira/projects`) | ✅ path stripped by `normalizeSite` |
+| Site without Jira product (`praveenjha004.atlassian.net`) → real 404 | ✅ "No Jira found at this site URL — check the address" (verified accurate: the browser 404s there too; Jira lives on a different site) |
 | Wrong creds vs real site (`monkeytype.atlassian.net`) → real 401 | ✅ "Authentication failed — check the account email and API token (create one at id.atlassian.com → Security → API tokens)" |
-| Pasted full page URL (`…atlassian.net/wiki/home`) | ✅ path stripped, request hit the right endpoint |
 | Garbage URL (`not a url`) | ✅ "That does not look like a valid URL — expected something like https://yourteam.atlassian.net" |
 | Missing fields | ✅ "Jira needs the site URL, your Atlassian account email, and an API token" |
 | Unreachable site | ✅ "Could not reach https://… — check the site URL and your network" |
-| Success path (real site + API token) | ⏳ pending Atlassian one-time passcode (identity step-up) |
+
+### Full-flow check
+With GitHub (`expressjs/express`), OpenAPI (YAML), Confluence, Notion, and Jira all configured: **"5 sources ready" → Continue → Step 2 (/doctype)** loaded correctly; token/spec sources persisted server-side at connect time. ✅
 
 ### Parser/unit checks (sandbox, local fixtures)
 JSON OpenAPI 3 / YAML OpenAPI 3 / YAML Swagger 2 / HTML page / non-spec JSON / 404 — **6/6 pass**. `node --check` on `api.js` and Babel JSX parse of `Source.jsx` — clean.
 
-## 4. Notes
+## 4. Test credentials created (revoke when done)
+
+- Atlassian API token **"DocGen-test"** (expires 2026-07-12) — id.atlassian.com → Security → API tokens
+- Notion internal integration **"DocGen"** (shared with the "Notes" page) — notion.so/profile/integrations
+
+## 5. Notes
 
 - Tokens are verified server-side against the provider **before** being saved; the browser never keeps the token in state after connect.
 - The Notion integration "DocGen" and any Atlassian API token created for this test can be revoked at notion.so/profile/integrations and id.atlassian.com → Security → API tokens.
