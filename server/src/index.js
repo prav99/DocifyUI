@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authRouter } from './auth.js';
 import { apiRouter } from './api.js';
+import { injectMeta, SITE_URL } from './seo-meta.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -59,6 +60,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// SEO: exactly one canonical host. Requests to the *.up.railway.app domain
+// are 301-redirected to the custom domain so Google never sees duplicates.
+app.use((req, res, next) => {
+  const host = String(req.headers.host || '');
+  if (host.endsWith('.up.railway.app')) {
+    return res.redirect(301, SITE_URL + req.originalUrl);
+  }
+  next();
+});
+
 app.use(cors());
 app.use(compression());
 // Keep the raw body so webhook HMAC signatures (X-Hub-Signature-256) can be
@@ -81,6 +92,7 @@ const dist = path.resolve(here, '../../client/dist');
 if (fs.existsSync(dist)) {
   // Hashed assets are immutable — browsers and CDNs cache them for a year.
   app.use(express.static(dist, {
+    index: false, // "/" must reach the SEO-injecting catch-all below
     setHeaders(res, filePath) {
       if (/\.(js|css|svg|woff2?|png|jpg)$/.test(filePath) && filePath.includes('assets')) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -89,7 +101,15 @@ if (fs.existsSync(dist)) {
       }
     }
   }));
-  app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(dist, 'index.html')));
+  // Serve the SPA shell with per-route SEO meta (title, description,
+  // canonical, Open Graph, JSON-LD) injected into the raw HTML — crawlers
+  // and link unfurlers never execute React, so this is what they index.
+  const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(injectMeta(shell, req.path));
+  });
 }
 
 app.use((err, req, res, next) => {

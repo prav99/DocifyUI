@@ -1,5 +1,6 @@
 import React from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { usePageMeta } from '../seo.js';
 
 /* ---------------- Help content: one topic per screen ----------------
  * Each topic mirrors a page of the app. Pages link here via <HelpLink/>
@@ -203,6 +204,11 @@ const ORDER = ['login', 'source', 'doctype', 'format', 'generate', 'quality', 'e
 export default function Help() {
   const { topic } = useParams();
   const nav = useNavigate();
+  usePageMeta({
+    title: 'Help Center',
+    description: 'Guides for every screen of DocGen — connecting sources, choosing document types, output formats, the AI quality review, exporting, and automation.',
+    path: topic ? '/help/' + topic : '/help'
+  });
   const t = TOPICS[topic];
 
   if (!t) {

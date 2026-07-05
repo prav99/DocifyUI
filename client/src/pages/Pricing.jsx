@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, HelpLink } from '../ui.jsx';
+import { usePageMeta } from '../seo.js';
 
 const ROWS = [
   ['Sources', '1 source', 'All sources', 'All sources'],
@@ -17,6 +18,11 @@ const ROWS = [
 ];
 
 export default function Pricing() {
+  usePageMeta({
+    title: 'Pricing — Free & Team Plans',
+    description: 'Start free: 5 generations per month, no credit card. Team adds unlimited generations, all output formats, CI/CD automation, and the full AI quality pipeline.',
+    path: '/pricing'
+  });
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
   const { user } = useAuth();

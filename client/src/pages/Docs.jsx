@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useParams, Navigate } from 'react-router-dom';
 import { NavBar } from '../ui.jsx';
+import { usePageMeta } from '../seo.js';
 
 /* =====================================================================
    Documentation portal — content registry.
@@ -180,6 +181,11 @@ const BY_SLUG = Object.fromEntries(ALL_TOPICS.map((t) => [t.slug, t]));
 
 /* ---------------- Docs home ---------------- */
 export function Docs() {
+  usePageMeta({
+    title: 'Product Docs & Guides',
+    description: 'How DocGen works: AI compatibility checking, LLM-as-a-Judge scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.',
+    path: '/docs'
+  });
   const [q, setQ] = useState('');
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -272,6 +278,11 @@ export function Docs() {
 export function DocArticle() {
   const { slug } = useParams();
   const t = BY_SLUG[slug];
+  usePageMeta({
+    title: t ? t.name + ' | DocGen Docs' : 'Product Docs & Guides',
+    description: t ? t.sum : '',
+    path: t ? '/docs/' + t.slug : '/docs'
+  });
   if (!t) return <Navigate to="/docs" replace />;
   const related = ALL_TOPICS.filter((x) => x.catId === t.catId && x.slug !== t.slug).slice(0, 4);
   return (

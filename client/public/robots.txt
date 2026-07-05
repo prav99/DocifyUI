@@ -1,0 +1,18 @@
+# docifydocai.com — DocGen
+User-agent: *
+Allow: /
+# In-app screens: nothing useful to index behind the auth wall
+Disallow: /dashboard
+Disallow: /source
+Disallow: /doctype
+Disallow: /format
+Disallow: /generate
+Disallow: /quality
+Disallow: /export
+Disallow: /checkout
+Disallow: /settings
+Disallow: /automation
+Disallow: /oauth/
+Disallow: /api/
+
+Sitemap: https://docifydocai.com/sitemap.xml

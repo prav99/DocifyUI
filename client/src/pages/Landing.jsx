@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar, LogoMark } from '../ui.jsx';
+import { usePageMeta } from '../seo.js';
 
 /* ---------- Scroll-reveal wrapper ---------- */
 function Reveal({ children, delay = 0, className = '' }) {
@@ -825,6 +826,11 @@ const SRCS = ['GitHub', 'GitLab', 'Bitbucket', 'Jira', 'Confluence', 'Notion', '
 const FMTS = ['DITA', 'PDF', 'Word', 'Markdown'];
 
 export default function Landing() {
+  usePageMeta({
+    title: 'DocGen — AI Documentation Generator with Built-In Quality & AI Ranking Scores',
+    description: 'DocGen turns code commits into standards-grade documentation, scores every page with an LLM judge, and predicts how ChatGPT, Claude, and Gemini will rank it — before you publish.',
+    path: '/'
+  });
   const nav = useNavigate();
   const chapter = (i) => (
     <Reveal>

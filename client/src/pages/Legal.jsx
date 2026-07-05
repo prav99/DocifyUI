@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useParams, Navigate } from 'react-router-dom';
 import { NavBar } from '../ui.jsx';
+import { usePageMeta } from '../seo.js';
 
 /* =====================================================================
    Legal & trust documents. One registry, one renderer — served in-app at
@@ -116,6 +117,11 @@ export const LEGAL = {
 export default function Legal() {
   const { slug } = useParams();
   const doc = LEGAL[slug];
+  usePageMeta({
+    title: doc ? doc.title : 'Legal',
+    description: doc ? 'DocGen ' + doc.title + '.' : '',
+    path: doc ? '/legal/' + slug : '/legal/privacy'
+  });
   if (!doc) return <Navigate to="/legal/privacy" replace />;
   return (
     <>

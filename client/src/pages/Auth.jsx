@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { api, setToken } from '../api.js';
 import { useAuth, useFlow, toast } from '../store.jsx';
 import { IcCheck, SrcMark, HelpLink } from '../ui.jsx';
+import { usePageMeta } from '../seo.js';
 
 // Detect which providers have REAL OAuth configured on the server.
 function useProviders() {
@@ -26,6 +27,11 @@ const VALUE_POINTS = [
 ];
 
 export function Signup() {
+  usePageMeta({
+    title: 'Start Free — Create Your Account',
+    description: 'Sign up with GitHub, GitLab, or Bitbucket in one step. Your first verified document is about three minutes away. Free plan, no credit card required.',
+    path: '/signup'
+  });
   const nav = useNavigate();
   const loc = useLocation();
   const { login } = useAuth();

@@ -1,0 +1,28 @@
+# DocGen (docifydocai.com)
+
+> DocGen is an AI documentation platform: it generates standards-grade technical and business documentation from code commits, scores every document with an LLM-as-a-Judge quality framework, and predicts how likely ChatGPT, Claude, and Google Gemini are to retrieve and cite the content — before it is published.
+
+## What DocGen does
+
+- Generates API references, quick starts, user guides, installation guides, release notes, and business documents directly from GitHub, GitLab, or Bitbucket repositories (read-only access; source code is never stored).
+- Cross-examines every generated page with an LLM judge against an enterprise documentation rubric: structure, titles, metadata, clarity, examples, and citation-readiness.
+- Predicts per-model AI retrieval and citation probability (ChatGPT, Claude, Gemini) and shows the exact fixes that raise the score.
+- Exports to DITA, Markdown, HTML, DocBook, ePub, PDF, and Word.
+- Automation pipelines regenerate, re-judge, and republish affected documents on every merge (CI/CD integration, webhooks for GitHub/GitLab/Bitbucket).
+
+## Key pages
+
+- [Home](https://docifydocai.com/): product overview
+- [Pricing](https://docifydocai.com/pricing): Free plan (5 generations/month), Team at $26/user/month billed annually, Enterprise custom
+- [Docs](https://docifydocai.com/docs): full product documentation and guides
+- [Help Center](https://docifydocai.com/help): step-by-step guides for every screen
+
+## Notable capabilities (deep links)
+
+- [AI compatibility checker](https://docifydocai.com/docs/ai-compatibility-checker)
+- [LLM-as-a-Judge framework](https://docifydocai.com/docs/llm-as-a-judge)
+- [ChatGPT ranking analysis](https://docifydocai.com/docs/chatgpt-ranking-analysis)
+- [Claude ranking analysis](https://docifydocai.com/docs/claude-ranking-analysis)
+- [Gemini ranking analysis](https://docifydocai.com/docs/gemini-ranking-analysis)
+- [Documentation from code commits](https://docifydocai.com/docs/docs-from-commits)
+- [CI pipeline setup](https://docifydocai.com/docs/ci-pipeline-setup)
