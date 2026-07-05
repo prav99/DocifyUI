@@ -1,10 +1,10 @@
 {
   "build": {
     "builder": "nixpacks",
-    "buildCommand": "cd server && npm install && npx prisma migrate deploy"
+    "buildCommand": "cd server && npm install"
   },
   "deploy": {
-    "startCommand": "cd server && npm start",
+    "startCommand": "cd server && npx prisma migrate deploy && npm start",
     "restartPolicyType": "on_failure",
     "restartPolicyMaxRetries": 3
   }
