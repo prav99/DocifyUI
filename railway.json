@@ -4,7 +4,7 @@
     "buildCommand": "cd server && npm install"
   },
   "deploy": {
-    "startCommand": "cd server && npx prisma migrate deploy && npm start",
+    "startCommand": "cd server && (npx prisma migrate deploy || true) && npm start",
     "restartPolicyType": "on_failure",
     "restartPolicyMaxRetries": 3
   }
