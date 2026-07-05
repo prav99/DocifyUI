@@ -35,7 +35,6 @@ export function Signup() {
   const nav = useNavigate();
   const loc = useLocation();
   const { login } = useAuth();
-  const { setFlow } = useFlow();
   // Where the user was headed before the auth wall (e.g. /automation from the
   // landing page). Honored after login, signup, and OAuth alike.
   const dest = (loc.state && loc.state.from) || '';
@@ -71,6 +70,7 @@ export function Signup() {
   const providers = useProviders();
 
   async function oauth(provider) {
+    const label = provider.charAt(0).toUpperCase() + provider.slice(1);
     // Real OAuth configured? Hand the browser to the provider's consent screen.
     if (providers[provider]) {
       // Full-page redirect loses router state — stash the destination.
@@ -78,19 +78,12 @@ export function Signup() {
       window.location.href = '/api/auth/oauth/' + provider;
       return;
     }
-    setBusy(true);
-    try {
-      const d = await api('/auth/signup', { method: 'POST', body: { provider } });
-      login(d.token, d.user);
-      // Carry the clicked provider straight into the source page, pre-selected.
-      setFlow((f) => ({
-        autoSrc: true,
-        sources: (f.sources || []).includes(provider) ? f.sources : [...(f.sources || []), provider]
-      }));
-      toast('success', 'Account created', provider.charAt(0).toUpperCase() + provider.slice(1) + ' connected as a source');
-      nav(dest || '/source');
-    } catch (e) { toast('error', 'Signup failed', e.message); }
-    finally { setBusy(false); }
+    // Not configured on the server: do NOT fabricate a session. Tell the user
+    // honestly instead of silently signing them in as a placeholder account.
+    // Real OAuth turns on once GITHUB/GITLAB/BITBUCKET_CLIENT_ID + _SECRET are
+    // set in the deployment environment (see docs/OAUTH-SETUP.md).
+    toast('error', label + ' sign-in isn’t available yet',
+      label + ' OAuth has not been configured on the server. Use email sign-up below, or ask an administrator to connect ' + label + '.');
   }
 
   async function emailSignup() {
