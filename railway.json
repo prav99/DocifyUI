@@ -4,7 +4,7 @@
     "buildCommand": "npm install && npm install --prefix client && npm run build --prefix client && cd server && npm install"
   },
   "deploy": {
-    "startCommand": "cd server && (npx prisma migrate deploy || true) && npm start",
+    "startCommand": "cd server && npx prisma db push --skip-generate && (node src/seed.js || true) && npm start",
     "restartPolicyType": "on_failure",
     "restartPolicyMaxRetries": 3
   }

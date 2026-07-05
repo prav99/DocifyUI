@@ -2,6 +2,9 @@
 // and it loads server/.env (CWD-independent) before any module reads
 // process.env at import time.
 import './env.js';
+// Must come before any Router is created: converts rejected async handlers
+// into proper 500 responses instead of silently hung requests.
+import './async-errors.js';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
