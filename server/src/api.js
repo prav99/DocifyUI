@@ -5,8 +5,8 @@ import { SOURCES, DOCTYPES, FORMATS, PLANS, CI_YAML, docTypeName, formatDef } fr
 import { listRepos, listBranches as ghBranches } from './adapters/github.js';
 import { listProjects as listGitlab, listBranches as glBranches } from './adapters/gitlab.js';
 import { listRepos as listBitbucket, listBranches as bbBranches } from './adapters/bitbucket.js';
-import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces } from './adapters/atlassian.js';
-import { verifyNotion, listNotion } from './adapters/notion.js';
+import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces, verifyJiraIssues, verifyConfluencePage } from './adapters/atlassian.js';
+import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, FRAMEWORK } from './adapters/llm.js';
 import { fetchRepoFiles } from './adapters/repofiles.js';
@@ -201,6 +201,31 @@ apiRouter.post('/sources', async (req, res) => {
     ? await prisma.source.update({ where: { id: existing.id }, data })
     : await prisma.source.create({ data });
   res.json({ source: row, info });
+});
+
+// Validate an optional generation scope (Jira issue IDs, a Confluence page,
+// a Notion page/database) against the provider using the stored credentials.
+apiRouter.post('/sources/scope', async (req, res) => {
+  const { provider, value } = req.body || {};
+  const src = await prisma.source.findFirst({ where: { userId: req.uid, provider: String(provider || '') } });
+  if (!src || !src.token) return res.status(400).json({ error: 'Connect ' + provider + ' first' });
+  try {
+    if (provider === 'jira') {
+      const issues = await verifyJiraIssues(src.detail, src.token, value);
+      return res.json({ scope: issues.map((i) => i.key).join(', '), label: issues.map((i) => i.key + (i.summary ? ' — ' + i.summary : '')).join(' · ') });
+    }
+    if (provider === 'confluence') {
+      const page = await verifyConfluencePage(src.detail, src.token, value);
+      return res.json({ scope: page.id, label: '“' + page.title + '” (page ' + page.id + ')' });
+    }
+    if (provider === 'notion') {
+      const item = await verifyNotionItem(src.token, value);
+      return res.json({ scope: item.id, label: '“' + item.title + '” (' + item.kind + ')' });
+    }
+    return res.status(400).json({ error: 'Scope is not supported for this source' });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
 });
 
 // Disconnect a source (e.g. to re-enter credentials). Idempotent.

@@ -38,6 +38,25 @@ function titleOf(x) {
   return 'Untitled';
 }
 
+// Optional generation scope: a specific page/database URL or ID → { id, title }.
+export async function verifyNotionItem(token, value) {
+  const v = String(value || '').trim();
+  const m = v.replace(/-/g, '').match(/([0-9a-f]{32})(?:[^0-9a-f]|$)/i);
+  if (!m) throw new Error('Paste a Notion page or database link (or its 32-character ID)');
+  const id = m[1].replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+  for (const kind of ['pages', 'databases']) {
+    const r = await fetch('https://api.notion.com/v1/' + kind + '/' + id, { headers: HEADERS(token) });
+    if (r.ok) {
+      const d = await r.json();
+      return { id, title: titleOf(d) || 'Untitled', kind: kind.slice(0, -1) };
+    }
+    if (r.status !== 404 && r.status !== 400) {
+      throw new Error('Notion lookup failed (' + r.status + ') — is the item shared with your integration?');
+    }
+  }
+  throw new Error('Notion could not find that item — make sure the page is shared with your integration (Page → ⋯ → Connections)');
+}
+
 export async function listNotion(token) {
   const r = await fetch('https://api.notion.com/v1/search', {
     method: 'POST',

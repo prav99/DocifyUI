@@ -76,12 +76,19 @@ export default function Format() {
   async function generate() {
     setBusy(true);
     try {
+      // Focused source items chosen at the Source step (Jira issues, a
+      // Confluence page, a Notion page) steer generation via instructions.
+      const scopeNote = Object.entries(flow.srcScope || {})
+        .map(([p, s]) => p.charAt(0).toUpperCase() + p.slice(1) + ': ' + s.label)
+        .join('; ');
+      const instructions = [scopeNote && 'Focus on these source items — ' + scopeNote + '.', flow.instructions]
+        .filter(Boolean).join('\n');
       const d = await api('/generations', {
         method: 'POST',
         body: {
           repo: flow.repo || flow.provider, branch: 'main', track: flow.track,
           docTypes: flow.docTypes, format: flow.format,
-          instructions: flow.instructions, files: flow.files, provider: flow.provider || 'github',
+          instructions, files: flow.files, provider: flow.provider || 'github',
           skillName: flow.skillName || '', skill: flow.skillContent || '',
           brief: { audience: flow.briefAudience || '', emphasis: flow.briefEmphasis || '', tone: flow.briefTone || '' },
           output: { ...OUT_DEFAULTS, ...(flow.outputCfg || {}) }

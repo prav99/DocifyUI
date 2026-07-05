@@ -20,6 +20,12 @@ const TOKEN_HINT = {
   notion: 'Create an internal integration at notion.so/profile/integrations, then share your pages with it (Page → ⋯ → Connections)'
 };
 const URL_PLACEHOLDER = { jira: 'yourteam.atlassian.net', confluence: 'yourteam.atlassian.net' };
+// Optional generation scope, validated live against the provider.
+const SCOPE = {
+  jira: { label: 'Focus on specific issues (optional)', ph: 'e.g. KAN-1, KAN-7' },
+  confluence: { label: 'Focus on a specific page (optional)', ph: 'Paste a page URL or ID' },
+  notion: { label: 'Focus on a specific page (optional)', ph: 'Paste a page or database link' }
+};
 
 export default function Source() {
   const nav = useNavigate();
@@ -128,6 +134,22 @@ export default function Source() {
 
   const reloadList = (id) => setLists((l) => ({ ...l, [id]: undefined }));
 
+  // Validate the optional scope (issue IDs / page link) against the provider.
+  async function checkScope(id) {
+    const c = cfg[id] || {};
+    if (!(c.scopeInput || '').trim()) return setCfg(id, { scope: '', scopeLabel: '' });
+    setBusy(true);
+    try {
+      const d = await api('/sources/scope', { method: 'POST', body: { provider: id, value: c.scopeInput.trim() } });
+      setCfg(id, { scope: d.scope, scopeLabel: d.label });
+      toast('success', 'Scope verified', d.label);
+    } catch (e) {
+      setCfg(id, { scope: '', scopeLabel: '' });
+      toast('error', 'Could not verify', e.message);
+    }
+    finally { setBusy(false); }
+  }
+
   async function validateSpec(id) {
     const c = cfg[id] || {};
     let url = (c.url || '').trim();
@@ -160,7 +182,15 @@ export default function Source() {
         if (KIND[id] === 'picker') await api('/sources', { method: 'POST', body: { provider: id, detail: c.sel } });
       }
       const pc = cfg[primary] || {};
-      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null });
+      // Per-source generation scope ("KAN-1 — Fix checkout timeout", a page…)
+      // travels with the flow so generation can focus on exactly those items.
+      const srcScope = {};
+      for (const id of sources) {
+        const c = cfg[id] || {};
+        if (c.scope && c.scopeLabel) srcScope[id] = { scope: c.scope, label: c.scopeLabel };
+        else if (c.sel && PICK_AFTER[id]) srcScope[id] = { scope: c.sel, label: PICK_AFTER[id] + ' ' + c.sel };
+      }
+      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null, srcScope });
       nav('/doctype');
     } catch (e) { toast('error', 'Could not save sources', e.message); }
     finally { setBusy(false); }
@@ -323,6 +353,21 @@ export default function Source() {
                                 </p>
                               )}
                             </div>
+                            {SCOPE[id] && (
+                              <div className="field mt5" style={{ maxWidth: 520, marginBottom: 0 }}>
+                                <label htmlFor={'scope-' + id}>{SCOPE[id].label}</label>
+                                <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+                                  <input id={'scope-' + id} className="input" style={{ flex: '1 1 280px' }}
+                                    placeholder={SCOPE[id].ph} value={c.scopeInput || ''}
+                                    onChange={(e) => setCfg(id, { scopeInput: e.target.value, scope: '', scopeLabel: '' })}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') checkScope(id); }} />
+                                  <button className="btn btn--tertiary btn--field" disabled={busy} onClick={() => checkScope(id)}>Verify</button>
+                                </div>
+                                {c.scopeLabel
+                                  ? <p className="helper mt2" style={{ color: 'var(--support-success)' }}>✓ {c.scopeLabel} — generation will focus here</p>
+                                  : <p className="helper mt2">Leave empty to use the whole {PICK_AFTER[id].toLowerCase()}.</p>}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div>

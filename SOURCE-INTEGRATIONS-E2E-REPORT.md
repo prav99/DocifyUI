@@ -63,6 +63,24 @@ With GitHub (`expressjs/express`), OpenAPI (YAML), Confluence, Notion, and Jira 
 ### Parser/unit checks (sandbox, local fixtures)
 JSON OpenAPI 3 / YAML OpenAPI 3 / YAML Swagger 2 / HTML page / non-spec JSON / 404 — **6/6 pass**. `node --check` on `api.js` and Babel JSX parse of `Source.jsx` — clean.
 
+## 3b. Generation scope fields (added on request, tested live)
+
+Each connected Jira/Confluence/Notion card now has an optional, live-validated "Focus on…" field so generation can target exactly one issue set / page / database. Validation goes through `POST /api/sources/scope` using the stored credentials, and verified scopes are prepended to the generation instructions ("Focus on these source items — Jira: KAN-1 — …").
+
+| Test | Result |
+|---|---|
+| Jira `kan-1` (lowercase) | ✅ normalized → "✓ KAN-1 — DocGen test — checkout API timeout on retry — generation will focus here" |
+| Jira `KAN-999` (real 404) | ✅ "Issue KAN-999 was not found on praveenjha004-1783235848200.atlassian.net" |
+| Jira `hello world` | ✅ format guidance (PROJECT-NUMBER, comma-separated) |
+| Confluence numeric ID `163941` | ✅ "Getting started in Confluence" (real page) |
+| Confluence full page URL | ✅ ID extracted → "Template - Project plan" |
+| Confluence garbage | ✅ paste-a-URL guidance |
+| Notion database URL (Notes) | ✅ ID extracted/hyphenated → "Notes (database)" |
+| Notion garbage | ✅ paste-a-link guidance |
+| Empty scope | ✅ allowed — "Leave empty to use the whole project/space/database" |
+
+Incident during testing: the earlier git merge had overwritten SQLite's live WAL file, wedging all DB routes after restart. Resolved by deleting `dev.db-wal`/`dev.db-shm` with the server stopped; these files are now gitignored and untracked so it cannot recur. Recovery also exercised re-signup, source reconnection, and the "Reload list" buttons — all worked, and prior selections re-applied automatically.
+
 ## 4. Test credentials created (revoke when done)
 
 - Atlassian API token **"DocGen-test"** (expires 2026-07-12) — id.atlassian.com → Security → API tokens

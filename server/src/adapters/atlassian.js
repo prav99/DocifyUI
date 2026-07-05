@@ -55,6 +55,41 @@ export async function verifyConfluence(siteUrl, cred) {
   return { site, account: me ? (me.displayName || me.publicName || '') : '', spaces: d.size };
 }
 
+/* ---- Optional generation scope: a specific issue / page ---- */
+
+// "KAN-1, KAN-7" → validated against the real site; returns [{key, summary}].
+export async function verifyJiraIssues(siteUrl, cred, value) {
+  const site = normalizeSite(siteUrl);
+  const keys = String(value || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+  if (!keys.length) throw new Error('Enter at least one issue ID (e.g. KAN-1)');
+  if (keys.some((k) => !/^[A-Z][A-Z0-9]*-\d+$/.test(k))) {
+    throw new Error('Issue IDs look like PROJECT-NUMBER (e.g. KAN-1) — separate several with commas');
+  }
+  const out = [];
+  for (const key of keys.slice(0, 10)) {
+    let r;
+    try {
+      r = await fetch(site + '/rest/api/3/issue/' + key + '?fields=summary,issuetype',
+        { headers: { Authorization: basic(cred), Accept: 'application/json' } });
+    } catch { throw new Error('Could not reach ' + site); }
+    if (r.status === 404) throw new Error('Issue ' + key + ' was not found on ' + site.replace('https://', ''));
+    if (!r.ok) throw new Error('Could not look up ' + key + ' (' + r.status + ')');
+    const d = await r.json();
+    out.push({ key: d.key, summary: (d.fields && d.fields.summary) || '' });
+  }
+  return out;
+}
+
+// Page URL ("…/pages/123456/Title") or bare numeric ID → { id, title }.
+export async function verifyConfluencePage(siteUrl, cred, value) {
+  const site = normalizeSite(siteUrl);
+  const v = String(value || '').trim();
+  const m = v.match(/\/pages\/(\d+)/) || v.match(/pageId=(\d+)/) || v.match(/^(\d+)$/);
+  if (!m) throw new Error('Paste a Confluence page URL (…/pages/<id>/…) or a numeric page ID');
+  const d = await get(site + '/wiki/rest/api/content/' + m[1], cred, 'Confluence');
+  return { id: m[1], title: d.title || 'Untitled page' };
+}
+
 export async function listConfluenceSpaces(siteUrl, cred) {
   const site = normalizeSite(siteUrl);
   const d = await get(site + '/wiki/rest/api/space?limit=50', cred, 'Confluence');
