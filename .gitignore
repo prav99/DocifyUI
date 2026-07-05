@@ -6,3 +6,5 @@ server/.env
 .env
 *.log
 .DS_Store
+server/prisma/dev.db-shm
+server/prisma/dev.db-wal
