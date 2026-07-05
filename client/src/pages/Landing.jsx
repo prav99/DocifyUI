@@ -1060,6 +1060,22 @@ export default function Landing() {
           </Reveal>
         </div>
       </section>
+      {/* Footer */}
+      <footer className="sitefoot">
+        <div className="sitefoot-inner">
+          <div className="row" style={{ gap: 8 }}>
+            <LogoMark size={18} />
+            <span className="helper">© {new Date().getFullYear()} DocGen · AI documentation intelligence</span>
+          </div>
+          <nav className="sitefoot-links">
+            <a onClick={() => nav('/docs')}>Docs</a>
+            <a onClick={() => nav('/pricing')}>Pricing</a>
+            <a onClick={() => nav('/legal/privacy')}>Privacy</a>
+            <a onClick={() => nav('/legal/terms')}>Terms</a>
+            <a onClick={() => nav('/legal/security')}>Security</a>
+          </nav>
+        </div>
+      </footer>
       <div style={{ height: 80 }} />
 
       <NavBar next="/signup" nextLabel="Start free" note="No credit card required" />
