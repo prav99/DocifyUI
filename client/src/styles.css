@@ -376,7 +376,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .demo-url{font-size:12px;color:var(--text-secondary);margin-left:8px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .demo-body{display:grid;grid-template-columns:220px 1fr;min-height:300px}
 .demo-rail{display:flex;flex-direction:column;border-right:1px solid var(--border-subtle);background:var(--layer-01);padding:8px 0}
-@media(max-width:800px){.demo-body{grid-template-columns:1fr}.demo-rail{flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--border-subtle)}}
+@media(max-width:800px){.demo-body{grid-template-columns:1fr;min-height:0}.demo-rail{flex-direction:row;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity;border-right:none;border-bottom:1px solid var(--border-subtle)}.demo-step{scroll-snap-align:start}.jd-stage{min-height:0}}
 .demo-step{display:flex;gap:10px;align-items:center;padding:12px 16px;border:none;background:none;font-family:inherit;font-size:13px;color:var(--text-secondary);cursor:pointer;text-align:left;border-left:3px solid transparent;white-space:nowrap}
 .demo-step .mono{font-size:11px;color:var(--text-placeholder)}
 .demo-step:hover{background:var(--layer-hover)}
@@ -498,6 +498,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
   .demo-url{display:none}
   .jd-head{flex-wrap:wrap;row-gap:8px}
   .demo-stage,.jd-stage{padding:16px}
+  .demo-step{padding:10px 12px}
   .demo-bar,.jd-bar{flex-wrap:wrap;row-gap:8px}
   .modal{width:100%;max-width:100vw;margin:0 8px}
   .grid2{grid-template-columns:1fr}
@@ -521,7 +522,9 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 }
 
 /* ============ Story flow: video sizing + judge player light theme ============ */
-.vidwrap{max-width:880px;margin:0 auto}
+/* Player fills the Carbon content column (aligns with the section heading grid,
+   Carbon max content width 1056px) instead of sitting narrow at 880px. */
+.vidwrap{max-width:100%;margin:0 auto}
 .vidwrap .demo-window,.vidwrap .jd-window{margin-top:40px}
 .jd-window{background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 12px 32px rgba(22,22,22,.14)}
 .jd-head{background:var(--layer-01);border-bottom:1px solid var(--border-subtle)}
