@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { NavBar, LogoMark } from '../ui.jsx';
+import { LogoMark } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
 
 /* ---------- Scroll-reveal wrapper ---------- */
@@ -825,6 +825,47 @@ const QUOTES = [
 const SRCS = ['GitHub', 'GitLab', 'Bitbucket', 'Jira', 'Confluence', 'Notion', 'OpenAPI'];
 const FMTS = ['DITA', 'PDF', 'Word', 'Markdown'];
 
+/* FAQ content — mirrored in server/src/seo-meta.js as FAQPage JSON-LD.
+   Keep the two in sync when editing. */
+export const FAQS = [
+  {
+    q: 'What is DocGen?',
+    a: 'DocGen is an AI documentation generator that turns your GitHub, GitLab, or Bitbucket repository into standards-grade technical documentation — API references, user guides, release notes, and more — exported to DITA, PDF, Word, HTML, or Markdown. Every document is scored by an AI quality judge before you publish.'
+  },
+  {
+    q: 'How does the AI quality scoring work?',
+    a: 'Every generated document is reviewed by an LLM judge across six weighted dimensions: style, consistency, completeness, readability, LLM readiness, and link integrity. Each finding ships with a one-click fix and a declared score gain, and a quality gate (85 by default) blocks anything below your bar.'
+  },
+  {
+    q: 'What is AI ranking prediction?',
+    a: 'Before you publish, DocGen models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, structure, readability, completeness — and estimates the probability that each platform will retrieve and cite your page. The estimate is recomputed live as you apply fixes.'
+  },
+  {
+    q: 'Is my source code stored?',
+    a: 'No. DocGen reads your repository through a read-only grant, generates documentation from code structure, comments, and commit history, and never stores your source code. You can revoke access at any time.'
+  },
+  {
+    q: 'Can documentation update automatically on every merge?',
+    a: 'Yes. Automation pipelines regenerate documentation on every merge via webhook, re-score it with the AI judge, update the AI ranking outlook, and hold anything below the quality gate for review — so the release and its documentation ship together.'
+  },
+  {
+    q: 'Who is DocGen built for?',
+    a: 'Developer platform teams, technical writers, product managers, and documentation teams at startups and enterprises — anyone who needs accurate, AI-ready developer documentation without the manual upkeep.'
+  }
+];
+
+function FaqItem({ q, a }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={'faqitem' + (open ? ' open' : '')}>
+      <button className="faq-q" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {q}<span className="faq-chev" aria-hidden="true">▾</span>
+      </button>
+      {open && <p className="faq-a">{a}</p>}
+    </div>
+  );
+}
+
 export default function Landing() {
   usePageMeta({
     title: 'DocGen — AI Documentation Generator with Built-In Quality & AI Ranking Scores',
@@ -1007,7 +1048,7 @@ export default function Landing() {
       {/* Integrations */}
       <div className="page" style={{ paddingTop: 88, paddingBottom: 88 }}>
         <Reveal>
-          <h2 className="feathead">Every source, every format</h2>
+          <h2 className="feathead">Every documentation source, every output format</h2>
           <p className="lead t2 mt3">No partial matrices, no asterisks. Supported means fully supported.</p>
           <table className="matrix mt6">
             <thead>
@@ -1054,6 +1095,17 @@ export default function Landing() {
         </div>
       </div>
 
+      {/* FAQ — answers the questions buyers and search engines ask */}
+      <div className="page" style={{ paddingTop: 0, paddingBottom: 96 }}>
+        <Reveal>
+          <p className="eyebrow eyebrow--blue mb3">FREQUENTLY ASKED QUESTIONS</p>
+          <h2 className="feathead mb6">AI documentation, automated — common questions</h2>
+          <div className="faqlist">
+            {FAQS.map((f) => <FaqItem key={f.q} q={f.q} a={f.a} />)}
+          </div>
+        </Reveal>
+      </div>
+
       {/* Final CTA */}
       <section className="ctaband">
         <div style={{ maxWidth: 1056, margin: '0 auto', padding: '0 24px' }}>
@@ -1068,23 +1120,48 @@ export default function Landing() {
       </section>
       {/* Footer */}
       <footer className="sitefoot">
-        <div className="sitefoot-inner">
-          <div className="row" style={{ gap: 8 }}>
-            <LogoMark size={18} />
-            <span className="helper">© {new Date().getFullYear()} DocGen · AI documentation intelligence</span>
+        <div className="sitefoot-grid">
+          <div className="sitefoot-brand">
+            <div className="row" style={{ gap: 8 }}>
+              <LogoMark size={22} />
+              <span className="logotext">Doc<span className="logogen">Gen</span></span>
+            </div>
+            <p className="helper mt3" style={{ lineHeight: 1.6 }}>
+              AI documentation intelligence: generate standards-grade docs from your code,
+              verify them with an LLM judge, and know how ChatGPT, Claude, and Gemini
+              will rank them — before you publish.
+            </p>
           </div>
-          <nav className="sitefoot-links">
+          <nav className="sitefoot-col" aria-label="Product">
+            <h3>Product</h3>
+            <a onClick={() => nav('/pricing')}>Pricing</a>
+            <a onClick={() => nav('/automation')}>Automation pipelines</a>
+            <a onClick={() => nav('/docs/output-formats')}>Output formats</a>
+            <a onClick={() => nav('/signup')}>Start free</a>
+          </nav>
+          <nav className="sitefoot-col" aria-label="Resources">
+            <h3>Resources</h3>
+            <a onClick={() => nav('/docs')}>Documentation</a>
+            <a onClick={() => nav('/docs/llm-as-a-judge')}>LLM-as-a-Judge scoring</a>
+            <a onClick={() => nav('/docs/chatgpt-ranking-analysis')}>ChatGPT ranking analysis</a>
+            <a onClick={() => nav('/help')}>Help center</a>
+          </nav>
+          <nav className="sitefoot-col" aria-label="Legal">
+            <h3>Legal</h3>
+            <a onClick={() => nav('/legal/privacy')}>Privacy policy</a>
+            <a onClick={() => nav('/legal/terms')}>Terms of service</a>
+            <a onClick={() => nav('/legal/security')}>Security</a>
+          </nav>
+        </div>
+        <div className="sitefoot-inner">
+          <span className="helper">© {new Date().getFullYear()} DocGen · AI documentation intelligence</span>
+          <nav className="sitefoot-links" aria-label="Footer shortcuts">
             <a onClick={() => nav('/docs')}>Docs</a>
             <a onClick={() => nav('/pricing')}>Pricing</a>
-            <a onClick={() => nav('/legal/privacy')}>Privacy</a>
-            <a onClick={() => nav('/legal/terms')}>Terms</a>
             <a onClick={() => nav('/legal/security')}>Security</a>
           </nav>
         </div>
       </footer>
-      <div style={{ height: 80 }} />
-
-      <NavBar next="/signup" nextLabel="Start free" note="No credit card required" />
     </>
   );
 }

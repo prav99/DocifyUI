@@ -67,11 +67,39 @@ const JSON_LD = JSON.stringify({
         { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'USD' },
         { '@type': 'Offer', name: 'Team', price: '26', priceCurrency: 'USD', description: 'Per user / month, billed annually' }
       ],
-      featureList: 'AI documentation generation, LLM-as-a-Judge quality scoring, ChatGPT/Claude/Gemini ranking prediction, GitHub/GitLab/Bitbucket integration, DITA/Markdown/PDF/Word export, CI/CD automation'
+      featureList: 'AI documentation generation, LLM-as-a-Judge quality scoring, ChatGPT/Claude/Gemini ranking prediction, GitHub/GitLab/Bitbucket integration, DITA/Markdown/PDF/Word export, release notes automation, CI/CD documentation automation'
     },
-    { '@type': 'Organization', name: SITE_NAME, url: SITE_URL, logo: SITE_URL + '/icon.svg' }
+    { '@type': 'Organization', name: SITE_NAME, url: SITE_URL, logo: SITE_URL + '/icon.svg' },
+    { '@type': 'WebSite', name: SITE_NAME, url: SITE_URL, description: DEFAULT_DESC }
   ]
 });
+
+// FAQPage structured data for the landing page. Mirrors the visible FAQ
+// section in client/src/pages/Landing.jsx — keep the two in sync.
+const FAQ_LD = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    ['What is DocGen?',
+      'DocGen is an AI documentation generator that turns your GitHub, GitLab, or Bitbucket repository into standards-grade technical documentation — API references, user guides, release notes, and more — exported to DITA, PDF, Word, HTML, or Markdown. Every document is scored by an AI quality judge before you publish.'],
+    ['How does the AI quality scoring work?',
+      'Every generated document is reviewed by an LLM judge across six weighted dimensions: style, consistency, completeness, readability, LLM readiness, and link integrity. Each finding ships with a one-click fix and a declared score gain, and a quality gate (85 by default) blocks anything below your bar.'],
+    ['What is AI ranking prediction?',
+      'Before you publish, DocGen models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, structure, readability, completeness — and estimates the probability that each platform will retrieve and cite your page. The estimate is recomputed live as you apply fixes.'],
+    ['Is my source code stored?',
+      'No. DocGen reads your repository through a read-only grant, generates documentation from code structure, comments, and commit history, and never stores your source code. You can revoke access at any time.'],
+    ['Can documentation update automatically on every merge?',
+      'Yes. Automation pipelines regenerate documentation on every merge via webhook, re-score it with the AI judge, update the AI ranking outlook, and hold anything below the quality gate for review — so the release and its documentation ship together.'],
+    ['Who is DocGen built for?',
+      'Developer platform teams, technical writers, product managers, and documentation teams at startups and enterprises — anyone who needs accurate, AI-ready developer documentation without the manual upkeep.']
+  ].map(([q, a]) => ({
+    '@type': 'Question',
+    name: q,
+    acceptedAnswer: { '@type': 'Answer', text: a }
+  }))
+});
+
+const OG_IMAGE = SITE_URL + '/og-image.png';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
@@ -87,11 +115,18 @@ export function injectMeta(html, path) {
     '<meta property="og:url" content="' + esc(url) + '" />',
     '<meta property="og:type" content="website" />',
     '<meta property="og:site_name" content="' + SITE_NAME + '" />',
+    '<meta property="og:locale" content="en_US" />',
+    '<meta property="og:image" content="' + OG_IMAGE + '" />',
+    '<meta property="og:image:width" content="1200" />',
+    '<meta property="og:image:height" content="630" />',
+    '<meta property="og:image:alt" content="DocGen — documentation that AI understands, trusts, and ranks" />',
     '<meta name="twitter:card" content="summary_large_image" />',
     '<meta name="twitter:title" content="' + esc(meta.title) + '" />',
     '<meta name="twitter:description" content="' + esc(meta.desc) + '" />',
-    '<script type="application/ld+json">' + JSON_LD + '</script>'
-  ].join('\n    ');
+    '<meta name="twitter:image" content="' + OG_IMAGE + '" />',
+    '<script type="application/ld+json">' + JSON_LD + '</script>',
+    clean === '/' ? '<script type="application/ld+json">' + FAQ_LD + '</script>' : ''
+  ].filter(Boolean).join('\n    ');
   return html
     .replace(/<title>[^<]*<\/title>/, '<title>' + esc(meta.title) + '</title>')
     .replace(/(<meta name="description" content=")[^"]*(")/, '$1' + esc(meta.desc) + '$2')
