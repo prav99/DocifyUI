@@ -44,7 +44,7 @@ export default function Checkout() {
           <div className="tile tile--white" style={{ padding: 24 }}>
             <h2 className="h02 mb5">Payment details</h2>
             <div className="field"><label htmlFor="ccName">Name on card</label>
-              <input id="ccName" className="input" placeholder="Praveen Jha" /></div>
+              <input id="ccName" className="input" placeholder="Jane Doe" /></div>
             <div className="field"><label htmlFor="ccNum">Card number</label>
               <input id="ccNum" className="input mono" placeholder="4242 4242 4242 4242" inputMode="numeric" /></div>
             <div className="grid2">
