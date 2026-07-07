@@ -1346,11 +1346,66 @@ SCREENS.automation = function(){
   h += '<div class="codeblock" style="font-size:11.5px">' + esc(CI_YAML) + '</div>';
   h += '<p class="helper mt3">Add <span class="mono">DOCGEN_API_KEY</span> to your repository secrets first.</p>';
   h += '</div>';
+  h += '</div>';
 
-  h += '</div></div>';
+  /* ---- Contextual placement + Jira traceability ---- */
+  h += placementPanelHTML();
+
+  h += '</div>';
   h += navBar('dashboard', 'settings', 'Continue', false, null);
   return h;
 };
+
+/* One merge → traced to its Jira issue → documented → spliced into the exact
+   section of the existing document, instead of generating a standalone file. */
+function placementPanelHTML(){
+  var sections = [
+    {name:'Overview', hit:false},
+    {name:'Authentication', hit:true, sub:'Rotate signing keys on refresh'},
+    {name:'Errors', hit:false},
+    {name:'Endpoint reference', hit:false},
+    {name:'Rate limits', hit:false}
+  ];
+  var h = '<div class="tile tile--white mt6" style="padding:24px">';
+  h += '<div class="row row--between" style="flex-wrap:wrap;gap:12px">';
+  h += '<h2 class="h02">Contextual placement &#183; one change, the right section</h2>';
+  h += '<span class="tag tag--blue">no standalone duplicates</span></div>';
+  h += '<p class="body01 t2 mt3" style="max-width:760px">A 50k-line product already has complete documentation. When a small feature merges, DocGen documents <b>only that change</b>, then searches the existing document and splices it into the single best-matching location &#8212; updating that section in place, or inserting a new sub-section under the closest parent.</p>';
+
+  h += '<div class="grid3 mt6" style="align-items:stretch">';
+
+  // 1 — commit
+  h += '<div class="tile" style="padding:18px"><p class="label01 t2 mono mb3">01 &#183; MERGE</p>';
+  h += '<p class="mono" style="font-size:12px">a1f9c3e</p>';
+  h += '<p class="body01 mt2">KAN-42 feat: rotate signing keys on refresh</p>';
+  h += '<p class="helper mt2">src/auth/token.js &#183; branch feature/KAN-42-key-rotation</p></div>';
+
+  // 2 — jira trace
+  h += '<div class="tile" style="padding:18px"><p class="label01 t2 mono mb3">02 &#183; TRACE VIA JIRA</p>';
+  h += '<div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag tag--blue">KAN-42</span><span class="helper">&#8594;</span><span class="tag tag--gray mono">a1f9c3e</span></div>';
+  h += '<p class="helper mt3">The issue key in the commit resolves to the exact commit. Only KAN-42&#8217;s change is documented &#8212; not the whole repo.</p></div>';
+
+  // 3 — placement decision
+  h += '<div class="tile" style="padding:18px"><p class="label01 t2 mono mb3">03 &#183; PLACE</p>';
+  h += '<div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag tag--green">Authentication</span><span class="helper">92% match</span></div>';
+  h += '<p class="helper mt3">Best-matching section in the existing API reference &#8212; splice a new sub-section here, in place.</p></div>';
+
+  h += '</div>'; // grid3
+
+  // Document map
+  h += '<p class="label01 t2 mt7 mb3">EXISTING DOCUMENT &#183; PAYMENTS API REFERENCE</p>';
+  h += '<div class="stack">';
+  sections.forEach(function(s){
+    h += '<div class="issue' + (s.hit ? '' : '') + '" style="border-left-color:' + (s.hit ? 'var(--support-success)' : 'var(--border-subtle,#dcdcdc)') + '">';
+    h += '<div class="row row--between"><p class="h01">' + s.name + '</p>' + (s.hit ? '<span class="tag tag--green">change placed here</span>' : '<span class="tag tag--gray">unchanged</span>') + '</div>';
+    if (s.hit) h += '<p class="body01 mt3 t2">&#8627; New sub-section spliced in: <b>' + s.sub + '</b> &#183; 92% confidence &#183; document updated in place, version unchanged.</p>';
+    h += '</div>';
+  });
+  h += '</div>';
+  h += '<div class="notif notif--info mt6">' + svgInfo() + '<div><p class="nbody">Turn on <b>Require a linked issue</b> to hold any merge with no resolvable Jira key &#8212; every documented change stays traceable to a ticket and a commit.</p></div></div>';
+  h += '</div>';
+  return h;
+}
 function toggleAuto(){
   state.autoRegen = !state.autoRegen;
   toast(state.autoRegen ? 'success' : 'info', 'Auto-regenerate ' + (state.autoRegen ? 'enabled' : 'disabled'),

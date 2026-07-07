@@ -758,7 +758,10 @@ const PROFILE_DEFAULTS = {
   templateFrom: 'latest', updatePolicy: 'auto', versioning: 'semver-patch',
   gate: 85, minAssistant: 0, autoFix: true, requireApproval: false, // step 5
   publishTo: 'workspace', notifyEmail: '',                          // step 6
-  notifyOn: { success: true, blocked: true, failure: true }
+  notifyOn: { success: true, blocked: true, failure: true },
+  // Traceability: link each merge to a Jira issue so the change can be placed
+  // and audited. { enabled, site, projectKey, requireIssue }.
+  jira: { enabled: false, site: '', projectKey: '', requireIssue: false }
 };
 
 function profCfg(p) {
@@ -767,6 +770,7 @@ function profCfg(p) {
     ...PROFILE_DEFAULTS, ...c,
     events: { ...PROFILE_DEFAULTS.events, ...(c.events || {}) },
     notifyOn: { ...PROFILE_DEFAULTS.notifyOn, ...(c.notifyOn || {}) },
+    jira: { ...PROFILE_DEFAULTS.jira, ...(c.jira || {}) },
     docTypes: Array.isArray(c.docTypes) && c.docTypes.length ? c.docTypes : PROFILE_DEFAULTS.docTypes
   };
 }
@@ -812,6 +816,95 @@ function sectionImpact(files) {
   return [...hits];
 }
 
+/* ---------------------------------------------------------------------
+   Jira ↔ commit traceability.
+   Teams reference the issue in the commit (Atlassian "Smart Commits":
+   "KAN-42 fix: …") or in the branch ("feature/KAN-42-token-rotation").
+   Given a merge event we resolve the issue key back to the specific commit
+   that carried it — no Jira API round-trip required, so it also works for
+   public repositories with no connected account. When a project key is
+   configured we match only that project; otherwise any PROJECT-NUMBER token.
+--------------------------------------------------------------------- */
+function resolveJiraLink(cfg, event) {
+  const jcfg = cfg.jira || {};
+  if (!jcfg.enabled) return null;
+  const key = String(jcfg.projectKey || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const re = key ? new RegExp('\\b' + key + '-(\\d+)\\b', 'i') : /\b([A-Z][A-Z0-9]+)-(\d+)\b/;
+  const msg = String(event.message || '');
+  const branch = String(event.branch || '');
+  const m = (msg + ' ' + branch).match(re);
+  if (!m) return { issue: null, matched: false, requireIssue: !!jcfg.requireIssue };
+  const issue = key ? key + '-' + m[1] : m[1].toUpperCase() + '-' + m[2];
+  const inMsg = new RegExp('\\b' + issue.replace('-', '\\-') + '\\b', 'i').test(msg);
+  return {
+    issue, matched: true, requireIssue: !!jcfg.requireIssue,
+    commit: event.commit ? String(event.commit).slice(0, 7) : '',
+    source: inMsg ? 'commit message' : 'branch name',
+    url: jcfg.site ? String(jcfg.site).replace(/\/+$/, '') + '/browse/' + issue : ''
+  };
+}
+
+/* Keyword signal per canonical section — scores where a change belongs. */
+const SECTION_SIGNAL = [
+  ['Authentication', /auth|token|oauth|credential|secret|\bkey\b|login|session|\bjwt\b|scope/i],
+  ['Errors', /error|exception|status\s?code|\b4\d\d\b|\b5\d\d\b|failure|retry/i],
+  ['Endpoint reference', /endpoint|route|controller|handler|charge|payment|refund|request|response|param|\bapi\b/i],
+  ['Rate limits', /rate|limit|throttle|quota|budget/i],
+  ['Configuration', /config|env|setting|deploy|flag|\boption\b|variable/i],
+  ['Overview', /readme|overview|intro|getting.?started|docs?\//i]
+];
+
+function titleFromSignal(jira, message) {
+  const raw = String((jira && jira.issueSummary) || message || '')
+    .replace(/\b[A-Z][A-Z0-9]+-\d+\b/g, '')
+    .replace(/^\s*(feat|fix|chore|docs|refactor|perf|test|build)(\([^)]*\))?:\s*/i, '')
+    .trim();
+  const t = (raw.split(/[.\n]/)[0] || '').trim();
+  if (!t) return 'Change details';
+  return t.charAt(0).toUpperCase() + t.slice(1, 60);
+}
+
+/* Contextual placement.
+   Given the mapped document's section outline and the merge signal (commit
+   message, changed files, linked Jira issue), score every section and return
+   the single best insertion anchor — updating an existing section in place
+   when the change clearly belongs there, or splicing a new sub-section under
+   the closest matching parent when it introduces something the document does
+   not yet cover. This is what lets one merge update the right slice of a large
+   document instead of producing a standalone file. */
+function computePlacement(cfg, event, jira, existing) {
+  const doctype = (cfg.docTypes || [])[0];
+  const fw = FRAMEWORK[doctype];
+  const outline = fw && fw.outline && fw.outline.length ? fw.outline.map((o) => o.name) : ['Overview'];
+  const signal = [
+    event.message || '', (event.files || []).join(' '),
+    jira && jira.issue ? jira.issue : '', jira && jira.issueSummary ? jira.issueSummary : ''
+  ].join(' ');
+  const tokens = signal.toLowerCase().match(/[a-z0-9]+/g) || [];
+  const scored = SECTION_SIGNAL
+    .filter(([name]) => outline.includes(name))
+    .map(([name, re]) => {
+      let score = 0;
+      const g = signal.match(new RegExp(re.source, 'gi'));
+      if (g) score += g.length * 3;
+      score += name.toLowerCase().split(/\s+/).filter((t) => tokens.includes(t)).length * 2;
+      return { name, score };
+    })
+    .sort((a, b) => b.score - a.score);
+  const best = scored[0] && scored[0].score > 0 ? scored[0] : { name: outline[0] || 'Overview', score: 0 };
+  const total = scored.reduce((s, x) => s + x.score, 0) || 1;
+  const dominance = best.score / total;
+  const strength = Math.min(1, best.score / 8);
+  const confidence = Math.round(Math.min(97, Math.max(38, (0.5 * dominance + 0.5 * strength) * 100)));
+  const mode = best.score >= 4 ? 'update-existing' : 'insert-new';
+  const sub = mode === 'insert-new' ? titleFromSignal(jira, event.message) : '';
+  const anchorPath = sub ? best.name + ' ▸ ' + sub : best.name;
+  const reason = mode === 'update-existing'
+    ? 'Change maps to the “' + best.name + '” section of the existing document — updating it in place, not creating a new document.'
+    : 'No existing section fully covers this change — splicing a new “' + sub + '” sub-section under “' + best.name + '”.';
+  return { anchor: best.name, anchorPath, confidence, mode, reason };
+}
+
 function bumpVersion(v, strategy) {
   if (strategy === 'date') return new Date().toISOString().slice(0, 10).replace(/-/g, '.');
   const m = String(v || '2.4.0').match(/(\d+)\.(\d+)\.(\d+)/) || [null, '2', '4', '0'];
@@ -819,28 +912,31 @@ function bumpVersion(v, strategy) {
   return strategy === 'semver-minor' ? maj + '.' + (min + 1) + '.0' : maj + '.' + min + '.' + (pat + 1);
 }
 
-async function decideDocAction(uid, cfg, event) {
+async function decideDocAction(uid, cfg, event, jira) {
   const rows = await prisma.generation.findMany({ where: { userId: uid }, orderBy: { createdAt: 'desc' }, take: 100 });
   const existing = rows.find((g) => g.status === 'complete'
     && g.format === cfg.format
     && j(g.docTypes, [])[0] === cfg.docTypes[0]
     && (!cfg.repo || g.repo === cfg.repo));
   if (!existing) {
-    return { action: 'create', existing: null, reason: 'No document is mapped to ' + (cfg.repo || 'this repository') + ' · ' + cfg.docTypes[0] + ' · ' + cfg.format + ' yet — creating it establishes the mapping.' };
+    return { action: 'create', existing: null, reason: 'No document is mapped to ' + (cfg.repo || 'this repository') + ' · ' + cfg.docTypes[0] + ' · ' + cfg.format + ' yet — creating it establishes the mapping so future merges can be placed inside it.' };
   }
   if (cfg.updatePolicy === 'create') return { action: 'create', existing, reason: 'Policy: always create a new document.' };
   if (cfg.updatePolicy === 'update') return { action: 'update', existing, reason: 'Policy: always update the mapped document in place.' };
   if (cfg.updatePolicy === 'version') return { action: 'version', existing, reason: 'Policy: every merge produces a new version (' + cfg.versioning + ').' };
-  // 'auto' — analyze the merge.
+  // Release merges still cut a new version — they preserve published history.
   const msg = String(event.message || '');
-  if (/(^|\s)(release|v?\d+\.\d+\.\d+)(\s|$|:)/i.test(msg) || /^release\//.test(String(event.branch || ''))) {
+  const isRelease = /(^|\s)(release|v?\d+\.\d+\.\d+)(\s|$|:)/i.test(msg) || /^release\//.test(String(event.branch || ''));
+  if (cfg.updatePolicy !== 'place' && isRelease) {
     return { action: 'version', existing, reason: 'Merge metadata indicates a release (' + (msg ? '“' + msg.slice(0, 60) + '”' : event.branch) + ') — a new version preserves the published history.' };
   }
-  const impacted = sectionImpact(event.files);
-  if ((event.files || []).length && impacted.length) {
-    return { action: 'sections', existing, impacted, reason: event.files.length + ' changed file(s) map to: ' + impacted.join(', ') + ' — regenerating the mapped document with those sections refreshed.' };
-  }
-  return { action: 'update', existing, reason: 'Routine merge on the watched branch — updating the mapped document in place avoids duplicate documentation.' };
+  // 'place' (explicit) or 'auto' — locate where this change belongs inside the
+  // existing document and splice it in, instead of generating a standalone doc.
+  const placement = computePlacement(cfg, event, jira, existing);
+  return {
+    action: 'place', existing, placement, impacted: sectionImpact(event.files),
+    reason: 'Contextual placement → ' + placement.anchorPath + ' (' + placement.confidence + '% match) — ' + placement.reason
+  };
 }
 
 async function patchProfileRun(profileId, patch) {
@@ -859,13 +955,25 @@ async function profileRun(profile, event) {
   const uid = profile.userId;
   const runId = 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const save = (patch) => patchProfileRun(profile.id, { id: runId, ...patch });
-  const decision = await decideDocAction(uid, cfg, event);
+  const jira = resolveJiraLink(cfg, event);
+  const decision = await decideDocAction(uid, cfg, event, jira);
   await save({
     at: new Date().toISOString(), trigger: event.trigger, commit: event.commit || '',
     branch: event.branch || cfg.branch, files: (event.files || []).length,
     action: decision.action, reason: decision.reason, impacted: decision.impacted || [],
+    placement: decision.placement || null, jira: jira || null,
     status: 'running'
   });
+  // Traceability gate: when a profile requires every merge to carry a Jira
+  // issue and this one does not, hold it instead of documenting an untraceable
+  // change.
+  if (jira && jira.requireIssue && !jira.matched) {
+    await save({
+      status: 'complete', overall: 0, outcome: 'held',
+      holdWhy: 'No linked Jira issue in the commit message or branch — this profile requires traceability.'
+    });
+    return { runId, outcome: 'held', overall: 0 };
+  }
   try {
     const tplRow = decision.existing || (cfg.templateFrom === 'latest' ? await latestTemplate(uid) : null);
     const out = tplRow ? j(tplRow.output, {}) : {};
@@ -877,8 +985,12 @@ async function profileRun(profile, event) {
       version = tagged ? tagged[1] : bumpVersion(out.version, cfg.versioning);
       out.version = version;
     }
+    const actionLabel = decision.action === 'place' && decision.placement
+      ? 'placing into ' + decision.placement.anchorPath
+      : decision.action;
     const steps = [
-      'Merge ' + (event.commit ? String(event.commit).slice(0, 7) + ' ' : '') + 'on ' + (event.branch || cfg.branch) + ' → ' + decision.action,
+      'Merge ' + (event.commit ? String(event.commit).slice(0, 7) + ' ' : '') + 'on ' + (event.branch || cfg.branch) +
+        (jira && jira.matched ? ' · ' + jira.issue : '') + ' → ' + actionLabel,
       ...buildSteps({ provider: cfg.provider, instructions: tplRow ? tplRow.instructions : '', files: [], skillName: tplRow ? tplRow.skillName || '' : '' })
     ];
     const data = {
@@ -894,7 +1006,7 @@ async function profileRun(profile, event) {
       status: 'queued', step: 0, steps: JSON.stringify(steps), score: 0
     };
     let gen;
-    if ((decision.action === 'update' || decision.action === 'sections') && decision.existing) {
+    if ((decision.action === 'update' || decision.action === 'sections' || decision.action === 'place') && decision.existing) {
       gen = await prisma.generation.update({ where: { id: decision.existing.id }, data });
     } else {
       gen = await prisma.generation.create({ data: { userId: uid, ...data } });

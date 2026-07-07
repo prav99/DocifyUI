@@ -10,20 +10,22 @@ import { NavBar, ScoreTag, IcCheck, HelpLink } from '../ui.jsx';
    detail (webhook, simulations, run history, effectiveness trends).
    ===================================================================== */
 
-const WIZ_STEPS = ['Repository', 'Branch', 'Merge triggers', 'Documents', 'AI quality & ranking', 'Publish & notify'];
+const WIZ_STEPS = ['Repository', 'Branch', 'Merge & traceability', 'Documents', 'AI quality & ranking', 'Publish & notify'];
 
 const DEFAULT_CFG = {
   provider: 'github', repo: '',
   branch: 'main',
   events: { push: true, mergedPr: true }, pathFilter: '',
+  jira: { enabled: false, site: '', projectKey: '', requireIssue: false },
   track: 'technical', docTypes: ['api'], format: 'markdown',
-  templateFrom: 'latest', updatePolicy: 'auto', versioning: 'semver-patch',
+  templateFrom: 'latest', updatePolicy: 'place', versioning: 'semver-patch',
   gate: 85, minAssistant: 0, autoFix: true, requireApproval: false,
   publishTo: 'workspace', notifyEmail: '', notifyOn: { success: true, blocked: true, failure: true }
 };
 
 const POLICY_DESC = {
-  auto: 'DocGen analyzes each merge — release metadata creates a version, mapped file changes refresh impacted sections, routine merges update in place. Never a duplicate.',
+  place: 'Contextual placement (recommended). DocGen documents only the merged change, then searches the existing mapped document and splices it into the single best-matching location — updating that section in place, or inserting a new sub-section under the closest parent. One large document stays current; never a standalone duplicate.',
+  auto: 'Intelligent. Release metadata cuts a new version; every other merge is placed contextually inside the existing document at the best-matching section.',
   update: 'Always update the mapped document in place.',
   create: 'Always create a new document per merge.',
   version: 'Every merge produces a new version of the mapped document.'
@@ -63,15 +65,20 @@ function PipelinePreview({ cfg, step, name }) {
         cfg.repo || '· choose a repository',
         'branch ' + cfg.branch,
         [cfg.events.push && 'pushes', cfg.events.mergedPr && 'merged PRs'].filter(Boolean).join(' + ') || '⚠ no trigger events enabled',
-        cfg.pathFilter ? 'paths: ' + cfg.pathFilter : null
+        cfg.pathFilter ? 'paths: ' + cfg.pathFilter : null,
+        cfg.jira && cfg.jira.enabled
+          ? 'trace → Jira ' + (cfg.jira.projectKey ? cfg.jira.projectKey + '-###' : 'issue key') + ' → commit'
+          : null
       ]
     },
     {
-      steps: [3], label: 'GENERATE OR UPDATE',
+      steps: [3], label: cfg.updatePolicy === 'place' || cfg.updatePolicy === 'auto' ? 'PLACE INTO EXISTING DOC' : 'GENERATE OR UPDATE',
       lines: [
         cfg.docTypes.length ? cfg.docTypes.join(', ') : '· choose document types',
         (cfg.format ? cfg.format.toUpperCase() : '· format') + ' · policy: ' + cfg.updatePolicy +
-          (cfg.updatePolicy === 'auto' || cfg.updatePolicy === 'version' ? ' · ' + cfg.versioning : '')
+          (cfg.updatePolicy === 'auto' || cfg.updatePolicy === 'version' ? ' · ' + cfg.versioning : ''),
+        cfg.updatePolicy === 'place' || cfg.updatePolicy === 'auto'
+          ? '⤷ splice at best-matching section' : null
       ]
     },
     {
@@ -233,8 +240,8 @@ function Wizard({ existing, catalog, onDone }) {
 
         {step === 2 && (
           <>
-            <h2 className="h02 mb2">Step 3 · Merge triggers</h2>
-            <p className="helper mb5">Which events run the pipeline, and which file changes count.</p>
+            <h2 className="h02 mb2">Step 3 · Merge triggers &amp; traceability</h2>
+            <p className="helper mb5">Which events run the pipeline, which file changes count, and how each merge is traced back to a Jira issue.</p>
             <div className="stack">
               <Tog on={cfg.events.push} label="Direct pushes / merges to the branch"
                 sub="GitHub, GitLab, and Bitbucket push events"
@@ -249,6 +256,39 @@ function Wizard({ existing, catalog, onDone }) {
                 defaultValue={cfg.pathFilter} onBlur={(e) => set({ pathFilter: e.target.value.trim() })} />
             </div>
             <p className="helper">When set, merges whose changed files match none of these paths are ignored.</p>
+
+            <div className="divider" style={{ margin: '20px 0' }} />
+            <p className="label01 t2 mb2">JIRA ↔ GITHUB TRACEABILITY</p>
+            <p className="helper mb3">Link every merge to the Jira issue it delivered — the commit references the key (<span className="mono">KAN-42 fix: …</span>) or the branch does (<span className="mono">feature/KAN-42-…</span>). DocGen resolves the key back to the exact commit, so only the documentation for that issue’s change is placed.</p>
+            <div className="stack">
+              <Tog on={cfg.jira.enabled} label="Trace merges to Jira issues"
+                sub="Resolves the issue key from the commit message or branch — no extra API round-trip"
+                onClick={() => set({ jira: { ...cfg.jira, enabled: !cfg.jira.enabled } })} />
+            </div>
+            {cfg.jira.enabled && (
+              <>
+                <div className="grid2 mt5">
+                  <div className="field">
+                    <label htmlFor="wzjkey">Project key (optional)</label>
+                    <input id="wzjkey" className="input" placeholder="e.g. KAN — blank matches any PROJECT-###"
+                      defaultValue={cfg.jira.projectKey}
+                      onBlur={(e) => set({ jira: { ...cfg.jira, projectKey: e.target.value.trim().toUpperCase() } })} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="wzjsite">Jira site (optional — for deep links)</label>
+                    <input id="wzjsite" className="input" placeholder="https://yourteam.atlassian.net"
+                      defaultValue={cfg.jira.site}
+                      onBlur={(e) => set({ jira: { ...cfg.jira, site: e.target.value.trim() } })} />
+                  </div>
+                </div>
+                <div className="stack">
+                  <Tog on={cfg.jira.requireIssue} label="Require a linked issue"
+                    sub="Merges with no resolvable Jira key are held for review instead of documented"
+                    onClick={() => set({ jira: { ...cfg.jira, requireIssue: !cfg.jira.requireIssue } })} />
+                </div>
+                <p className="helper">Connect your Atlassian account under Settings → Connected sources to validate keys and pull issue summaries. Key-in-commit matching works even without it.</p>
+              </>
+            )}
           </>
         )}
 
@@ -291,7 +331,8 @@ function Wizard({ existing, catalog, onDone }) {
               <div className="field">
                 <label htmlFor="wzpol">Update policy</label>
                 <select id="wzpol" className="select" value={cfg.updatePolicy} onChange={(e) => set({ updatePolicy: e.target.value })}>
-                  <option value="auto">Intelligent (recommended)</option>
+                  <option value="place">Contextual placement (recommended)</option>
+                  <option value="auto">Intelligent (place + auto-version)</option>
                   <option value="update">Always update in place</option>
                   <option value="version">Always new version</option>
                   <option value="create">Always new document</option>
@@ -409,14 +450,16 @@ function Detail({ id, onBack, onEdit }) {
     catch { toast('error', 'Copy failed', 'Select the text manually'); }
   }
   async function simulate(kind) {
+    const jkey = (cfg.jira && cfg.jira.projectKey) || 'KAN';
     const bodies = {
       routine: { simulate: true, message: 'fix: typo in handler' },
       impact: { simulate: true, message: 'feat: new token rotation', files: ['src/auth/token.js', 'src/errors/handler.js'] },
-      release: { simulate: true, message: 'release v3.0.0' }
+      release: { simulate: true, message: 'release v3.0.0' },
+      jira: { simulate: true, message: jkey + '-42 feat: rotate signing keys on refresh', files: ['src/auth/token.js'], branch: 'feature/' + jkey + '-42-key-rotation' }
     };
     try {
       await api('/profiles/' + p.id + '/run', { method: 'POST', body: bodies[kind] });
-      toast('success', 'Merge simulated', 'Watch the run appear below — the engine decides create / update / version / sections');
+      toast('success', 'Merge simulated', 'Watch the run appear below — the engine resolves the issue, then places the change in the right section');
       load();
     } catch (e) { toast('error', 'Could not start run', e.message); }
   }
@@ -454,10 +497,11 @@ function Detail({ id, onBack, onEdit }) {
         <span className="tag tag--gray">{cfg.repo || 'no repository'}</span>
         <span className="tag tag--gray">merge → {cfg.branch}</span>
         <span className="tag tag--blue">{cfg.docTypes.join(', ')} · {String(cfg.format).toUpperCase()}</span>
-        <span className="tag tag--outline">policy: {cfg.updatePolicy}</span>
+        <span className="tag tag--outline">policy: {cfg.updatePolicy === 'place' ? 'contextual placement' : cfg.updatePolicy}</span>
         <span className="tag tag--outline">gate ≥ {cfg.gate}{cfg.minAssistant ? ' · rank ≥ ' + cfg.minAssistant + '%' : ''}</span>
         {cfg.autoFix && <span className="tag tag--green">auto-fix</span>}
         {cfg.requireApproval && <span className="tag tag--amber">approval required</span>}
+        {cfg.jira && cfg.jira.enabled && <span className="tag tag--blue">Jira {cfg.jira.projectKey ? cfg.jira.projectKey + '-*' : 'linked'}{cfg.jira.requireIssue ? ' · required' : ''}</span>}
       </div>
 
       <div className="grid2 mt6" style={{ alignItems: 'start' }}>
@@ -483,6 +527,7 @@ function Detail({ id, onBack, onEdit }) {
             <button className="btn btn--tertiary btn--sm" onClick={() => simulate('routine')}>Routine merge</button>
             <button className="btn btn--tertiary btn--sm" onClick={() => simulate('impact')}>Auth + error files changed</button>
             <button className="btn btn--tertiary btn--sm" onClick={() => simulate('release')}>Release merge (v3.0.0)</button>
+            <button className="btn btn--tertiary btn--sm" onClick={() => simulate('jira')}>Jira-linked merge ({(cfg.jira && cfg.jira.projectKey) || 'KAN'}-42)</button>
           </div>
         </div>
 
@@ -524,7 +569,8 @@ function Detail({ id, onBack, onEdit }) {
                 <div className="prun-top">
                   <span className="helper" style={{ minWidth: 150 }}>{fmtWhen(r.at)}</span>
                   <span className="body01">{TRIGGER_LABEL[r.trigger] || r.trigger}</span>
-                  <span className="tag tag--blue">{r.action}{r.version ? ' → v' + r.version : ''}</span>
+                  <span className="tag tag--blue">{r.action === 'place' && r.placement ? 'place → ' + r.placement.anchor : r.action}{r.version ? ' → v' + r.version : ''}</span>
+                  {r.jira && r.jira.matched && <span className="tag tag--outline">{r.jira.issue}</span>}
                   {r.status === 'running' && <span className="tag tag--blue">Running…</span>}
                   {r.status === 'failed' && <span className="tag tag--red">Failed</span>}
                   {r.status === 'complete' && <ScoreTag n={r.overall} />}
@@ -544,6 +590,16 @@ function Detail({ id, onBack, onEdit }) {
                   {r.groundedWhy ? ' — ⚠ ' + r.groundedWhy : ''}
                   {r.error ? ' — ' + r.error : ''}
                 </p>
+                {r.placement && (
+                  <p className="helper mt2">
+                    ⤷ Placed at <b>{r.placement.anchorPath}</b> · {r.placement.mode === 'insert-new' ? 'new sub-section spliced in' : 'section updated in place'} · <b>{r.placement.confidence}%</b> match
+                  </p>
+                )}
+                {r.jira && r.jira.matched && (
+                  <p className="helper mt2">
+                    Traceability: <b>{r.jira.issue}</b> → commit <span className="mono">{r.jira.commit || (r.commit ? String(r.commit).slice(0, 7) : '—')}</span> · resolved via {r.jira.source}
+                  </p>
+                )}
                 {r.status === 'complete' && r.assistants && (
                   <p className="helper mt2">AI ranking: ChatGPT {r.assistants.chatgpt}% · Claude {r.assistants.claude}% · Gemini {r.assistants.gemini}%</p>
                 )}
@@ -610,10 +666,11 @@ export default function Automation() {
                   <h1 className="h04">Auto-regenerate on merge</h1>
                   <HelpLink topic="automation" />
                 </div>
-                <p className="body01 t2 mt3" style={{ maxWidth: 700 }}>
-                  Reusable automation pipelines: a merge lands, the saved profile executes — generate or
-                  update the mapped documents, judge them, rank them against ChatGPT, Claude, and Gemini,
-                  then publish or hold. Configure once; it runs forever.
+                <p className="body01 t2 mt3" style={{ maxWidth: 720 }}>
+                  Reusable automation pipelines: a merge lands, its Jira issue is resolved to the exact commit,
+                  and DocGen documents only that change — then finds where it belongs in your existing
+                  documentation and splices it into the right section. No standalone duplicates. Every update is
+                  judged, ranked against ChatGPT, Claude, and Gemini, then published or held. Configure once; it runs forever.
                 </p>
               </div>
               <button className="btn btn--primary" onClick={() => setView({ mode: 'wizard' })}>
