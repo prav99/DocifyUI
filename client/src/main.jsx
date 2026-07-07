@@ -20,6 +20,17 @@ import Settings from './pages/Settings.jsx';
 import { Docs, DocArticle } from './pages/Docs.jsx';
 import Help from './pages/Help.jsx';
 import Legal from './pages/Legal.jsx';
+import Contact from './pages/Contact.jsx';
+import { trackPageview, installClickTracking } from './analytics.js';
+
+function Analytics() {
+  const loc = useLocation();
+  React.useEffect(() => { installClickTracking(); }, []);
+  React.useEffect(() => {
+    trackPageview(loc.pathname + loc.search);
+  }, [loc.pathname, loc.search]);
+  return null;
+}
 
 function RequireAuth({ children }) {
   const { user, ready } = useAuth();
@@ -41,6 +52,7 @@ function App() {
       <AuthProvider>
         <FlowProvider>
           <ScrollTop />
+          <Analytics />
           <TopBar />
           <main>
             <Routes>
@@ -63,6 +75,7 @@ function App() {
               <Route path="/docs/:slug" element={<DocArticle />} />
               <Route path="/help" element={<Help />} />
               <Route path="/help/:topic" element={<Help />} />
+              <Route path="/contact" element={<Contact />} />
               <Route path="/legal/:slug" element={<Legal />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
