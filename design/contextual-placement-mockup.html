@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocGen — Contextual placement (design mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<style>
+:root{--blue:#0f62fe}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f4f4;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#161616;padding:28px 16px}
+.shell{max-width:940px;margin:0 auto}
+.pagehead{max-width:940px;margin:0 auto 18px}
+.pagehead h1{font-size:20px;font-weight:600;margin:0}
+.pagehead p{color:#525252;margin:6px 0 0;font-size:13px}
+.dg{background:#fff;border:1px solid #e0e0e0;font-size:13px;line-height:1.45}
+.mono{font-family:'IBM Plex Mono',monospace}
+.dg-top{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 16px;border-bottom:1px solid #e0e0e0}
+.dg-top .crumb{font-family:'IBM Plex Mono',monospace;font-size:12px;color:#525252}
+.dg-top .chip{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#525252;background:#f4f4f4;padding:4px 8px}
+.dg-body{padding:16px}
+.lab{font-size:11px;letter-spacing:.4px;color:#525252;text-transform:uppercase;font-weight:500}
+.card{border:1px solid #e0e0e0;background:#fff;padding:14px}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;font-weight:500}
+.tag-g{background:#defbe6;color:#0e6027}.tag-b{background:#edf5ff;color:#0043ce}
+.tag-a{background:#fcf4d6;color:#8e6a00}.tag-n{background:#f4f4f4;color:#525252}
+.btn{font-family:inherit;font-size:13px;height:38px;padding:0 14px;border:1px solid transparent;background:transparent;color:#161616;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn-p{background:#0f62fe;color:#fff}.btn-p:hover{background:#0353e9}
+.btn-s{border:1px solid #8d8d8d}.btn-s:hover{background:#f4f4f4}
+.drop{border:1px dashed #a8a8a8;background:#f4f4f4;padding:12px;display:flex;align-items:center;gap:12px}
+.mini{width:26px;background:#f4f4f4;border:1px solid #e0e0e0;position:relative;flex:none}
+.mini .tick{position:absolute;left:0;right:0;height:1px;background:#d0d0d0}
+.mini .mk{position:absolute;left:-2px;right:-2px;height:4px;background:#0f62fe}
+.loc{border:1px solid #e0e0e0;border-left:3px solid #e0e0e0;padding:9px 10px;cursor:pointer;margin-bottom:8px}
+.loc:hover{background:#f9f9f9}.loc.on{border-left-color:#0f62fe;background:#edf5ff}
+.bar{height:4px;background:#e0e0e0;margin-top:6px}.bar>i{display:block;height:4px;background:#0f62fe}
+.pv{font-size:13px;line-height:1.65}.pv .mut{color:#8d8d8d}
+.pv .ins{background:#defbe6;border-left:3px solid #24a148;padding:8px 10px;margin:8px 0;color:#161616}
+.why{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;font-size:12px;color:#393939}
+.why i{color:#24a148;font-size:15px;line-height:1.2;flex:none}
+.meter b{font-size:22px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="pagehead">
+  <h1>Contextual placement — design mockup</h1>
+  <p>One merged change is documented, located inside your uploaded document, and spliced into the right section. Click a candidate location to re-target; Accept to confirm.</p>
+</div>
+<div class="shell">
+ <div class="dg">
+  <div class="dg-top">
+    <span class="crumb">docgen / automation / contextual placement</span>
+    <span class="chip">payments-api · pipeline</span>
+  </div>
+  <div class="dg-body">
+
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;gap:12px;align-items:center">
+          <i class="ti ti-file-type-pdf" style="font-size:26px;color:#da1e28"></i>
+          <div>
+            <div style="font-weight:500">payments-handbook.pdf</div>
+            <div class="mono" style="font-size:12px;color:#525252">512 pages · 47 sections · 9 heading levels</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="tag tag-g"><i class="ti ti-check"></i>Structure analyzed · 3.2s</span>
+          <button class="btn btn-s"><i class="ti ti-upload"></i>Replace</button>
+        </div>
+      </div>
+      <div class="drop" style="margin-top:12px">
+        <i class="ti ti-cloud-upload" style="font-size:20px;color:#525252"></i>
+        <div style="font-size:12px;color:#525252">Your existing documentation is the placement target — drop a new <b>.pdf</b>, <b>.docx</b>, or <b>.md</b> to re-index it. DocGen never creates a separate file; it edits this one.</div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:#393939;flex-wrap:wrap">
+        <span class="tag tag-b">KAN-42</span>
+        <span class="mono" style="color:#525252">a1f9c3e</span>
+        <i class="ti ti-arrow-right" style="color:#a8a8a8"></i>
+        <span>1 new block generated from the merge</span>
+      </div>
+      <span class="lab">only this change is placed — nothing else moves</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span class="lab">Placement preview</span>
+          <span id="modeTag" class="tag tag-b">Update in place</span>
+        </div>
+        <div style="display:flex;gap:12px">
+          <div class="mini" style="height:210px" id="mini"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500" id="path"></div>
+            <div class="mono" style="font-size:12px;color:#525252;margin-bottom:10px" id="page"></div>
+            <div class="pv" id="pv"></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:baseline;gap:6px"><b class="meter" id="conf"></b><span style="font-size:12px;color:#525252">match confidence</span></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-s">Preview in full doc</button>
+            <button class="btn btn-p" onclick="accept()"><i class="ti ti-check"></i>Accept placement</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="lab" style="margin-bottom:10px">Why here</div>
+          <div id="why"></div>
+        </div>
+        <div class="card">
+          <div class="lab" style="margin-bottom:10px">Other candidate locations</div>
+          <div id="locs"></div>
+          <button class="btn btn-s" style="width:100%;justify-content:center;margin-top:2px"><i class="ti ti-list-search"></i>Choose manually</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-top:14px;font-size:12px;color:#525252">
+      <i class="ti ti-info-circle" style="font-size:16px"></i>
+      <span>The LLM read all 512 pages and ranked every section — you review one decision instead of scrolling. Accepting edits only the chosen section; document version is unchanged.</span>
+    </div>
+
+  </div>
+ </div>
+</div>
+<script>
+const LOCS=[
+ {id:0,path:'2.4 Authentication ▸ Token rotation',page:148,conf:92,mode:'Update in place',mtag:'tag-b',
+  why:['Heading match — “Token rotation”','Adjacent text already covers signing keys and refresh','Linked issue KAN-42: “rotate signing keys on refresh”'],
+  before:'Access tokens expire 3600 seconds after issue. Clients refresh ahead of expiry using the grant described in §2.3.',
+  ins:'Signing keys now rotate automatically on every refresh. The previous key stays valid for a 300-second overlap so in-flight requests are not rejected; clients must trust any key advertised at the JWKS endpoint.',
+  after:'Rotation events are written to the audit log (§6.1) and never expose private key material.'},
+ {id:1,path:'2.5 Authentication ▸ API keys',page:151,conf:71,mode:'Update in place',mtag:'tag-b',
+  why:['Same chapter — Authentication','Mentions long-lived credentials','Weaker: no rotation heading present'],
+  before:'API keys are long-lived credentials scoped to a single project.',
+  ins:'Signing keys now rotate automatically on every refresh, with a 300-second overlap on the previous key.',
+  after:'Store keys in a secret manager, never in source control.'},
+ {id:2,path:'6.2 Security ▸ Secret handling',page:377,conf:58,mode:'New sub-section',mtag:'tag-a',
+  why:['Topic overlap — secrets and keys','Different chapter (Security)','Would splice a new sub-section'],
+  before:'Secrets are encrypted at rest with AES-256-GCM.',
+  ins:'Signing keys now rotate automatically on every refresh — documented as a new sub-section here.',
+  after:'Access to the secret store is logged and reviewed quarterly.'},
+ {id:3,path:'1.1 Overview',page:3,conf:31,mode:'New sub-section',mtag:'tag-a',
+  why:['Low match — general introduction only','No authentication detail nearby'],
+  before:'This handbook documents the Payments API for integrators.',
+  ins:'Signing keys now rotate automatically on every refresh.',
+  after:'See chapter 2 for authentication.'}
+];
+let sel=0,done=false;
+const $=s=>document.querySelector(s);
+function esc(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function render(){
+ const L=LOCS[sel];
+ $('#path').textContent=L.path;$('#page').textContent='page '+L.page+' of 512';$('#conf').textContent=L.conf+'%';
+ const mt=$('#modeTag');mt.textContent=L.mode;mt.className='tag '+L.mtag;
+ $('#pv').innerHTML='<span class="mut">'+esc(L.before)+'</span><div class="ins"><div class="lab" style="color:#0e6027;margin-bottom:4px"><i class="ti ti-plus"></i> inserted from a1f9c3e</div>'+esc(L.ins)+'</div><span class="mut">'+esc(L.after)+'</span>';
+ $('#why').innerHTML=L.why.map(w=>'<div class="why"><i class="ti ti-circle-check"></i><span>'+esc(w)+'</span></div>').join('');
+ $('#locs').innerHTML=LOCS.map(l=>'<div class="loc'+(l.id===sel?' on':'')+'" onclick="pick('+l.id+')"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-weight:500;font-size:12px">'+esc(l.path)+'</span><span class="mono" style="font-size:11px;color:#525252">'+l.conf+'%</span></div><div class="mono" style="font-size:11px;color:#8d8d8d;margin-top:2px">p.'+l.page+' · '+l.mode.toLowerCase()+'</div><div class="bar"><i style="width:'+l.conf+'%"></i></div></div>').join('');
+ const mini=$('#mini'),H=210;let t='';[0.06,0.18,0.29,0.41,0.55,0.68,0.79,0.9].forEach(p=>t+='<div class="tick" style="top:'+(p*H)+'px"></div>');t+='<div class="mk" style="top:'+((L.page/512)*H)+'px"></div>';mini.innerHTML=t;
+}
+function pick(i){if(done)return;sel=i;render();}
+function accept(){const L=LOCS[sel];done=true;$('#pv').closest('.card').innerHTML='<div style="text-align:center;padding:26px 8px"><i class="ti ti-circle-check" style="font-size:40px;color:#24a148"></i><div style="font-weight:500;font-size:15px;margin-top:8px">Placed into payments-handbook.pdf</div><div style="color:#525252;margin-top:4px">'+esc(L.path)+' · page '+L.page+'</div><div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap"><span class="tag tag-g"><i class="ti ti-check"></i>1 section edited</span><span class="tag tag-n">511 pages untouched</span><span class="tag tag-n">version unchanged</span></div></div>';}
+render();
+</script>
+</body>
+</html>

@@ -761,7 +761,10 @@ const PROFILE_DEFAULTS = {
   notifyOn: { success: true, blocked: true, failure: true },
   // Traceability: link each merge to a Jira issue so the change can be placed
   // and audited. { enabled, site, projectKey, requireIssue }.
-  jira: { enabled: false, site: '', projectKey: '', requireIssue: false }
+  jira: { enabled: false, site: '', projectKey: '', requireIssue: false },
+  // The developer's existing documentation — the placement target. Parsed into
+  // { name, format, sections:[{level,title,line}], lines, pagesEst } on upload.
+  sourceDoc: null
 };
 
 function profCfg(p) {
@@ -864,22 +867,94 @@ function titleFromSignal(jira, message) {
   return t.charAt(0).toUpperCase() + t.slice(1, 60);
 }
 
+/* ---------------------------------------------------------------------
+   Document ingest.
+   The developer's EXISTING documentation is the placement target. We parse
+   whatever they upload into a heading outline with line anchors, so placement
+   scores against the real sections of their document rather than a generic
+   template. Markdown/plain-text and numbered headings are parsed here today;
+   pdf/docx/confluence extract to text upstream and feed the same parser.
+--------------------------------------------------------------------- */
+function parseOutline(content, format) {
+  const text = String(content || '');
+  const lines = text.split(/\r?\n/);
+  const sections = [];
+  lines.forEach((ln, i) => {
+    let m = ln.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);              // markdown ATX (#, ##, …)
+    if (m) { sections.push({ level: m[1].length, title: m[2].trim(), line: i + 1 }); return; }
+    m = ln.match(/^\s*(\d+(?:\.\d+)*)\.?\s+([A-Z][^.].{2,80})$/); // numbered "2.4 Token rotation"
+    if (m) { sections.push({ level: (m[1].match(/\./g) || []).length + 1, num: m[1], title: m[2].trim(), line: i + 1 }); return; }
+    if (/^={3,}\s*$/.test(ln) && lines[i - 1] && lines[i - 1].trim() && !/^[#\d]/.test(lines[i - 1])) {
+      sections.push({ level: 1, title: lines[i - 1].trim(), line: i });                            // setext H1
+    } else if (/^-{3,}\s*$/.test(ln) && lines[i - 1] && lines[i - 1].trim() && !/^\s*[-*+]\s/.test(lines[i - 1]) && !/^[#\d]/.test(lines[i - 1])) {
+      sections.push({ level: 2, title: lines[i - 1].trim(), line: i });                            // setext H2
+    }
+  });
+  const seen = new Set();
+  const out = sections
+    .filter((s) => s.title && s.title.length <= 120 && !seen.has(s.line) && seen.add(s.line))
+    .sort((a, b) => a.line - b.line);
+  return { sections: out, lines: lines.length, chars: text.length, pagesEst: Math.max(1, Math.round(lines.length / 45)) };
+}
+
+const pageOf = (line, src) => (!src || !src.lines) ? 1 : Math.max(1, Math.round((line / src.lines) * (src.pagesEst || 1)) || 1);
+const confFrom = (score, total) => {
+  const dom = score / (total || 1), str = Math.min(1, score / 8);
+  return Math.round(Math.min(97, Math.max(38, (0.5 * dom + 0.5 * str) * 100)));
+};
+
+/* Score an arbitrary heading outline against the merge signal. Works for any
+   uploaded document — overlap on heading words, plus a concept bridge when a
+   canonical topic regex matches both the heading and the change. */
+function scoreOutline(sections, signal) {
+  const sigSet = new Set((signal.toLowerCase().match(/[a-z0-9]+/g) || []));
+  return sections.map((s, idx) => {
+    const titleTokens = (s.title.toLowerCase().match(/[a-z0-9]+/g) || []).filter((t) => t.length > 2);
+    let score = titleTokens.filter((t) => sigSet.has(t)).length * 3;
+    for (const [, re] of SECTION_SIGNAL) if (re.test(s.title) && re.test(signal)) score += 2;
+    return { ...s, idx, score };
+  });
+}
+
 /* Contextual placement.
-   Given the mapped document's section outline and the merge signal (commit
+   Given the target document's section outline and the merge signal (commit
    message, changed files, linked Jira issue), score every section and return
    the single best insertion anchor — updating an existing section in place
    when the change clearly belongs there, or splicing a new sub-section under
    the closest matching parent when it introduces something the document does
-   not yet cover. This is what lets one merge update the right slice of a large
-   document instead of producing a standalone file. */
+   not yet cover. When the developer has uploaded their existing document we
+   score against ITS real headings (with page anchors); otherwise we fall back
+   to the doc-type's canonical outline. Either way one merge updates the right
+   slice of a large document instead of producing a standalone file. */
 function computePlacement(cfg, event, jira, existing) {
-  const doctype = (cfg.docTypes || [])[0];
-  const fw = FRAMEWORK[doctype];
-  const outline = fw && fw.outline && fw.outline.length ? fw.outline.map((o) => o.name) : ['Overview'];
   const signal = [
     event.message || '', (event.files || []).join(' '),
     jira && jira.issue ? jira.issue : '', jira && jira.issueSummary ? jira.issueSummary : ''
   ].join(' ');
+  const src = cfg.sourceDoc;
+  if (src && Array.isArray(src.sections) && src.sections.length) {
+    const scored = scoreOutline(src.sections, signal).sort((a, b) => b.score - a.score || a.line - b.line);
+    const total = scored.reduce((s, x) => s + x.score, 0) || 1;
+    const best = scored[0];
+    const mode = best.score >= 4 ? 'update-existing' : 'insert-new';
+    const sub = mode === 'insert-new' ? titleFromSignal(jira, event.message) : '';
+    const anchorPath = sub ? best.title + ' ▸ ' + sub : best.title;
+    const page = pageOf(best.line, src);
+    const candidates = scored.slice(0, 4).map((s) => ({
+      title: s.title, level: s.level || 1, line: s.line, page: pageOf(s.line, src),
+      confidence: confFrom(s.score, total), mode: s.score >= 4 ? 'update-existing' : 'insert-new'
+    }));
+    return {
+      anchor: best.title, anchorPath, confidence: confFrom(best.score, total), mode, page,
+      docName: src.name || 'your document', candidates, source: 'document',
+      reason: mode === 'update-existing'
+        ? 'Change maps to “' + best.title + '” (p.' + page + ') in ' + (src.name || 'your uploaded document') + ' — updating that section in place.'
+        : 'No existing section fully covers this change — splicing a new “' + sub + '” sub-section under “' + best.title + '” (p.' + page + ').'
+    };
+  }
+  const doctype = (cfg.docTypes || [])[0];
+  const fw = FRAMEWORK[doctype];
+  const outline = fw && fw.outline && fw.outline.length ? fw.outline.map((o) => o.name) : ['Overview'];
   const tokens = signal.toLowerCase().match(/[a-z0-9]+/g) || [];
   const scored = SECTION_SIGNAL
     .filter(([name]) => outline.includes(name))
@@ -1153,6 +1228,54 @@ apiRouter.post('/profiles/:id/rotate-secret', async (req, res) => {
   if (!row) return;
   const updated = await prisma.automationProfile.update({ where: { id: row.id }, data: { secret: await newSecret() } });
   res.json({ profile: serializeProfile(updated) });
+});
+
+// Upload the existing document that placement targets. The client sends the
+// extracted text (Markdown/plain-text today; pdf/docx/confluence are extracted
+// to text upstream). We parse it to an outline and store only the outline +
+// stats on the profile — never the full document body.
+apiRouter.post('/profiles/:id/source-doc', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const { name = '', format = 'markdown', content = '' } = req.body || {};
+  if (!String(content).trim()) return res.status(400).json({ error: 'Upload a document with readable text content' });
+  const parsed = parseOutline(content, format);
+  if (!parsed.sections.length) {
+    return res.status(400).json({ error: 'No headings found — placement needs a document with section headings (Markdown #, ##, or numbered 2.4 headings)' });
+  }
+  const sourceDoc = {
+    name: String(name || 'document').slice(0, 120), format: String(format || 'markdown'),
+    sections: parsed.sections.slice(0, 2000), lines: parsed.lines, chars: parsed.chars,
+    pagesEst: parsed.pagesEst, uploadedAt: new Date().toISOString()
+  };
+  const cfg = { ...profCfg(row), sourceDoc };
+  const updated = await prisma.automationProfile.update({ where: { id: row.id }, data: { config: JSON.stringify(cfg) } });
+  res.json({ profile: serializeProfile(updated), summary: { name: sourceDoc.name, sections: sourceDoc.sections.length, pagesEst: sourceDoc.pagesEst } });
+});
+
+apiRouter.delete('/profiles/:id/source-doc', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const cfg = { ...profCfg(row), sourceDoc: null };
+  const updated = await prisma.automationProfile.update({ where: { id: row.id }, data: { config: JSON.stringify(cfg) } });
+  res.json({ profile: serializeProfile(updated) });
+});
+
+// Placement preview: given a (real or hypothetical) merge, resolve its Jira
+// issue and rank the best insertion locations inside the uploaded document —
+// what powers the review screen, without running a full generation.
+apiRouter.post('/profiles/:id/placement/preview', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const cfg = profCfg(row);
+  const b = req.body || {};
+  const event = {
+    message: String(b.message || ''), branch: String(b.branch || cfg.branch),
+    files: Array.isArray(b.files) ? b.files.map(String) : [], commit: String(b.commit || '')
+  };
+  const jira = resolveJiraLink(cfg, event);
+  const placement = computePlacement(cfg, event, jira, null);
+  res.json({ placement, jira, hasSourceDoc: !!(cfg.sourceDoc && cfg.sourceDoc.sections && cfg.sourceDoc.sections.length) });
 });
 
 // Manual / simulated run. The body may carry synthetic merge metadata so the

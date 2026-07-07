@@ -417,6 +417,140 @@ function Wizard({ existing, catalog, onDone }) {
   );
 }
 
+/* ---------------- Contextual placement studio ----------------
+   Upload the developer's existing document (the placement target), then
+   preview where a change would be spliced in — against the document's real
+   section outline, with confidence and ranked alternatives. */
+function PlacementStudio({ profile, reload }) {
+  const cfg = profile.config;
+  const src = cfg.sourceDoc;
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState((cfg.jira && cfg.jira.projectKey ? cfg.jira.projectKey + '-42 ' : '') + 'feat: rotate signing keys on refresh');
+  const [files, setFiles] = useState('src/auth/token.js');
+  const [pv, setPv] = useState(null);
+  const [sel, setSel] = useState(0);
+  const fileRef = useRef(null);
+
+  async function onFile(e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    if (!/\.(md|markdown|mdx|txt|text)$/i.test(f.name)) {
+      toast('error', 'Unsupported file', 'Upload .md or .txt for now — PDF, Word, and Confluence/Notion are coming next');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    setBusy(true);
+    try {
+      const content = await f.text();
+      const format = /\.(md|markdown|mdx)$/i.test(f.name) ? 'markdown' : 'text';
+      const d = await api('/profiles/' + profile.id + '/source-doc', { method: 'POST', body: { name: f.name, format, content } });
+      toast('success', 'Document indexed', d.summary.sections + ' sections · ~' + d.summary.pagesEst + ' pages');
+      setPv(null); reload();
+    } catch (err) { toast('error', 'Could not index', err.message); }
+    setBusy(false);
+    if (fileRef.current) fileRef.current.value = '';
+  }
+  async function removeSrc() {
+    if (!window.confirm('Remove the source document? Placement will fall back to the standard outline.')) return;
+    try { await api('/profiles/' + profile.id + '/source-doc', { method: 'DELETE' }); setPv(null); reload(); }
+    catch (e) { toast('error', 'Could not remove', e.message); }
+  }
+  async function findLoc() {
+    setBusy(true);
+    try {
+      const body = { message: msg, files: files ? files.split(',').map((s) => s.trim()).filter(Boolean) : [] };
+      const d = await api('/profiles/' + profile.id + '/placement/preview', { method: 'POST', body });
+      setPv(d); setSel(0);
+    } catch (e) { toast('error', 'Preview failed', e.message); }
+    setBusy(false);
+  }
+
+  const cands = pv && pv.placement && pv.placement.candidates ? pv.placement.candidates : null;
+  const P = pv ? pv.placement : null;
+  const chosen = cands ? cands[sel] : null;
+
+  return (
+    <div className="tile tile--white mt7" style={{ padding: 24 }}>
+      <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <h2 className="h02">Contextual placement</h2>
+        <span className="tag tag--outline">no standalone duplicates</span>
+      </div>
+      <p className="helper mt2" style={{ maxWidth: 720 }}>
+        Upload your existing documentation. On each merge, DocGen documents only the change and splices it into the
+        best-matching section of this document — you review one location instead of scrolling a long file.
+      </p>
+
+      <input ref={fileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text" style={{ display: 'none' }} onChange={onFile} />
+
+      {src ? (
+        <div className="prun mt5">
+          <div className="prun-top">
+            <span className="body01" style={{ fontWeight: 600 }}>{src.name}</span>
+            <span className="tag tag--green">indexed</span>
+            <span className="helper">{(src.sections || []).length} sections · ~{src.pagesEst} pages · {src.format}</span>
+            <span style={{ flex: 1 }} />
+            <button className="btn btn--ghost btn--sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>Replace</button>
+            <button className="btn btn--ghost btn--sm" onClick={removeSrc}>Remove</button>
+          </div>
+        </div>
+      ) : (
+        <div className="tile mt5" style={{ padding: 20, border: '1px dashed var(--border-strong)' }}>
+          <p className="body01" style={{ fontWeight: 600 }}>Upload the document to place into</p>
+          <p className="helper mt2">Markdown (.md) or text (.txt) today · PDF, Word, and Confluence/Notion coming next. DocGen stores only the section outline, never your full document body.</p>
+          <button className="btn btn--tertiary mt3" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>Choose file<span className="ico">↑</span></button>
+        </div>
+      )}
+
+      {src && (
+        <>
+          <div className="divider" style={{ margin: '18px 0' }} />
+          <p className="label01 t2 mb3">PREVIEW A PLACEMENT</p>
+          <div className="grid2">
+            <div className="field">
+              <label htmlFor="pvmsg">Commit message</label>
+              <input id="pvmsg" className="input" value={msg} onChange={(e) => setMsg(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="pvfiles">Changed files (optional)</label>
+              <input id="pvfiles" className="input" value={files} onChange={(e) => setFiles(e.target.value)} />
+            </div>
+          </div>
+          <button className="btn btn--primary" disabled={busy} onClick={findLoc}>{busy ? 'Finding…' : 'Find location'}<span className="ico">→</span></button>
+
+          {P && (
+            <div className="grid2 mt5" style={{ alignItems: 'start' }}>
+              <div className="tile" style={{ padding: 16 }}>
+                <p className="label01 t2 mb2">CHOSEN LOCATION</p>
+                <p className="body01" style={{ fontWeight: 600 }}>{(chosen && chosen.title) || P.anchorPath}</p>
+                <p className="helper mt2">
+                  {P.docName ? 'in ' + P.docName + ' · ' : ''}
+                  {(chosen ? chosen.page : P.page) ? 'p.' + (chosen ? chosen.page : P.page) + ' · ' : ''}
+                  {(chosen ? chosen.mode : P.mode) === 'insert-new' ? 'new sub-section' : 'update in place'}
+                </p>
+                <div style={{ height: 6, background: 'var(--border-subtle)', marginTop: 10 }}>
+                  <div style={{ height: 6, width: (chosen ? chosen.confidence : P.confidence) + '%', background: 'var(--button-primary)' }} />
+                </div>
+                <p className="helper mt2">{(chosen ? chosen.confidence : P.confidence)}% match{pv.jira && pv.jira.matched ? ' · ' + pv.jira.issue + ' → commit' : ''}</p>
+                <p className="helper mt3">{P.reason}</p>
+              </div>
+              <div className="tile" style={{ padding: 16 }}>
+                <p className="label01 t2 mb2">OTHER CANDIDATES</p>
+                {cands ? cands.map((c, i) => (
+                  <div key={i} className="prun" style={{ cursor: 'pointer', marginBottom: 8, padding: 10, ...(i === sel ? { outline: '2px solid var(--button-primary)', outlineOffset: '-2px' } : {}) }} onClick={() => setSel(i)}>
+                    <div className="row row--between"><span className="body01" style={{ fontSize: 13 }}>{c.title}</span><span className="mono helper">{c.confidence}%</span></div>
+                    <div style={{ height: 4, background: 'var(--border-subtle)', marginTop: 6 }}><div style={{ height: 4, width: c.confidence + '%', background: 'var(--button-primary)' }} /></div>
+                    <p className="helper mt2">p.{c.page} · {c.mode === 'insert-new' ? 'new sub-section' : 'update in place'}</p>
+                  </div>
+                )) : <p className="helper">Best match shown. Upload a document with more headings to see ranked alternatives.</p>}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Profile detail: webhook, simulations, runs, trends ---------------- */
 function Detail({ id, onBack, onEdit }) {
   const nav = useNavigate();
@@ -556,6 +690,8 @@ function Detail({ id, onBack, onEdit }) {
           ) : <p className="helper">No completed runs yet — simulate a merge to see trends.</p>}
         </div>
       </div>
+
+      <PlacementStudio profile={p} reload={load} />
 
       <h2 className="h02 mt7 mb3">Run history</h2>
       {(p.runs || []).length === 0 ? (
