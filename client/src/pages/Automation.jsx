@@ -141,6 +141,30 @@ function Wizard({ existing, catalog, onDone }) {
   const [saving, setSaving] = useState(false);
   const set = (patch) => setCfg((c) => ({ ...c, ...patch }));
 
+  const existingDoc = existing && existing.config && existing.config.sourceDoc;
+  const [srcName, setSrcName] = useState(existingDoc ? existingDoc.name : '');
+  const [srcInfo, setSrcInfo] = useState(existingDoc ? { sections: (existingDoc.sections || []).length, pagesEst: existingDoc.pagesEst } : null);
+  const [srcPending, setSrcPending] = useState(null);
+  const [srcRemove, setSrcRemove] = useState(false);
+  const wzFileRef = useRef(null);
+
+  async function onWzFile(e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    if (!/\.(md|markdown|mdx|txt|text)$/i.test(f.name)) {
+      toast('error', 'Unsupported file', 'Upload .md or .txt for now — PDF, Word, and Confluence/Notion coming next');
+      if (wzFileRef.current) wzFileRef.current.value = '';
+      return;
+    }
+    const content = await f.text();
+    const format = /\.(md|markdown|mdx)$/i.test(f.name) ? 'markdown' : 'text';
+    setSrcPending({ name: f.name, format, content });
+    setSrcName(f.name); setSrcInfo(null); setSrcRemove(false);
+    toast('info', 'Document ready', f.name + ' — indexed when you save the pipeline');
+    if (wzFileRef.current) wzFileRef.current.value = '';
+  }
+  function removeWzDoc() { setSrcPending(null); setSrcName(''); setSrcInfo(null); setSrcRemove(true); }
+
   useEffect(() => {
     setRepos(null);
     api('/repos?provider=' + cfg.provider).then((d) => setRepos(d.repos || [])).catch(() => setRepos([]));
@@ -164,6 +188,13 @@ function Wizard({ existing, catalog, onDone }) {
       const d = existing
         ? await api('/profiles/' + existing.id, { method: 'PUT', body })
         : await api('/profiles', { method: 'POST', body });
+      const pid = d.profile.id;
+      if (srcPending) {
+        try { await api('/profiles/' + pid + '/source-doc', { method: 'POST', body: srcPending }); }
+        catch (e) { toast('error', 'Document not indexed', e.message); }
+      } else if (srcRemove && existingDoc) {
+        try { await api('/profiles/' + pid + '/source-doc', { method: 'DELETE' }); } catch (e) { /* non-fatal */ }
+      }
       toast('success', existing ? 'Pipeline updated' : 'Pipeline created',
         name + ' — automation runs on every merge to ' + cfg.branch);
       onDone(d.profile);
@@ -348,6 +379,29 @@ function Wizard({ existing, catalog, onDone }) {
               </div>
             </div>
             <p className="helper">{POLICY_DESC[cfg.updatePolicy]}</p>
+
+            {(cfg.updatePolicy === 'place' || cfg.updatePolicy === 'auto') && (
+              <>
+                <div className="divider" style={{ margin: '18px 0' }} />
+                <p className="label01 t2 mb2">DOCUMENT TO PLACE INTO</p>
+                <p className="helper mb3">Upload your existing documentation — each merge is spliced into its best-matching section instead of creating a standalone file. Markdown (.md) or text (.txt) today; PDF, Word, and Confluence/Notion coming next. DocGen stores only the section outline, never your full document body.</p>
+                <input ref={wzFileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text" style={{ display: 'none' }} onChange={onWzFile} />
+                {srcName ? (
+                  <div className="prun">
+                    <div className="prun-top">
+                      <span className="body01" style={{ fontWeight: 600 }}>{srcName}</span>
+                      {srcInfo ? <span className="helper">{srcInfo.sections} sections · ~{srcInfo.pagesEst} pages</span> : <span className="tag tag--blue">indexed on save</span>}
+                      <span style={{ flex: 1 }} />
+                      <button className="btn btn--ghost btn--sm" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Replace</button>
+                      <button className="btn btn--ghost btn--sm" onClick={removeWzDoc}>Remove</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="btn btn--tertiary" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Choose file<span className="ico">↑</span></button>
+                )}
+                <p className="helper mt2">Optional — without a document, changes are placed using the standard {cfg.docTypes[0] || 'doc-type'} outline. You can preview exact placements after saving.</p>
+              </>
+            )}
           </>
         )}
 
@@ -418,10 +472,10 @@ function Wizard({ existing, catalog, onDone }) {
 }
 
 /* ---------------- Contextual placement studio ----------------
-   Upload the developer's existing document (the placement target), then
-   preview where a change would be spliced in — against the document's real
-   section outline, with confidence and ranked alternatives. */
-function PlacementStudio({ profile, reload }) {
+   Preview where a change would be spliced into the developer's existing
+   document — against its real section outline, with confidence and ranked
+   alternatives. The document itself is uploaded in the setup wizard (Step 4). */
+function PlacementStudio({ profile, onEdit }) {
   const cfg = profile.config;
   const src = cfg.sourceDoc;
   const [busy, setBusy] = useState(false);
@@ -429,32 +483,7 @@ function PlacementStudio({ profile, reload }) {
   const [files, setFiles] = useState('src/auth/token.js');
   const [pv, setPv] = useState(null);
   const [sel, setSel] = useState(0);
-  const fileRef = useRef(null);
 
-  async function onFile(e) {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    if (!/\.(md|markdown|mdx|txt|text)$/i.test(f.name)) {
-      toast('error', 'Unsupported file', 'Upload .md or .txt for now — PDF, Word, and Confluence/Notion are coming next');
-      if (fileRef.current) fileRef.current.value = '';
-      return;
-    }
-    setBusy(true);
-    try {
-      const content = await f.text();
-      const format = /\.(md|markdown|mdx)$/i.test(f.name) ? 'markdown' : 'text';
-      const d = await api('/profiles/' + profile.id + '/source-doc', { method: 'POST', body: { name: f.name, format, content } });
-      toast('success', 'Document indexed', d.summary.sections + ' sections · ~' + d.summary.pagesEst + ' pages');
-      setPv(null); reload();
-    } catch (err) { toast('error', 'Could not index', err.message); }
-    setBusy(false);
-    if (fileRef.current) fileRef.current.value = '';
-  }
-  async function removeSrc() {
-    if (!window.confirm('Remove the source document? Placement will fall back to the standard outline.')) return;
-    try { await api('/profiles/' + profile.id + '/source-doc', { method: 'DELETE' }); setPv(null); reload(); }
-    catch (e) { toast('error', 'Could not remove', e.message); }
-  }
   async function findLoc() {
     setBusy(true);
     try {
@@ -476,11 +505,9 @@ function PlacementStudio({ profile, reload }) {
         <span className="tag tag--outline">no standalone duplicates</span>
       </div>
       <p className="helper mt2" style={{ maxWidth: 720 }}>
-        Upload your existing documentation. On each merge, DocGen documents only the change and splices it into the
-        best-matching section of this document — you review one location instead of scrolling a long file.
+        On each merge, DocGen documents only the change and splices it into the best-matching section of your uploaded
+        document — you review one location instead of scrolling a long file. Preview a placement below.
       </p>
-
-      <input ref={fileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text" style={{ display: 'none' }} onChange={onFile} />
 
       {src ? (
         <div className="prun mt5">
@@ -489,15 +516,14 @@ function PlacementStudio({ profile, reload }) {
             <span className="tag tag--green">indexed</span>
             <span className="helper">{(src.sections || []).length} sections · ~{src.pagesEst} pages · {src.format}</span>
             <span style={{ flex: 1 }} />
-            <button className="btn btn--ghost btn--sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>Replace</button>
-            <button className="btn btn--ghost btn--sm" onClick={removeSrc}>Remove</button>
+            <button className="btn btn--ghost btn--sm" onClick={() => onEdit && onEdit(profile)}>Change in setup</button>
           </div>
         </div>
       ) : (
         <div className="tile mt5" style={{ padding: 20, border: '1px dashed var(--border-strong)' }}>
-          <p className="body01" style={{ fontWeight: 600 }}>Upload the document to place into</p>
-          <p className="helper mt2">Markdown (.md) or text (.txt) today · PDF, Word, and Confluence/Notion coming next. DocGen stores only the section outline, never your full document body.</p>
-          <button className="btn btn--tertiary mt3" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>Choose file<span className="ico">↑</span></button>
+          <p className="body01" style={{ fontWeight: 600 }}>No document uploaded yet</p>
+          <p className="helper mt2">Add the document to place into during setup — Edit this pipeline, then Step 4 · Documents. Markdown (.md) or text (.txt) today; PDF, Word, and Confluence/Notion coming next.</p>
+          <button className="btn btn--tertiary mt3" onClick={() => onEdit && onEdit(profile)}>Add a document in setup<span className="ico">→</span></button>
         </div>
       )}
 
@@ -691,7 +717,7 @@ function Detail({ id, onBack, onEdit }) {
         </div>
       </div>
 
-      <PlacementStudio profile={p} reload={load} />
+      <PlacementStudio profile={p} onEdit={onEdit} />
 
       <h2 className="h02 mt7 mb3">Run history</h2>
       {(p.runs || []).length === 0 ? (
