@@ -13,8 +13,14 @@ import { fetchRepoFiles } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
+import { SUPPORT_EMAIL } from './config.js';
 
 export const apiRouter = Router();
+
+// Escape user-supplied text before embedding it in the notification HTML so a
+// message body can never inject markup into the email we send ourselves.
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const j = (s, fb) => { try { return JSON.parse(s); } catch { return fb; } };
@@ -39,6 +45,45 @@ apiRouter.post('/waitlist', async (req, res) => {
   if (!SOURCES.some((s) => s.id === provider && !s.avail)) return res.status(400).json({ error: 'Unknown waitlist source' });
   await prisma.waitlist.create({ data: { email: String(email).trim(), provider } });
   res.json({ ok: true });
+});
+
+/* ---------- Contact / support form (public) ----------
+   Emails the customer's message to SUPPORT_EMAIL via the mail adapter. With
+   SMTP configured (see server/.env.example) it sends real mail; without it the
+   adapter logs to the server console, so the flow works in dev with zero keys.
+   No secrets are ever exposed to the browser — the client only POSTs the form. */
+apiRouter.post('/contact', async (req, res) => {
+  const { name = '', email = '', topic = '', message = '' } = req.body || {};
+  const cleanName = String(name).trim().slice(0, 200);
+  const cleanEmail = String(email).trim().slice(0, 320);
+  const cleanTopic = String(topic).trim().slice(0, 120);
+  const cleanMessage = String(message).trim().slice(0, 5000);
+
+  if (!cleanEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) {
+    return res.status(400).json({ error: 'A valid email is required' });
+  }
+  if (cleanMessage.length < 10) {
+    return res.status(400).json({ error: 'Please include a message of at least 10 characters' });
+  }
+
+  const subject = `[Support] ${cleanTopic || 'New message'} — from ${cleanName || cleanEmail}`;
+  const html = [
+    '<h2>New support message</h2>',
+    `<p><strong>Name:</strong> ${escapeHtml(cleanName) || '—'}</p>`,
+    `<p><strong>Email:</strong> ${escapeHtml(cleanEmail)}</p>`,
+    `<p><strong>Topic:</strong> ${escapeHtml(cleanTopic) || '—'}</p>`,
+    '<hr>',
+    `<p style="white-space:pre-wrap">${escapeHtml(cleanMessage)}</p>`
+  ].join('\n');
+
+  try {
+    // replyTo lets the support team reply straight to the customer.
+    await sendMail(SUPPORT_EMAIL, subject, html, { replyTo: cleanEmail });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('contact send failed', e);
+    res.status(502).json({ error: 'Could not send your message right now — please email us directly.' });
+  }
 });
 
 /* ---------- Git webhook receiver (public; authenticated by secret) ----------

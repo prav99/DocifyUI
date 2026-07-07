@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogoMark } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
+import { SUPPORT_EMAIL, supportMailto } from '../config.js';
 
 /* ---------- Scroll-reveal wrapper ---------- */
 function Reveal({ children, delay = 0, className = '' }) {
@@ -1131,6 +1132,9 @@ export default function Landing() {
               verify them with an LLM judge, and know how ChatGPT, Claude, and Gemini
               will rank them — before you publish.
             </p>
+            <p className="helper mt3">
+              Support: <a href={supportMailto()}>{SUPPORT_EMAIL}</a>
+            </p>
           </div>
           <nav className="sitefoot-col" aria-label="Product">
             <h3>Product</h3>
@@ -1145,6 +1149,7 @@ export default function Landing() {
             <a onClick={() => nav('/docs/llm-as-a-judge')}>LLM-as-a-Judge scoring</a>
             <a onClick={() => nav('/docs/chatgpt-ranking-analysis')}>ChatGPT ranking analysis</a>
             <a onClick={() => nav('/help')}>Help center</a>
+            <a onClick={() => nav('/contact')}>Contact us</a>
           </nav>
           <nav className="sitefoot-col" aria-label="Legal">
             <h3>Legal</h3>

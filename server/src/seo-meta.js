@@ -32,6 +32,10 @@ export const PAGE_META = {
     title: 'Help Center | ' + SITE_NAME,
     desc: 'Guides for every screen of DocGen — connecting sources, choosing document types, output formats, the AI quality review, exporting, and automation.'
   },
+  '/contact': {
+    title: 'Contact Support | ' + SITE_NAME,
+    desc: 'Get in touch with the DocGen team — questions, bug reports, billing, or Enterprise enquiries.'
+  },
   '/legal/terms': { title: 'Terms of Service | ' + SITE_NAME, desc: 'The terms that govern your use of DocGen.' },
   '/legal/privacy': { title: 'Privacy Policy | ' + SITE_NAME, desc: 'What DocGen collects, what it never stores (your source code), and how data is handled.' },
   '/legal/security': { title: 'Security | ' + SITE_NAME, desc: 'How DocGen protects your data: read-only source access, no source code storage, encryption in transit.' }

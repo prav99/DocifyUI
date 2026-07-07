@@ -4,6 +4,7 @@ import { api, setToken } from '../api.js';
 import { useAuth, useFlow, toast } from '../store.jsx';
 import { IcCheck, SrcMark, HelpLink } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
+import { SUPPORT_EMAIL, supportMailto } from '../config.js';
 
 // Detect which providers have REAL OAuth configured on the server.
 function useProviders() {
@@ -243,6 +244,10 @@ export function Signup() {
               {' · '}
               <a onClick={() => nav('/')}>Back to home</a>
             </p>
+            <p className="helper mt3">
+              Trouble signing in? <a onClick={() => nav('/contact')}>Contact support</a> or email{' '}
+              <a href={supportMailto('Login help')}>{SUPPORT_EMAIL}</a>.
+            </p>
           </>
         ) : (
           <>
@@ -348,6 +353,10 @@ export function Signup() {
           Free plan, no credit card required. By creating an account you agree to the{' '}
           <a onClick={() => nav('/legal/terms')}>Terms of Service</a> and{' '}
           <a onClick={() => nav('/legal/privacy')}>Privacy Policy</a>.
+        </p>
+        <p className="helper mt3">
+          Need a hand? <a onClick={() => nav('/contact')}>Contact support</a> or email{' '}
+          <a href={supportMailto('Signup help')}>{SUPPORT_EMAIL}</a>.
         </p>
           </>
         )}

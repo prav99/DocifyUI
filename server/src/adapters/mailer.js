@@ -7,14 +7,15 @@ const cfg = {
   port: Number(process.env.SMTP_PORT || 587),
   user: process.env.SMTP_USER || '',
   pass: process.env.SMTP_PASS || '',
-  from: process.env.SMTP_FROM || 'DocGen <no-reply@docgen.local>'
+  from: process.env.SMTP_FROM || 'DocGen Support <support@docifydocai.com>'
 };
 
 export const mailEnabled = () => Boolean(cfg.host);
 
-export async function sendMail(to, subject, html) {
+export async function sendMail(to, subject, html, opts = {}) {
   if (!mailEnabled()) {
-    console.log('[mail:dev] to=' + to + ' subject=' + subject + '\n' + html);
+    console.log('[mail:dev] to=' + to + ' subject=' + subject +
+      (opts.replyTo ? ' replyTo=' + opts.replyTo : '') + '\n' + html);
     return { dev: true };
   }
   const { default: nodemailer } = await import('nodemailer');
@@ -24,5 +25,11 @@ export async function sendMail(to, subject, html) {
     secure: cfg.port === 465,
     auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined
   });
-  return transport.sendMail({ from: cfg.from, to, subject, html });
+  return transport.sendMail({
+    from: cfg.from,
+    to,
+    subject,
+    html,
+    ...(opts.replyTo ? { replyTo: opts.replyTo } : {})
+  });
 }

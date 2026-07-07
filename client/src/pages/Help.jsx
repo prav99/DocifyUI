@@ -1,6 +1,7 @@
 import React from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { usePageMeta } from '../seo.js';
+import { SUPPORT_EMAIL, supportMailto } from '../config.js';
 
 /* ---------------- Help content: one topic per screen ----------------
  * Each topic mirrors a page of the app. Pages link here via <HelpLink/>
@@ -262,7 +263,10 @@ export default function Help() {
         {' · '}
         <Link to="/docs">Product docs</Link>
       </p>
-      <p className="helper mt3">Still stuck? Email support@docgen.dev — include the page you were on and what you clicked.</p>
+      <p className="helper mt3">
+        Still stuck? <Link to="/contact">Send us a message</Link> or email{' '}
+        <a href={supportMailto('Help — ' + t.title)}>{SUPPORT_EMAIL}</a> — include the page you were on and what you clicked.
+      </p>
     </div>
   );
 }

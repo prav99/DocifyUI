@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useParams, Navigate } from 'react-router-dom';
 import { NavBar } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
+import { SUPPORT_EMAIL } from '../config.js';
 
 /* =====================================================================
    Legal & trust documents. One registry, one renderer — served in-app at
@@ -11,8 +12,10 @@ import { usePageMeta } from '../seo.js';
    ===================================================================== */
 
 const UPDATED = '2026-07-04';
-const CONTACT = 'privacy@docgen.example'; // ← replace with your real address
-const SECURITY_CONTACT = 'security@docgen.example';
+// Legal, privacy, and security enquiries all route to the single support
+// mailbox (see client/src/config.js — override with VITE_SUPPORT_EMAIL).
+const CONTACT = SUPPORT_EMAIL;
+const SECURITY_CONTACT = SUPPORT_EMAIL;
 const COMPANY = 'DocGen'; // ← replace with your legal entity name
 
 export const LEGAL = {

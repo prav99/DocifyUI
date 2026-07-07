@@ -8,3 +8,9 @@ server/.env
 .DS_Store
 server/prisma/dev.db-shm
 server/prisma/dev.db-wal
+
+# Vite dev-server temp artifacts (regenerated automatically)
+client/vite.config.js.timestamp-*.mjs
+
+# Generated QA/test reports — not source, kept out of the repo
+DocGen_QA_Test_Report.docx

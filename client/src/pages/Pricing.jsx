@@ -37,7 +37,7 @@ export default function Pricing() {
       toast('info', 'Staying on Free', '5 watermarked generations per month');
       return nav(user ? '/dashboard' : '/signup');
     }
-    toast('info', 'Request sent', 'Our enterprise team will reach out within one business day');
+    if (plan === 'enterprise') return nav('/contact?topic=enterprise');
   }
 
   return (
