@@ -17,6 +17,7 @@ import Checkout from './pages/Checkout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Automation from './pages/Automation.jsx';
 import DocSync from './pages/DocSync.jsx';
+import Founder from './pages/Founder.jsx';
 import Settings from './pages/Settings.jsx';
 import { Docs, DocArticle } from './pages/Docs.jsx';
 import Help from './pages/Help.jsx';
@@ -72,6 +73,7 @@ function App() {
               <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
               <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
               <Route path="/sync" element={<RequireAuth><DocSync /></RequireAuth>} />
+              <Route path="/founder" element={<RequireAuth><Founder /></RequireAuth>} />
               <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/docs/:slug" element={<DocArticle />} />

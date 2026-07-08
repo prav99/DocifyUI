@@ -12,6 +12,8 @@ Disallow: /export
 Disallow: /checkout
 Disallow: /settings
 Disallow: /automation
+Disallow: /sync
+Disallow: /founder
 Disallow: /oauth/
 Disallow: /api/
 

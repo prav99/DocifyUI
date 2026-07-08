@@ -15,6 +15,7 @@ import { charge } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
 import { SUPPORT_EMAIL } from './config.js';
 import { syncRouter } from './docsync.js';
+import { adminRouter } from './admin.js';
 
 export const apiRouter = Router();
 
@@ -203,6 +204,9 @@ apiRouter.use(requireAuth);
 /* Doc sync: AI-maintained existing documentation (upload → parse → commit-driven
    updates → review diff → approve/version). Implemented in docsync.js. */
 apiRouter.use('/sync', syncRouter);
+
+/* Founder metrics — restricted to ADMIN_EMAILS (see admin.js). */
+apiRouter.use('/admin', adminRouter);
 
 /* Sources */
 apiRouter.get('/sources', async (req, res) => {
