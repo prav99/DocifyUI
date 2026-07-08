@@ -7,13 +7,13 @@
 export const SITE_URL = 'https://docifydocai.com';
 const SITE_NAME = 'DocGen';
 
-const DEFAULT_DESC = 'DocGen turns code commits into standards-grade documentation, scores every page with an LLM judge, and predicts how ChatGPT, Claude, and Gemini will rank it — before you publish.';
+const DEFAULT_DESC = 'DocGen automates technical documentation end to end: connect GitHub, GitLab, or Bitbucket and every merge updates your documentation automatically — validated by an AI quality judge and scored for AI search readiness across ChatGPT, Claude, Gemini, and Copilot.';
 
 // Public, indexable routes. Anything not listed falls back to the default
 // tags (in-app routes are noindexed via robots.txt anyway).
 export const PAGE_META = {
   '/': {
-    title: 'DocGen — AI Documentation Generator with Built-In Quality & AI Ranking Scores',
+    title: 'DocGen — Automated AI Documentation Generator with Quality & AI Search Readiness Scores',
     desc: DEFAULT_DESC
   },
   '/pricing': {
