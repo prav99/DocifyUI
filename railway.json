@@ -1,10 +1,10 @@
 {
   "build": {
     "builder": "nixpacks",
-    "buildCommand": "npm install && npm install --prefix client && npm run build --prefix client && cd server && npm install"
+    "buildCommand": "npm install && npm install --prefix client && npm run build --prefix client && cd server && npm install && npx prisma generate --schema=prisma/schema.postgres.prisma"
   },
   "deploy": {
-    "startCommand": "cd server && npx prisma db push --skip-generate && (node src/seed.js || true) && npm start",
+    "startCommand": "cd server && npx prisma db push --skip-generate --schema=prisma/schema.postgres.prisma && (node src/seed.js || true) && npm start",
     "restartPolicyType": "on_failure",
     "restartPolicyMaxRetries": 3
   }

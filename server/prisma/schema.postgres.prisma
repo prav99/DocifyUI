@@ -2,11 +2,11 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Local development runs on SQLite with zero setup (DATABASE_URL=file:./dev.db).
-// Production (Railway) uses prisma/schema.postgres.prisma — SAME models, Postgres
-// provider. Keep the two files' model blocks identical when editing.
+// PRODUCTION schema (Railway / Postgres). Model blocks MUST stay identical to
+// prisma/schema.prisma (the SQLite local-dev schema). Deployed via:
+//   npx prisma db push --schema=prisma/schema.postgres.prisma
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

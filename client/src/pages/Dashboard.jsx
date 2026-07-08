@@ -9,10 +9,12 @@ export default function Dashboard() {
   const { setFlow } = useFlow();
   const [gens, setGens] = useState(null);
   const [profiles, setProfiles] = useState(null);
+  const [sync, setSync] = useState(null);
 
   useEffect(() => {
     api('/generations').then((d) => setGens(d.generations)).catch(() => setGens([]));
     api('/profiles').then((d) => setProfiles(d.profiles)).catch(() => setProfiles([]));
+    api('/sync/overview').then(setSync).catch(() => setSync({}));
   }, []);
 
   if (!gens) return <div className="page"><p className="body01 t2">Loading…</p></div>;
@@ -44,7 +46,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid3 mt7">
+        <div className="grid4 mt7">
           <Score label="Documents total" num={complete.length} helper="Across all repositories" kind="good" />
           <Score label="Avg quality score" num={avg} helper="All completed generations" kind={avg >= 85 ? 'good' : 'warn'} />
           <Score label="Automation pipelines"
@@ -53,7 +55,22 @@ export default function Dashboard() {
               ? 'Active — regenerating on every merge'
               : 'Create one — docs that maintain themselves'}
             kind={profiles && profiles.some((p) => p.status === 'active') ? 'good' : 'warn'} />
+          <Score label="Doc sync updates"
+            num={sync === null ? '…' : (sync.pending ?? 0)}
+            helper={sync && sync.ready
+              ? (sync.pending ? 'Pending your review in Doc sync' : sync.ready + ' document' + (sync.ready > 1 ? 's' : '') + ' fully in sync')
+              : 'Upload existing docs — AI keeps them current'}
+            kind={sync && sync.pending ? 'warn' : 'good'} />
         </div>
+
+        {sync && sync.pending > 0 && (
+          <div className="mt6">
+            <Notif kind="info" title={sync.pending + ' AI documentation update' + (sync.pending > 1 ? 's' : '') + ' awaiting review'}>
+              Commits were documented and placed into your existing documentation.{' '}
+              <button className="linkbtn" onClick={() => nav('/sync')}>Open the review queue →</button>
+            </Notif>
+          </div>
+        )}
 
         <h2 className="h02 mt7 mb5">Recent generations</h2>
         {complete.length === 0 ? (

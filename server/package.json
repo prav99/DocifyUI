@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node src/index.js",
+    "dev": "node --watch src/index.js",
     "start": "node src/cluster.js",
     "db:push": "prisma db push",
     "db:reset": "prisma db push --force-reset && node src/seed.js",

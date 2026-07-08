@@ -861,3 +861,97 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .logotext{font-weight:600;font-size:15px;letter-spacing:.1px;color:var(--text-primary)}
 .logogen{color:var(--button-primary)}
 .slate-mark{background:none;width:auto;height:auto}
+
+/* ============ Doc sync: AI-maintained existing documentation ============ */
+/* Parsing / indexing progress */
+.syncprog{height:4px;background:var(--border-subtle);width:100%;overflow:hidden}
+.syncprog>div{height:4px;background:var(--button-primary);transition:width .4s var(--ease)}
+.syncdoc{background:var(--layer-01);padding:var(--sp-05);display:flex;flex-direction:column;gap:var(--sp-04);border-left:3px solid var(--border-subtle)}
+.syncdoc--ready{border-left-color:var(--support-success)}
+.syncdoc--busy{border-left-color:var(--support-info)}
+.syncdoc--failed{border-left-color:var(--support-error)}
+
+/* Document outline tree */
+.outline{max-height:340px;overflow:auto;border:1px solid var(--border-subtle);background:var(--background)}
+.outline .oline{display:flex;gap:12px;align-items:baseline;padding:6px 12px;border-bottom:1px solid var(--layer-01);font-size:13px}
+.outline .oline:hover{background:var(--layer-01)}
+.outline .onum{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-placeholder);min-width:34px;text-align:right;flex:none}
+
+/* Review queue: master–detail */
+.queue{display:grid;grid-template-columns:340px 1fr;gap:var(--sp-05);align-items:start}
+@media(max-width:960px){.queue{grid-template-columns:1fr}}
+.qlist{display:flex;flex-direction:column;border:1px solid var(--border-subtle);background:var(--background);max-height:640px;overflow:auto}
+.qitem{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid transparent;background:none;font-family:inherit;font-size:13px;text-align:left;cursor:pointer;color:var(--text-primary)}
+.qitem:hover{background:var(--layer-01)}
+.qitem.on{border-left-color:var(--button-primary);background:var(--layer-01)}
+.qitem:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.qitem .qmsg{font-weight:600;line-height:1.35}
+.qitem .qmeta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--text-secondary);font-size:12px}
+
+/* Confidence meter */
+.confmeter{display:flex;align-items:center;gap:10px;min-width:140px}
+.confmeter .track{flex:1;height:6px;background:var(--border-subtle);overflow:hidden}
+.confmeter .fill{height:6px;background:var(--support-success);transition:width .3s var(--ease)}
+.confmeter.warn .fill{background:var(--support-warning)}
+.confmeter.bad .fill{background:var(--support-error)}
+.confmeter .pct{font-family:'IBM Plex Mono',monospace;font-size:13px;min-width:38px;text-align:right}
+
+/* AI reasoning panel */
+.reason{background:var(--layer-01);border-left:3px solid var(--support-info);padding:var(--sp-05);display:flex;flex-direction:column;gap:var(--sp-04)}
+.reason .rkick{font-size:11px;letter-spacing:1.2px;color:var(--support-info);font-family:'IBM Plex Mono',monospace}
+.reason .rrow{display:flex;gap:12px;align-items:baseline;font-size:13px}
+.reason .rlabel{min-width:118px;color:var(--text-secondary);font-size:12px;letter-spacing:.32px;flex:none}
+.candrow{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid var(--border-subtle);background:var(--background);font-size:13px;align-items:center}
+.candrow.best{outline:2px solid var(--button-primary);outline-offset:-2px}
+
+/* Side-by-side diff viewer */
+.diffwrap{border:1px solid var(--border-subtle);overflow:hidden}
+.diffhead{display:grid;grid-template-columns:1fr 1fr;background:var(--layer-01);border-bottom:1px solid var(--border-subtle)}
+.diffhead>div{padding:10px 16px;font-size:12px;letter-spacing:.32px;color:var(--text-secondary);font-weight:600}
+.diffhead>div:first-child{border-right:1px solid var(--border-subtle)}
+.diffbody{display:grid;grid-template-columns:1fr 1fr;max-height:480px;overflow:auto}
+.diffpane{font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.7;padding:12px 0;white-space:pre-wrap;word-break:break-word;min-width:0}
+.diffpane:first-child{border-right:1px solid var(--border-subtle)}
+.dline{display:flex;gap:10px;padding:0 12px}
+.dline .dnum{color:var(--text-placeholder);min-width:34px;text-align:right;flex:none;user-select:none;font-size:11px}
+.dline--del{background:#ffd7d9}
+.dline--del .dtext{text-decoration:line-through;text-decoration-color:#a2191f;text-decoration-thickness:1px;color:#750e13}
+.dline--add{background:#defbe6;color:#0e6027}
+.dline--ctx{color:var(--text-secondary)}
+.dline--pad{background:var(--layer-01);min-height:1.7em}
+/* Stack panes by the diff's OWN width (container query), so the header and
+   body always agree — a diff in a wide modal stays side-by-side even on a
+   narrow window, and a cramped diff stacks cleanly. */
+.diffwrap{container-type:inline-size}
+@container (max-width:700px){
+  .diffbody{grid-template-columns:1fr}
+  .diffpane:first-child{border-right:none;border-bottom:1px solid var(--border-subtle)}
+  .diffhead{grid-template-columns:1fr}
+  .diffhead>div:first-child{border-right:none}
+  .diffhead>div:last-child{display:none}
+}
+
+/* Commit timeline */
+.ctl{position:relative;padding-left:28px}
+.ctl::before{content:'';position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:var(--border-subtle)}
+.ctlitem{position:relative;padding:0 0 var(--sp-06) 0}
+.ctlitem::before{content:'';position:absolute;left:-27px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--background);border:2px solid var(--button-primary)}
+.ctlitem--done::before{background:var(--support-success);border-color:var(--support-success)}
+.ctlcard{background:var(--layer-01);padding:var(--sp-05)}
+.ctlfiles{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ctlfiles span{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--background);border:1px solid var(--border-subtle);padding:2px 8px}
+
+/* Version history */
+.vrow td .linkbtn{margin-right:12px}
+.sync-empty{border:1px dashed var(--border-strong);padding:var(--sp-07);text-align:center;background:var(--background)}
+.sync-drop{border:2px dashed var(--border-strong);padding:var(--sp-06);text-align:center;background:var(--layer-01);cursor:pointer;transition:border-color .15s var(--ease),background .15s var(--ease)}
+.sync-drop:hover,.sync-drop.over{border-color:var(--button-primary);background:#edf5ff}
+.sync-drop input{display:none}
+.statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-05)}
+@media(max-width:900px){.statgrid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.statgrid{grid-template-columns:1fr}}
+.editbox{width:100%;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.7;background:var(--field-01);border:none;border-bottom:1px solid var(--border-strong);padding:12px 16px;min-height:180px;resize:vertical;color:var(--text-primary)}
+.editbox:focus{outline:2px solid var(--focus);outline-offset:-2px}
+/* Modals that carry a diff (version compare) need real width */
+.modal:has(.diffwrap){width:980px;max-width:94vw}
+.modal .diffbody{max-height:56vh}

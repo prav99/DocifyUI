@@ -14,6 +14,7 @@ import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
 import { SUPPORT_EMAIL } from './config.js';
+import { syncRouter } from './docsync.js';
 
 export const apiRouter = Router();
 
@@ -198,6 +199,10 @@ apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
 
 /* ---------- everything below requires auth ---------- */
 apiRouter.use(requireAuth);
+
+/* Doc sync: AI-maintained existing documentation (upload → parse → commit-driven
+   updates → review diff → approve/version). Implemented in docsync.js. */
+apiRouter.use('/sync', syncRouter);
 
 /* Sources */
 apiRouter.get('/sources', async (req, res) => {

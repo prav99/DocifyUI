@@ -4,6 +4,7 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { judge } from './adapters/llm.js';
+import { parseOutline, semanticProfile, buildUpdate, COMMIT_FEED } from './docsync.js';
 
 const prisma = new PrismaClient();
 
@@ -62,6 +63,48 @@ async function main() {
       }
     });
   }
+  /* ---- Doc sync: baseline document + queued AI updates ---- */
+  const baseline = [
+    '# Payments Platform — Developer Guide', '',
+    'This guide covers integrating the Acme payments API: authentication, core', 'endpoints, error handling, and operational limits.', '',
+    '## Getting started', '',
+    'Create a workspace, generate an API key from **Settings → API keys**, and make', 'your first request against the sandbox environment at `https://sandbox.acme.dev`.', '',
+    '## Authentication', '',
+    'Every request carries a bearer token in the `Authorization` header. API keys are', 'created per environment; sandbox keys never work against production.', '',
+    '```http', 'GET /v1/charges', 'Authorization: Bearer sk_live_…', '```', '',
+    '## Endpoints', '',
+    '### Charges', '',
+    'Create and retrieve charges with `POST /v1/charges` and `GET /v1/charges/:id`.', 'Amounts are integer minor units (cents).', '',
+    '### Customers', '',
+    'Customers group charges and payment methods. Create with `POST /v1/customers`.', '',
+    '## Errors', '',
+    'The API uses conventional HTTP status codes: `4xx` for request problems and', '`5xx` for platform faults. Retry only idempotent requests.', '',
+    '## Rate limits', '',
+    'Requests are rate-limited per API key. When throttled you receive', '`429 Too Many Requests` — respect the `Retry-After` header before retrying.', '',
+    '## Webhooks', '',
+    'Subscribe to events from **Settings → Webhooks**. Deliveries are retried with', 'exponential backoff for 24 hours.', '',
+    '## Configuration', '',
+    'Runtime behaviour is tuned through environment variables documented in', '`.env.example`. Restart workers after changing them.'
+  ].join('\n');
+  const parsed = parseOutline(baseline);
+  const prof = semanticProfile(baseline, parsed.sections);
+  const doc = await prisma.syncDoc.create({
+    data: {
+      userId: user.id, name: 'payments-developer-guide.md', format: 'markdown',
+      repo: 'acme/payments-api', branch: 'main', content: baseline,
+      sections: JSON.stringify(parsed.sections),
+      profile: JSON.stringify({ ...prof, lines: parsed.lines, chars: parsed.chars, pagesEst: parsed.pagesEst }),
+      status: 'ready', progress: 100, cursor: 2
+    }
+  });
+  await prisma.syncVersion.create({
+    data: { docId: doc.id, number: 1, source: 'upload', summary: 'Baseline uploaded — ' + parsed.sections.length + ' sections, ~' + parsed.pagesEst + ' pages', content: baseline }
+  });
+  for (const commit of COMMIT_FEED.slice(0, 2)) {
+    const built = buildUpdate(doc, commit);
+    if (built) await prisma.syncUpdate.create({ data: { userId: user.id, docId: doc.id, ...built } });
+  }
+
   console.log('Seed complete. Demo login: demo@acme.dev / demo1234');
 }
 

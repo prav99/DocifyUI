@@ -180,7 +180,12 @@ export function TopBar() {
         ))}
         {user && (
           <a className={path === '/automation' ? 'on' : ''} onClick={() => nav('/automation')}>
-            Automation<span className="navnew">●</span>
+            Automation
+          </a>
+        )}
+        {user && (
+          <a className={path === '/sync' ? 'on' : ''} onClick={() => nav('/sync')}>
+            Doc sync<span className="navnew">●</span>
           </a>
         )}
       </nav>
@@ -237,6 +242,7 @@ function UserMenu({ user }) {
         <div className="umenu" role="menu">
           <button role="menuitem" onClick={() => go('/dashboard')}>Dashboard</button>
           <button role="menuitem" onClick={() => go('/automation')}>Automation</button>
+          <button role="menuitem" onClick={() => go('/sync')}>Doc sync</button>
           <button role="menuitem" onClick={() => go('/settings')}>Team &amp; settings</button>
           <div className="umenu-div" />
           <button role="menuitem" className="umenu-out" onClick={signOut}>Log out</button>
