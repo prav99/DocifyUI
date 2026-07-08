@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Automation from './pages/Automation.jsx';
 import DocSync from './pages/DocSync.jsx';
 import Founder from './pages/Founder.jsx';
+import Assistant from './Assistant.jsx';
 import Settings from './pages/Settings.jsx';
 import { Docs, DocArticle } from './pages/Docs.jsx';
 import Help from './pages/Help.jsx';
@@ -85,6 +86,7 @@ function App() {
             </Routes>
           </main>
           <Toasts />
+          <Assistant />
         </FlowProvider>
       </AuthProvider>
     </BrowserRouter>

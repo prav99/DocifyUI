@@ -955,3 +955,45 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 /* Modals that carry a diff (version compare) need real width */
 .modal:has(.diffwrap){width:980px;max-width:94vw}
 .modal .diffbody{max-height:56vh}
+
+/* ============ Site assistant (floating chat, bottom right) ============ */
+.asst-launcher{position:fixed;right:20px;bottom:20px;z-index:140;width:56px;height:56px;background:var(--button-primary);border:none;border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(15,98,254,.4);transition:background .07s var(--ease)}
+.asst-launcher:hover{background:var(--button-primary-hover)}
+.asst-launcher:active{background:var(--button-primary-active)}
+.asst-launcher:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.asst-panel{position:fixed;right:20px;bottom:88px;z-index:140;width:372px;max-width:calc(100vw - 24px);height:540px;max-height:calc(100vh - 120px);background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 8px 28px rgba(22,22,22,.28);display:flex;flex-direction:column;animation:fadeup .2s var(--ease)}
+.asst-head{background:#161616;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex:none}
+.asst-title{font-size:14px;font-weight:600;letter-spacing:.16px}
+.asst-sub{font-size:11px;color:#c6c6c6;letter-spacing:.32px;margin-top:2px}
+.asst-close{background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:4px 6px;flex:none}
+.asst-close:hover{background:#393939}
+.asst-close:focus-visible{outline:2px solid #fff;outline-offset:-2px}
+.asst-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.asst-msg{max-width:85%;padding:10px 12px;font-size:13px;line-height:1.45}
+.asst-msg p{margin:0}
+.asst-msg--bot{background:var(--layer-01);color:var(--text-primary);align-self:flex-start}
+.asst-msg--user{background:var(--button-primary);color:#fff;align-self:flex-end}
+.asst-action{display:inline-flex;align-items:center;gap:4px;margin-top:10px;font-family:inherit;font-size:13px;color:var(--link-primary);background:var(--background);border:1px solid var(--button-primary);padding:7px 12px;cursor:pointer;text-decoration:none;transition:background .07s var(--ease),color .07s var(--ease)}
+.asst-action:hover{background:var(--button-primary);color:#fff;text-decoration:none}
+.asst-action:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.asst-chips{display:flex;flex-direction:column;gap:6px;align-items:flex-start;margin-top:4px}
+.asst-chip{font-family:inherit;font-size:12px;color:var(--link-primary);background:var(--background);border:1px solid var(--border-subtle);padding:7px 12px;cursor:pointer;transition:border-color .07s var(--ease)}
+.asst-chip:hover{border-color:var(--button-primary)}
+.asst-typing{display:inline-flex;gap:4px;padding:2px 0}
+.asst-typing i{width:6px;height:6px;border-radius:50%;background:var(--text-placeholder);animation:pulse 1s var(--ease) infinite}
+.asst-typing i:nth-child(2){animation-delay:.2s}
+.asst-typing i:nth-child(3){animation-delay:.4s}
+.asst-foot{font-size:11px;color:var(--text-secondary);letter-spacing:.32px;padding:8px 16px;border-top:1px solid var(--border-subtle);flex:none}
+.asst-inputrow{display:flex;flex:none;border-top:1px solid var(--border-subtle)}
+.asst-input{flex:1;font-family:inherit;font-size:14px;color:var(--text-primary);background:var(--field-01);border:none;padding:0 16px;height:48px}
+.asst-input::placeholder{color:var(--text-placeholder)}
+.asst-input:focus{outline:2px solid var(--focus);outline-offset:-2px}
+.asst-send{width:48px;height:48px;background:var(--button-primary);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}
+.asst-send:hover{background:var(--button-primary-hover)}
+.asst-send:disabled{background:#c6c6c6;color:#8d8d8d;cursor:not-allowed}
+.asst-send:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+@media(max-width:600px){
+  .asst-panel{right:12px;bottom:80px;height:65vh}
+  .asst-launcher{right:12px;bottom:12px;width:48px;height:48px}
+}
+@media print{.asst-launcher,.asst-panel{display:none}}
