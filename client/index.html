@@ -17,25 +17,25 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
 
     <!-- ============ ANALYTICS ============ -->
-    <!-- Replace GA_MEASUREMENT_ID with your Google Analytics 4 ID (looks like G-XXXXXXXXXX) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
+    <!-- Google Analytics 4 — property "DocGen - docifydocai.com" -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-NQC5YKYCMF"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){ dataLayer.push(arguments); }
       gtag('js', new Date());
       // send_page_view:false because this is a single-page app — pageviews are sent
       // manually on every route change from src/analytics.js (avoids miscounting).
-      gtag('config', 'GA_MEASUREMENT_ID', { send_page_view: false });
+      gtag('config', 'G-NQC5YKYCMF', { send_page_view: false });
     </script>
 
-    <!-- Replace CLARITY_PROJECT_ID with your Microsoft Clarity project ID -->
+    <!-- Microsoft Clarity — project "DocGen website" -->
     <!-- Clarity auto-records heatmaps + session replays of every click; no extra code needed. -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
         c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
         t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
         y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-      })(window, document, "clarity", "script", "CLARITY_PROJECT_ID");
+      })(window, document, "clarity", "script", "xja1tjpafu");
     </script>
     <!-- ============ /ANALYTICS ============ -->
   </head>
