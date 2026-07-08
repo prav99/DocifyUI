@@ -10,7 +10,7 @@ import { NavBar, ScoreTag, IcCheck, HelpLink } from '../ui.jsx';
    detail (webhook, simulations, run history, effectiveness trends).
    ===================================================================== */
 
-const WIZ_STEPS = ['Repository', 'Branch', 'Merge & traceability', 'Documents', 'AI quality & ranking', 'Publish & notify'];
+const WIZ_STEPS = ['Repository', 'Branch', 'Triggers', 'Documents', 'Quality checks', 'Publish & notify'];
 
 const DEFAULT_CFG = {
   provider: 'github', repo: '',
@@ -23,14 +23,6 @@ const DEFAULT_CFG = {
   publishTo: 'workspace', notifyEmail: '', notifyOn: { success: true, blocked: true, failure: true }
 };
 
-const POLICY_DESC = {
-  place: 'Contextual placement (recommended). DocGen documents only the merged change, then searches the existing mapped document and splices it into the single best-matching location — updating that section in place, or inserting a new sub-section under the closest parent. One large document stays current; never a standalone duplicate.',
-  auto: 'Intelligent. Release metadata cuts a new version; every other merge is placed contextually inside the existing document at the best-matching section.',
-  update: 'Always update the mapped document in place.',
-  create: 'Always create a new document per merge.',
-  version: 'Every merge produces a new version of the mapped document.'
-};
-
 const OUTCOME_TAG = {
   published: ['tag--green', 'Published'],
   held: ['tag--red', 'Gate blocked'],
@@ -41,6 +33,37 @@ const TRIGGER_LABEL = { webhook: 'Merge (webhook)', simulate: 'Simulated merge',
 
 function fmtWhen(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+/* ---------------- Collapsible "Advanced" section: keeps the main path clean ---------------- */
+function Adv({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="acc mt6">
+      <div className={'acc-item' + (open ? ' open' : '')}>
+        <button type="button" className="acc-btn" onClick={() => setOpen((o) => !o)}>
+          {title}<span className="acc-chev">▾</span>
+        </button>
+        {open && <div style={{ padding: '4px 8px 20px' }}>{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Radio row with a one-line explanation ---------------- */
+function RadioRow({ on, label, sub, tag, onClick }) {
+  return (
+    <div className={'radioline' + (on ? ' on' : '')} onClick={onClick} role="radio" aria-checked={on}
+      style={{ alignItems: 'flex-start' }}>
+      <span className="rdot" style={{ marginTop: 2 }} />
+      <span>
+        <span className="body01" style={{ display: 'block', fontWeight: on ? 600 : 400 }}>
+          {label}{tag && <span className="tag tag--blue" style={{ marginLeft: 8, verticalAlign: 'middle' }}>{tag}</span>}
+        </span>
+        <span className="helper">{sub}</span>
+      </span>
+    </div>
+  );
 }
 
 /* ---------------- Toggle row ---------------- */
@@ -271,69 +294,70 @@ function Wizard({ existing, catalog, onDone }) {
 
         {step === 2 && (
           <>
-            <h2 className="h02 mb2">Step 3 · Merge triggers &amp; traceability</h2>
-            <p className="helper mb5">Which events run the pipeline, which file changes count, and how each merge is traced back to a Jira issue.</p>
+            <h2 className="h02 mb2">Step 3 · When should docs update?</h2>
+            <p className="helper mb5">Pick what triggers a documentation update. Most teams keep both on.</p>
             <div className="stack">
-              <Tog on={cfg.events.push} label="Direct pushes / merges to the branch"
-                sub="GitHub, GitLab, and Bitbucket push events"
+              <Tog on={cfg.events.push} label="When code is pushed"
+                sub="Any push to the watched branch"
                 onClick={() => set({ events: { ...cfg.events, push: !cfg.events.push } })} />
-              <Tog on={cfg.events.mergedPr} label="Merged pull requests"
-                sub="Fires only when a PR is merged — not on open or sync"
+              <Tog on={cfg.events.mergedPr} label="When a pull request is merged"
+                sub="Only completed merges — never open or draft PRs"
                 onClick={() => set({ events: { ...cfg.events, mergedPr: !cfg.events.mergedPr } })} />
             </div>
-            <div className="field mt5">
-              <label htmlFor="wzpath">Path filter (optional)</label>
-              <input id="wzpath" className="input" placeholder="e.g. src/, api/  — comma separated; empty = all changes"
-                defaultValue={cfg.pathFilter} onBlur={(e) => set({ pathFilter: e.target.value.trim() })} />
-            </div>
-            <p className="helper">When set, merges whose changed files match none of these paths are ignored.</p>
-
-            <div className="divider" style={{ margin: '20px 0' }} />
-            <p className="label01 t2 mb2">JIRA ↔ GITHUB TRACEABILITY</p>
-            <p className="helper mb3">Link every merge to the Jira issue it delivered — the commit references the key (<span className="mono">KAN-42 fix: …</span>) or the branch does (<span className="mono">feature/KAN-42-…</span>). DocGen resolves the key back to the exact commit, so only the documentation for that issue’s change is placed.</p>
-            <div className="stack">
-              <Tog on={cfg.jira.enabled} label="Trace merges to Jira issues"
-                sub="Resolves the issue key from the commit message or branch — no extra API round-trip"
-                onClick={() => set({ jira: { ...cfg.jira, enabled: !cfg.jira.enabled } })} />
-            </div>
-            {cfg.jira.enabled && (
-              <>
-                <div className="grid2 mt5">
-                  <div className="field">
-                    <label htmlFor="wzjkey">Project key (optional)</label>
-                    <input id="wzjkey" className="input" placeholder="e.g. KAN — blank matches any PROJECT-###"
-                      defaultValue={cfg.jira.projectKey}
-                      onBlur={(e) => set({ jira: { ...cfg.jira, projectKey: e.target.value.trim().toUpperCase() } })} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="wzjsite">Jira site (optional — for deep links)</label>
-                    <input id="wzjsite" className="input" placeholder="https://yourteam.atlassian.net"
-                      defaultValue={cfg.jira.site}
-                      onBlur={(e) => set({ jira: { ...cfg.jira, site: e.target.value.trim() } })} />
-                  </div>
-                </div>
-                <div className="stack">
-                  <Tog on={cfg.jira.requireIssue} label="Require a linked issue"
-                    sub="Merges with no resolvable Jira key are held for review instead of documented"
-                    onClick={() => set({ jira: { ...cfg.jira, requireIssue: !cfg.jira.requireIssue } })} />
-                </div>
-                <p className="helper">Connect your Atlassian account under Settings → Connected sources to validate keys and pull issue summaries. Key-in-commit matching works even without it.</p>
-              </>
+            {!cfg.events.push && !cfg.events.mergedPr && (
+              <p className="helper mt3" style={{ color: 'var(--support-error)' }}>Both triggers are off — this pipeline will only run manually.</p>
             )}
+
+            <Adv title="Advanced — watch specific folders, link Jira issues" defaultOpen={!!cfg.pathFilter || cfg.jira.enabled}>
+              <div className="field">
+                <label htmlFor="wzpath">Only react to changes in these folders</label>
+                <input id="wzpath" className="input" placeholder="src/, api/ — leave empty to watch everything"
+                  defaultValue={cfg.pathFilter} onBlur={(e) => set({ pathFilter: e.target.value.trim() })} />
+              </div>
+              <div className="stack">
+                <Tog on={cfg.jira.enabled} label="Tag each update with its Jira issue"
+                  sub={<>Reads the issue key from the commit or branch — e.g. <span className="mono">KAN-42</span></>}
+                  onClick={() => set({ jira: { ...cfg.jira, enabled: !cfg.jira.enabled } })} />
+              </div>
+              {cfg.jira.enabled && (
+                <>
+                  <div className="grid2 mt5">
+                    <div className="field">
+                      <label htmlFor="wzjkey">Jira project key (optional)</label>
+                      <input id="wzjkey" className="input" placeholder="e.g. KAN"
+                        defaultValue={cfg.jira.projectKey}
+                        onBlur={(e) => set({ jira: { ...cfg.jira, projectKey: e.target.value.trim().toUpperCase() } })} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="wzjsite">Jira site URL (optional)</label>
+                      <input id="wzjsite" className="input" placeholder="https://yourteam.atlassian.net"
+                        defaultValue={cfg.jira.site}
+                        onBlur={(e) => set({ jira: { ...cfg.jira, site: e.target.value.trim() } })} />
+                    </div>
+                  </div>
+                  <div className="stack">
+                    <Tog on={cfg.jira.requireIssue} label="Skip commits that have no Jira issue"
+                      sub="They are held for review instead of documented"
+                      onClick={() => set({ jira: { ...cfg.jira, requireIssue: !cfg.jira.requireIssue } })} />
+                  </div>
+                </>
+              )}
+            </Adv>
           </>
         )}
 
         {step === 3 && (
           <>
-            <h2 className="h02 mb2">Step 4 · Documents to generate or update</h2>
-            <p className="helper mb5">What this pipeline maintains, and how it avoids duplicates.</p>
-            <div className="row mb5" style={{ gap: 0 }}>
+            <h2 className="h02 mb2">Step 4 · What should it maintain?</h2>
+            <p className="helper mb5">Choose the documents this pipeline keeps up to date.</p>
+
+            <p className="label01 t2 mb3">KIND OF DOCUMENTATION</p>
+            <div className="row mb3" style={{ gap: 0 }}>
               {[['technical', 'Technical documentation'], ['marketing', 'Marketing material']].map(([t, l]) => (
                 <button key={t} className={'chip' + (cfg.track === t ? ' on' : '')}
-                  onClick={() => set({ track: t, docTypes: [], format: '' })}>{l}</button>
+                  onClick={() => set({ track: t, docTypes: [], format: ((catalog.formats[t] || []).filter((f) => f.ok)[0] || {}).id || 'markdown' })}>{l}</button>
               ))}
             </div>
-            <p className="label01 t2 mb3">DOCUMENT TYPES</p>
             <div className="row" style={{ flexWrap: 'wrap' }}>
               {types.map((d) => (
                 <button key={d.id} className={'chip' + (cfg.docTypes.includes(d.id) ? ' on' : '')}
@@ -342,49 +366,37 @@ function Wizard({ existing, catalog, onDone }) {
                 </button>
               ))}
             </div>
-            <div className="grid2 mt5">
-              <div className="field">
-                <label htmlFor="wzfmt">Output format</label>
-                <select id="wzfmt" className="select" value={cfg.format} onChange={(e) => set({ format: e.target.value })}>
-                  <option value="">Select…</option>
-                  {formats.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="wztpl">Options &amp; skill template</label>
-                <select id="wztpl" className="select" value={cfg.templateFrom} onChange={(e) => set({ templateFrom: e.target.value })}>
-                  <option value="latest">Reuse my latest generation&apos;s configuration</option>
-                  <option value="defaults">Standard defaults</option>
-                </select>
-              </div>
+            {cfg.docTypes.length === 0 && <p className="helper mt2">Pick at least one document type.</p>}
+
+            <p className="label01 t2 mb3 mt6">WHEN A CHANGE ARRIVES</p>
+            <div style={{ border: '1px solid var(--border-subtle)' }} role="radiogroup" aria-label="Update behaviour">
+              <RadioRow on={cfg.updatePolicy === 'place'} tag="recommended"
+                label="Update my existing document"
+                sub="Each change is placed into the best-matching section — one document stays current, no duplicates."
+                onClick={() => set({ updatePolicy: 'place' })} />
+              <RadioRow on={cfg.updatePolicy === 'auto'}
+                label="Update my document, and version releases"
+                sub="Same as above, but release merges (v2.4.0 etc.) also snapshot a new version."
+                onClick={() => set({ updatePolicy: 'auto' })} />
+              <RadioRow on={cfg.updatePolicy === 'version'}
+                label="New version on every merge"
+                sub="Keeps a full published history — the document is re-issued each time."
+                onClick={() => set({ updatePolicy: 'version' })} />
+              <RadioRow on={cfg.updatePolicy === 'create'}
+                label="New standalone document each merge"
+                sub="No shared document — every merge produces its own file."
+                onClick={() => set({ updatePolicy: 'create' })} />
+              {cfg.updatePolicy === 'update' && (
+                <RadioRow on label="Rewrite the whole document each merge (legacy)"
+                  sub="This pipeline was saved with the older policy — pick any option above to change it."
+                  onClick={() => {}} />
+              )}
             </div>
-            <div className="grid2">
-              <div className="field">
-                <label htmlFor="wzpol">Update policy</label>
-                <select id="wzpol" className="select" value={cfg.updatePolicy} onChange={(e) => set({ updatePolicy: e.target.value })}>
-                  <option value="place">Contextual placement (recommended)</option>
-                  <option value="auto">Intelligent (place + auto-version)</option>
-                  <option value="update">Always update in place</option>
-                  <option value="version">Always new version</option>
-                  <option value="create">Always new document</option>
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="wzver">Versioning strategy</label>
-                <select id="wzver" className="select" value={cfg.versioning} onChange={(e) => set({ versioning: e.target.value })}>
-                  <option value="semver-patch">SemVer — bump patch (2.4.0 → 2.4.1)</option>
-                  <option value="semver-minor">SemVer — bump minor (2.4.0 → 2.5.0)</option>
-                  <option value="date">Date-based (2026.07.04)</option>
-                </select>
-              </div>
-            </div>
-            <p className="helper">{POLICY_DESC[cfg.updatePolicy]}</p>
 
             {(cfg.updatePolicy === 'place' || cfg.updatePolicy === 'auto') && (
               <>
-                <div className="divider" style={{ margin: '18px 0' }} />
-                <p className="label01 t2 mb2">DOCUMENT TO PLACE INTO</p>
-                <p className="helper mb3">Upload your existing documentation — each merge is spliced into its best-matching section instead of creating a standalone file. Markdown (.md) or text (.txt) today; PDF, Word, and Confluence/Notion coming next. DocGen stores only the section outline, never your full document body.</p>
+                <p className="label01 t2 mb2 mt6">YOUR EXISTING DOCUMENT <span style={{ textTransform: 'none', letterSpacing: 0 }}>(optional)</span></p>
+                <p className="helper mb3">Upload it once and changes land in the right section of <i>your</i> document. Markdown or text — only the outline is stored, never the body.</p>
                 <input ref={wzFileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text" style={{ display: 'none' }} onChange={onWzFile} />
                 {srcName ? (
                   <div className="prun">
@@ -397,11 +409,37 @@ function Wizard({ existing, catalog, onDone }) {
                     </div>
                   </div>
                 ) : (
-                  <button className="btn btn--tertiary" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Choose file<span className="ico">↑</span></button>
+                  <button className="btn btn--tertiary" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Upload document<span className="ico">↑</span></button>
                 )}
-                <p className="helper mt2">Optional — without a document, changes are placed using the standard {cfg.docTypes[0] || 'doc-type'} outline. You can preview exact placements after saving.</p>
               </>
             )}
+
+            <Adv title="Advanced — output format, version numbering, template">
+              <div className="grid2">
+                <div className="field">
+                  <label htmlFor="wzfmt">Output format</label>
+                  <select id="wzfmt" className="select" value={cfg.format} onChange={(e) => set({ format: e.target.value })}>
+                    <option value="">Select…</option>
+                    {formats.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="wzver">Version numbering</label>
+                  <select id="wzver" className="select" value={cfg.versioning} onChange={(e) => set({ versioning: e.target.value })}>
+                    <option value="semver-patch">Small steps — 2.4.0 → 2.4.1</option>
+                    <option value="semver-minor">Bigger steps — 2.4.0 → 2.5.0</option>
+                    <option value="date">By date — 2026.07.08</option>
+                  </select>
+                </div>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="wztpl">Generation settings</label>
+                <select id="wztpl" className="select" value={cfg.templateFrom} onChange={(e) => set({ templateFrom: e.target.value })}>
+                  <option value="latest">Reuse my last generation&apos;s settings</option>
+                  <option value="defaults">Standard defaults</option>
+                </select>
+              </div>
+            </Adv>
           </>
         )}
 
