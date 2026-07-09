@@ -1027,15 +1027,12 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .relief{padding:8px 0 4px}
 .relief-main{margin:0;font-size:32px;line-height:1.25;font-weight:600;letter-spacing:-.01em;color:var(--text-primary);display:inline-block;position:relative;opacity:0;transform:translateY(18px)}
 .relief-blue{color:var(--link-primary)}
-.relief-main::after{content:'';position:absolute;left:0;bottom:-10px;height:4px;width:100%;background:var(--link-primary);transform:scaleX(0);transform-origin:left}
 .reveal--on .relief-main{animation:relief-up .6s cubic-bezier(.2,.6,.2,1) .15s forwards}
-.reveal--on .relief-main::after{animation:relief-line .9s cubic-bezier(.2,.6,.2,1) .8s forwards}
 .relief-sub{margin:24px 0 0;font-size:16px;color:var(--text-secondary);opacity:0;transform:translateY(12px)}
 .reveal--on .relief-sub{animation:relief-up .6s cubic-bezier(.2,.6,.2,1) 1.15s forwards}
 .relief-arrow{display:inline-block;color:var(--link-primary);font-weight:600;margin-left:2px}
 .reveal--on .relief-arrow{animation:relief-bob 1.8s ease-in-out 2.2s infinite}
 @keyframes relief-up{to{opacity:1;transform:translateY(0)}}
-@keyframes relief-line{to{transform:scaleX(1)}}
 @keyframes relief-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
 @media (max-width:640px){.relief-main{font-size:24px}}
-@media (prefers-reduced-motion:reduce){.relief-main,.relief-sub{opacity:1;transform:none;animation:none}.reveal--on .relief-main::after{animation:none;transform:scaleX(1)}.reveal--on .relief-arrow{animation:none}}
+@media (prefers-reduced-motion:reduce){.relief-main,.relief-sub{opacity:1;transform:none;animation:none}.reveal--on .relief-arrow{animation:none}}

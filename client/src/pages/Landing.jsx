@@ -388,8 +388,8 @@ export default function Landing() {
             two sprints ago.
           </p>
           <div className="relief mt6">
-            <p className="relief-main">DocGen ends that pain — <span className="relief-blue">for good.</span></p>
-            <p className="relief-sub">Take a breath. Press play. Watch it happen <span className="relief-arrow" aria-hidden="true">↓</span></p>
+            <p className="relief-main">DocGen closes that gap — <span className="relief-blue">permanently.</span></p>
+            <p className="relief-sub">See the complete workflow, in thirty seconds <span className="relief-arrow" aria-hidden="true">↓</span></p>
           </div>
         </Reveal>
       </div>
