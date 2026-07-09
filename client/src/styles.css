@@ -968,6 +968,17 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 /* ============ Landing polish: value tiles + film anchors ============ */
 .valtile{border-top:2px solid transparent;transition:transform .15s var(--ease),box-shadow .15s var(--ease),border-color .15s var(--ease)}
 .valtile:hover{transform:translateY(-4px);border-top-color:var(--button-primary);box-shadow:0 12px 24px rgba(22,22,22,.12)}
+
+/* ============ Film poster cards (resting state — light, designed, no black void) ============ */
+.vid-poster2{display:flex;align-items:center;justify-content:space-between;gap:32px;width:100%;min-height:340px;padding:48px 56px;background:linear-gradient(105deg,var(--background) 55%,#edf5ff 100%);border:none;cursor:pointer;font-family:inherit;text-align:left;transition:background .15s var(--ease)}
+.vid-poster2:hover .vid-playbtn{transform:scale(1.08)}
+.vid-poster2:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.vp2-text{display:flex;flex-direction:column;gap:14px;max-width:720px}
+.vp2-kicker{font-size:13px;letter-spacing:2px;color:var(--support-info)}
+.vp2-title{font-size:clamp(24px,2.2vw,34px);line-height:1.25;font-weight:600;color:var(--text-primary)}
+.vp2-sub{font-size:16px;line-height:1.55;color:var(--text-secondary);max-width:560px}
+.vp2-meta{font-size:13px;letter-spacing:.32px;color:var(--link-primary);font-weight:600;margin-top:6px}
+@media(max-width:760px){.vid-poster2{flex-direction:column;align-items:flex-start;padding:32px 24px;min-height:0}.vid-poster2 .vid-playbtn{align-self:center}}
 #film-automation,#film-generate,#film-ai{scroll-margin-top:64px}
 /* Modals that carry a diff (version compare) need real width */
 .modal:has(.diffwrap){width:980px;max-width:94vw}

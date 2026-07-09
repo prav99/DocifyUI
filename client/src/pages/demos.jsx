@@ -179,7 +179,8 @@ const AUTO_SCENES = [
 ];
 
 export function AutomationDemo() {
-  return <DemoShell name="complete automation" crumb="docgen / automation / on-merge" scenes={AUTO_SCENES} />;
+  return <DemoShell name="complete automation" crumb="docgen / automation / on-merge" scenes={AUTO_SCENES}
+    posterMeta={{ kicker: 'FILM 01 · COMPLETE AUTOMATION', title: 'Your code changes. Your documentation updates automatically.', sub: 'A pull request merges — and verified, published documentation follows. The whole loop, end to end.', mins: '~1½ min' }} />;
 }
 
 /* =========================================================================
@@ -299,7 +300,8 @@ const AICOMPAT_SCENES = [
 ];
 
 export function AICompatDemo() {
-  return <DemoShell name="AI compatibility" crumb="docgen / quality / ai-compatibility" scenes={AICOMPAT_SCENES} />;
+  return <DemoShell name="AI compatibility" crumb="docgen / quality / ai-compatibility" scenes={AICOMPAT_SCENES}
+    posterMeta={{ kicker: 'FILM 03 · AI COMPATIBILITY', title: 'Documentation people understand — and AI systems trust.', sub: 'The AI Search Readiness Score: nine dimensions, exact fixes, and one document climbing from 62 to 91.', mins: '~1¼ min' }} />;
 }
 
 /* =========================================================================
@@ -404,5 +406,6 @@ const GEN_SCENES = [
 ];
 
 export function GenerateDemo() {
-  return <DemoShell name="standard generation" crumb="docgen / generate / new-project" scenes={GEN_SCENES} />;
+  return <DemoShell name="standard generation" crumb="docgen / generate / new-project" scenes={GEN_SCENES}
+    posterMeta={{ kicker: 'FILM 02 · GENERATE ON DEMAND', title: 'Complex technical input → professional documentation, in minutes.', sub: 'Source, document type, format, audience — then generation, verification, and export.', mins: '~1¼ min' }} />;
 }

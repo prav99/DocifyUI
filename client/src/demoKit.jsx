@@ -147,7 +147,7 @@ export function CountTo({ from = 0, to = 96, delay = 1200, dur = 3000 }) {
    DemoShell — the whole player. Feed it scenes; it does the rest.
    scenes: [{ label, vo, dur, render() }]
    ========================================================================= */
-export function DemoShell({ name, crumb, scenes, poster = 'Play demo · sound on' }) {
+export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Play demo · sound on' }) {
   const [scene, setScene] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [started, setStarted] = useState(false);
@@ -189,6 +189,28 @@ export function DemoShell({ name, crumb, scenes, poster = 'Play demo · sound on
       return nv;
     });
   };
+
+  // Resting state: a designed light poster card — no black void while scrolling.
+  if (!started && posterMeta) {
+    return (
+      <div className="demo-window">
+        <div className="demo-chrome">
+          <span className="demo-shellname">DocGen</span>
+          <span className="crumb">{crumb}</span>
+          <span className="spacer" style={{ flex: 1 }} />
+        </div>
+        <button className="vid-poster2" onClick={play} aria-label={'Play ' + name + ' demo with sound'}>
+          <span className="vp2-text">
+            <span className="vp2-kicker mono">{posterMeta.kicker}</span>
+            <span className="vp2-title">{posterMeta.title}</span>
+            <span className="vp2-sub">{posterMeta.sub}</span>
+            <span className="vp2-meta">▶ Play with voiceover · {posterMeta.mins} · captions included</span>
+          </span>
+          <span className="vid-playbtn" aria-hidden="true">▶</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="demo-window">

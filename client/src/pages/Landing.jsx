@@ -147,15 +147,15 @@ function IlluSource() {
 function IlluGenerate() {
   return (
     <svg className="illus" viewBox="0 0 400 260" fill="none" aria-hidden="true">
-      <rect x="24" y="40" width="150" height="180" fill="#262626" />
-      <rect className="shim" x="40" y="60" width="60" height="6" fill="#3ddbd9" />
-      <rect x="40" y="76" width="100" height="6" fill="#525252" />
-      <rect x="52" y="92" width="88" height="6" fill="#525252" />
-      <rect className="shim sd2" x="52" y="108" width="64" height="6" fill="#be95ff" />
-      <rect x="40" y="124" width="90" height="6" fill="#525252" />
-      <rect className="shim sd3" x="40" y="152" width="72" height="6" fill="#3ddbd9" />
-      <rect x="52" y="168" width="96" height="6" fill="#525252" />
-      <rect x="40" y="184" width="80" height="6" fill="#525252" />
+      <rect x="24" y="40" width="150" height="180" fill="#f4f4f4" stroke="#e0e0e0" strokeWidth="1.5" />
+      <rect className="shim" x="40" y="60" width="60" height="6" fill="#007d79" />
+      <rect x="40" y="76" width="100" height="6" fill="#c6c6c6" />
+      <rect x="52" y="92" width="88" height="6" fill="#c6c6c6" />
+      <rect className="shim sd2" x="52" y="108" width="64" height="6" fill="#6929c4" />
+      <rect x="40" y="124" width="90" height="6" fill="#c6c6c6" />
+      <rect className="shim sd3" x="40" y="152" width="72" height="6" fill="#007d79" />
+      <rect x="52" y="168" width="96" height="6" fill="#c6c6c6" />
+      <rect x="40" y="184" width="80" height="6" fill="#c6c6c6" />
       <path className="slidearrow" d="M174 130h44m0 0-10-10m10 10-10 10" stroke="#0f62fe" strokeWidth="2.5" />
       <rect x="230" y="36" width="146" height="188" fill="#ffffff" stroke="#e0e0e0" strokeWidth="1.5" />
       <rect className="hgrow" x="248" y="56" width="84" height="10" fill="#161616" />
@@ -201,20 +201,20 @@ function IlluRank() {
   const rows = [['ChatGPT', 94, '#24a148'], ['Claude', 97, '#24a148'], ['Gemini', 84, '#0f62fe']];
   return (
     <svg className="illus" viewBox="0 0 400 260" fill="none" aria-hidden="true">
-      <rect x="24" y="28" width="352" height="204" fill="#161616" />
-      <text x="48" y="60" fill="#78a9ff" fontFamily="IBM Plex Mono, monospace" fontSize="11" letterSpacing="2">RANKING OUTLOOK</text>
-      <text x="48" y="80" fill="#8d8d8d" fontFamily="IBM Plex Sans, sans-serif" fontSize="10">chance to be retrieved &amp; cited · recomputed on every fix</text>
+      <rect x="24" y="28" width="352" height="204" fill="#ffffff" stroke="#e0e0e0" strokeWidth="1.5" />
+      <text x="48" y="60" fill="#0043ce" fontFamily="IBM Plex Mono, monospace" fontSize="11" letterSpacing="2">RANKING OUTLOOK</text>
+      <text x="48" y="80" fill="#525252" fontFamily="IBM Plex Sans, sans-serif" fontSize="10">chance to be retrieved &amp; cited · recomputed on every fix</text>
       {rows.map(([n, p, c], i) => (
         <g key={n}>
-          <text x="48" y={116 + i * 38} fill="#f4f4f4" fontFamily="IBM Plex Sans, sans-serif" fontSize="13">{n}</text>
-          <rect x="130" y={106 + i * 38} width="180" height="8" fill="#393939" />
+          <text x="48" y={116 + i * 38} fill="#161616" fontFamily="IBM Plex Sans, sans-serif" fontSize="13">{n}</text>
+          <rect x="130" y={106 + i * 38} width="180" height="8" fill="#e0e0e0" />
           <rect className="hv-line" style={{ animationDelay: (0.4 + i * 0.35) + 's' }}
             x="130" y={106 + i * 38} width={180 * p / 100} height="8" fill={c} />
-          <text x="322" y={116 + i * 38} fill="#f4f4f4" fontFamily="IBM Plex Mono, monospace" fontSize="14">{p}%</text>
+          <text x="322" y={116 + i * 38} fill="#161616" fontFamily="IBM Plex Mono, monospace" fontSize="14">{p}%</text>
         </g>
       ))}
-      <rect x="48" y="196" width="150" height="22" fill="#262626" />
-      <text x="58" y="211" fill="#42be65" fontFamily="IBM Plex Mono, monospace" fontSize="10">▲ +46 pts after fixes</text>
+      <rect x="48" y="196" width="150" height="22" fill="#defbe6" />
+      <text x="58" y="211" fill="#0e6027" fontFamily="IBM Plex Mono, monospace" fontSize="10">▲ +46 pts after fixes</text>
     </svg>
   );
 }
