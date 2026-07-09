@@ -11,6 +11,26 @@ import { DemoShell, TitleSlate, CountTo } from '../demoKit.jsx';
    3. AICompatDemo    — "Documentation people understand and AI systems trust."
    ========================================================================= */
 
+/* ---------- Up-next pointer: elegant cross-navigation between films ---------- */
+function NextPointer({ target, kicker, title }) {
+  const go = () => {
+    const el = document.getElementById(target);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  return (
+    <div style={{ padding: '8px 0' }}>
+      <p className="label01 t2 mb3">UP NEXT</p>
+      <button className="nextcard" onClick={go}>
+        <span>
+          <span className="nextcard-kicker mono">{kicker}</span>
+          <span className="nextcard-title">{title}</span>
+        </span>
+        <span className="nextcard-arrow" aria-hidden="true">→</span>
+      </button>
+    </div>
+  );
+}
+
 /* ---------- small shared scene atoms ---------- */
 const Pipe = ({ steps, gap = 1.7 }) => (
   <div>
@@ -141,17 +161,15 @@ const AUTO_SCENES = [
     )
   },
   {
-    label: 'Verify', dur: 9500,
-    vo: 'Before anything ships, the checks run: content quality, link integrity, style compliance, and AI readiness. This run scores ninety-two — the gate is eighty-five.',
+    label: 'Validate', dur: 9000,
+    vo: 'The pipeline validates its own work before anything ships — content checks, link checks, style checks. This run clears the gate at ninety-two.',
     render: () => (
-      <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
-        <div className="score score--good" style={{ minWidth: 170 }}>
-          <span className="label01 t2">Overall score</span>
-          <span className="num"><CountTo from={0} to={92} delay={800} dur={3200} /></span>
-          <span className="helper">quality gate ≥ 85 — passed</span>
-        </div>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <Pipe gap={1.4} steps={['Quality: completeness, accuracy, readability', 'Links: every reference resolves', 'Style: terminology & style-guide compliance', 'AI readiness: structure machines can cite']} />
+      <div>
+        <Pipe gap={1.5} steps={['Content validated: completeness & accuracy', 'Links validated: every reference resolves', 'Style validated: terminology & guide compliance']} />
+        <div className="demo-loop mt5">
+          <span className="mono">validation</span>
+          <span className="demo-looparrow">→</span>
+          <span className="check demo-loopcheck">92 · gate ≥ 85 ✓</span>
         </div>
       </div>
     )
@@ -175,6 +193,14 @@ const AUTO_SCENES = [
         </div>
       </div>
     )
+  },
+  {
+    label: 'Up next', dur: 7000,
+    vo: 'That is automation, end to end. Up next: see how DocGen evaluates your documentation for AI readiness.',
+    render: () => (
+      <NextPointer target="film-ai" kicker="FILM 03 · AI READINESS"
+        title="See how DocGen evaluates your documentation for AI Readiness" />
+    )
   }
 ];
 
@@ -197,7 +223,7 @@ const AICOMPAT_SCENES = [
     label: 'Intro', dur: 7500,
     vo: 'Your next customer may never read your documentation. Their AI assistant will. This is the AI Compatibility dashboard — where you find out if machines can understand, trust, and cite what you publish.',
     render: () => (
-      <TitleSlate kicker="FILM 02 · AI COMPATIBILITY"
+      <TitleSlate kicker="FILM 03 · AI COMPATIBILITY"
         title="Documentation people understand — and AI systems trust."
         sub="Analyse any document for AI search readiness, see exactly what holds it back, and fix it before you publish." />
     )
@@ -296,6 +322,14 @@ const AICOMPAT_SCENES = [
         <p className="helper mt5">Readiness re-checked on every regeneration — so it never silently decays.</p>
       </div>
     )
+  },
+  {
+    label: 'Up next', dur: 7000,
+    vo: 'That is AI readiness. Up next: explore the complete document generation workflow.',
+    render: () => (
+      <NextPointer target="film-generate" kicker="FILM 02 · GENERATE ON DEMAND"
+        title="Explore the complete document-generation workflow" />
+    )
   }
 ];
 
@@ -312,7 +346,7 @@ const GEN_SCENES = [
     label: 'Intro', dur: 7000,
     vo: 'Not everything starts with a merge. Here is the standard workflow — turning complex technical input into professional documentation, in minutes.',
     render: () => (
-      <TitleSlate kicker="FILM 03 · GENERATE ON DEMAND"
+      <TitleSlate kicker="FILM 02 · GENERATE ON DEMAND"
         title="Complex technical input → professional documentation, in minutes."
         sub="Pick a source, pick a document, pick a format — DocGen writes it from the truth, then proves its quality." />
     )
@@ -362,13 +396,13 @@ const GEN_SCENES = [
   },
   {
     label: 'Review & verify', dur: 10000,
-    vo: 'Preview it. Edit anything. Then let the checks run — content quality across six dimensions, link integrity, style, and AI compatibility. This draft scores ninety-four.',
+    vo: 'Preview it. Edit anything. Then let the quality checks run — completeness, readability, links, and style. This draft scores ninety-four.',
     render: () => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div className="score score--good" style={{ minWidth: 170 }}>
           <span className="label01 t2">Quality score</span>
           <span className="num"><CountTo from={0} to={94} delay={700} dur={3000} /></span>
-          <span className="helper">6 dimensions · AI-compatibility checked</span>
+          <span className="helper">six quality dimensions checked</span>
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div className="demo-issue">
@@ -401,6 +435,14 @@ const GEN_SCENES = [
           <span className="check demo-loopcheck">professional documentation ✓</span>
         </div>
       </div>
+    )
+  },
+  {
+    label: 'Up next', dur: 7000,
+    vo: 'That is the standard workflow. Up next: discover how DocGen automates documentation after every code change.',
+    render: () => (
+      <NextPointer target="film-automation" kicker="FILM 01 · AUTOMATION"
+        title="Discover how DocGen automates documentation after every code change" />
     )
   }
 ];

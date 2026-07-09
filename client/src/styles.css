@@ -957,6 +957,15 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .valtile{border-top:2px solid transparent;transition:transform .15s var(--ease),box-shadow .15s var(--ease),border-color .15s var(--ease)}
 .valtile:hover{transform:translateY(-4px);border-top-color:var(--button-primary);box-shadow:0 12px 24px rgba(22,22,22,.12)}
 
+/* ============ Up-next pointer cards (cross-navigation between films) ============ */
+.nextcard{display:flex;align-items:center;justify-content:space-between;gap:24px;width:100%;max-width:680px;padding:22px 26px;background:var(--background);border:1px solid var(--button-primary);cursor:pointer;font-family:inherit;text-align:left;transition:background .12s var(--ease),transform .12s var(--ease);animation:fadeup .5s var(--ease) both}
+.nextcard:hover{background:#edf5ff;transform:translateX(4px)}
+.nextcard:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.nextcard-kicker{display:block;font-size:12px;letter-spacing:1.6px;color:var(--support-info)}
+.nextcard-title{display:block;font-size:19px;font-weight:600;color:var(--text-primary);margin-top:6px;line-height:1.35}
+.nextcard-arrow{font-size:26px;color:var(--button-primary);flex:none;transition:transform .12s var(--ease)}
+.nextcard:hover .nextcard-arrow{transform:translateX(4px)}
+
 /* ============ Film poster cards (resting state — light, designed, no black void) ============ */
 .vid-poster2{display:flex;align-items:center;justify-content:space-between;gap:32px;width:100%;min-height:340px;padding:48px 56px;background:linear-gradient(105deg,var(--background) 55%,#edf5ff 100%);border:none;cursor:pointer;font-family:inherit;text-align:left;transition:background .15s var(--ease)}
 .vid-poster2:hover .vid-playbtn{transform:scale(1.08)}
