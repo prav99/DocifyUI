@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, download } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
 
@@ -112,7 +112,7 @@ export default function Generate() {
           <HelpLink topic="generate" />
         </div>
         <p className="body01 t2 mt3">
-          From <span className="mono">{gen.repo}</span> → {gen.format.toUpperCase()}
+          From <span className="mono">{gen.repo}</span> → {(gen.formats && gen.formats.length ? gen.formats : [gen.format]).map((f) => f.toUpperCase()).join(' · ')}
           {gen.docTypes.length > 1 ? ' · ' + gen.docTypes.length + ' documents in this set' : ''}
         </p>
         <div className="genlayout mt7">
@@ -158,20 +158,127 @@ export default function Generate() {
   );
 }
 
-function Preview({ gen }) {
-  const [view, setView] = useState('rendered');
+/* =========================================================================
+   Multi-format preview: one tab per selected output format, each rendered by
+   the renderer that matches the format — never the Word layout for everything.
+   Tabs come from the server's format-keyed outputs; switching tabs never
+   regenerates or loses content, and each tab has its own download.
+   ========================================================================= */
+const PAGINATED = ['pdf', 'word'];
+const WEBLIKE = ['html', 'htmlsnip', 'email', 'epub'];
+const XMLSTRUCT = ['dita', 'docbook'];
+
+function FormatPreview({ gen, out, view }) {
   const oc = gen.output || {};
+  const f = out.format;
+  if (out.error) {
+    return (
+      <div className="tile mt5" style={{ padding: 24, borderLeft: '3px solid var(--support-error)' }}>
+        <p className="h01">This format failed to render</p>
+        <p className="body01 t2 mt2">{out.error} — the other formats are unaffected. Go back and regenerate to retry.</p>
+      </div>
+    );
+  }
+  if (!out.content && !gen.preview) {
+    return <div className="tile mt5" style={{ padding: 24 }}><p className="body01 t2">Preparing {out.name} output…</p></div>;
+  }
+  if (view === 'source') {
+    return <pre className="codeblock prevsrc mt5" dangerouslySetInnerHTML={{ __html: highlight(out.content, f) }} />;
+  }
+  const pageBits = (oc.paperSize || 'A4') + ' · page numbers ' + (oc.pageNumbers === false ? 'off' : 'on')
+    + (oc.headerText ? ' · header “' + oc.headerText + '”' : '')
+    + (oc.footerText ? ' · footer “' + oc.footerText + '”' : '');
+  if (f === 'pdf') {
+    return (
+      <div className="prevframe prevframe--pdf mt5">
+        <div className="prevpagebar prevpagebar--pdf">PDF page preview · {pageBits}</div>
+        <PreviewFrame title="PDF preview" html={gen.preview || out.content} />
+      </div>
+    );
+  }
+  if (f === 'word') {
+    return (
+      <div className="prevframe prevframe--word mt5">
+        <div className="prevpagebar prevpagebar--word">Word (.docx) preview · {pageBits}</div>
+        <PreviewFrame title="Word preview" html={gen.preview || out.content} />
+      </div>
+    );
+  }
+  if (WEBLIKE.includes(f)) {
+    return (
+      <div className="prevframe mt5">
+        <div className="prevpagebar">Rendered {out.name} — exactly the markup you download</div>
+        <PreviewFrame title={out.name + ' preview'} html={out.content} />
+      </div>
+    );
+  }
+  if (XMLSTRUCT.includes(f)) {
+    return (
+      <div className="mt5">
+        <div className="prevpagebar prevpagebar--xml">Structured {out.name} preview — element tree with readable formatting</div>
+        <pre className="codeblock prevsrc prevsrc--struct" dangerouslySetInnerHTML={{ __html: highlight(out.content, f) }} />
+      </div>
+    );
+  }
+  // Markdown and any other text format: rendered document view.
+  return (
+    <div className="prevframe prevframe--md mt5">
+      <div className="prevpagebar">Rendered Markdown preview — switch to Source for the raw .md</div>
+      <PreviewFrame title="Markdown preview" html={gen.preview || out.content} />
+    </div>
+  );
+}
+
+function Preview({ gen }) {
+  const order = gen.formats && gen.formats.length ? gen.formats : [gen.format];
+  // Server-rendered per-format outputs; single-format fallback keeps the old
+  // flow working even against a stale server response.
+  const outputs = gen.outputs || { [gen.format]: { format: gen.format, name: gen.format.toUpperCase(), content: gen.content, error: null } };
+  const [active, setActive] = useState(order[0]);
+  const [view, setView] = useState('rendered');
+  const [dl, setDl] = useState(false);
+  const act = outputs[active] ? active : order.find((f) => outputs[f]) || order[0];
+  const out = outputs[act] || { format: act, name: String(act).toUpperCase(), content: '', error: null };
   const { chips, accent } = buildChips(gen);
+
+  async function dlFormat() {
+    setDl(true);
+    try {
+      await download('/generations/' + gen.id + '/download?fmt=' + act);
+      toast('success', 'Download started', out.name + ' export');
+    } catch (e) { toast('error', 'Download failed', e.message); }
+    finally { setDl(false); }
+  }
 
   return (
     <div>
       <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <h2 className="h02">Preview · {gen.format.toUpperCase()}</h2>
-        <div className="seg" style={{ width: 220 }}>
-          <button className={view === 'rendered' ? 'on' : ''} onClick={() => setView('rendered')}>Rendered</button>
-          <button className={view === 'source' ? 'on' : ''} onClick={() => setView('source')}>Source</button>
+        <h2 className="h02">Preview{order.length === 1 ? ' · ' + out.name : ''}</h2>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <div className="seg" style={{ width: 220 }}>
+            <button className={view === 'rendered' ? 'on' : ''} onClick={() => setView('rendered')}>Rendered</button>
+            <button className={view === 'source' ? 'on' : ''} onClick={() => setView('source')}>Source</button>
+          </div>
+          <button className="btn btn--ghost" disabled={dl || !!out.error} onClick={dlFormat}>
+            {dl ? 'Preparing…' : 'Download ' + out.name}
+          </button>
         </div>
       </div>
+
+      {order.length > 1 && (
+        <div className="prevtabs mt4" role="tablist" aria-label="Output format previews">
+          {order.map((f) => {
+            const o = outputs[f];
+            return (
+              <button key={f} role="tab" aria-selected={f === act}
+                className={'prevtab' + (f === act ? ' on' : '') + (o && o.error ? ' err' : '')}
+                onClick={() => setActive(f)}>
+                {(o && o.name) || f.toUpperCase()}{o && o.error ? ' ⚠' : ''}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="row mt3" style={{ flexWrap: 'wrap', gap: 6 }}>
         {chips.map((c, i) => <span key={c.label + i} className={'tag ' + c.cls}>{c.label}</span>)}
@@ -182,23 +289,7 @@ function Preview({ gen }) {
         )}
       </div>
 
-      {view === 'rendered' ? (
-        <div className="prevframe mt5">
-          {['pdf', 'word'].includes(gen.format) && (
-            <div className="prevpagebar">
-              Paginated export preview · {(oc.paperSize || 'A4')} · page numbers {oc.pageNumbers === false ? 'off' : 'on'}
-              {oc.headerText ? ' · header “' + oc.headerText + '”' : ''}
-              {oc.footerText ? ' · footer “' + oc.footerText + '”' : ''}
-            </div>
-          )}
-          {['dita', 'docbook'].includes(gen.format) && (
-            <div className="prevpagebar">Rendered from the {gen.format === 'dita' ? 'DITA topic' : 'DocBook article'} — switch to Source for the exact markup</div>
-          )}
-          <PreviewFrame title="Document preview" html={gen.preview || gen.content} />
-        </div>
-      ) : (
-        <pre className="codeblock prevsrc mt5" dangerouslySetInnerHTML={{ __html: highlight(gen.content, gen.format) }} />
-      )}
+      <FormatPreview gen={gen} out={out} view={view} />
     </div>
   );
 }

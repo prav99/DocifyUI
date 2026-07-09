@@ -308,10 +308,37 @@ apiRouter.get('/repos', async (req, res) => {
 });
 
 /* Generations */
-function serializeGen(g) {
-  return {
+// Formats requested for this generation. The primary format lives in the
+// `format` column (back-compat); any additional formats ride in the output
+// options JSON so no schema change is needed.
+function genFormats(g) {
+  const oc = j(g.output, {});
+  const list = Array.isArray(oc.formats) && oc.formats.length ? oc.formats.map(String) : [g.format];
+  return [...new Set(list)];
+}
+
+// Deterministic re-render of the SAME generated sections into another format.
+// generateDocument is a pure renderer when aiDocs are supplied, so every
+// format is derived from one source of truth — no extra model calls, and
+// applied quality fixes carry through because the primary content is reused.
+function renderFormatContent(g, fmt) {
+  if (fmt === g.format && g.content) return g.content;
+  const ai = j(g.aiDocs, []);
+  const { content } = generateDocument({
+    track: g.track, docTypes: j(g.docTypes, []), format: fmt,
+    repo: g.repo, instructions: g.instructions,
+    skill: g.skill || '', skillName: g.skillName || '',
+    brief: j(g.brief, {}), output: j(g.output, {}),
+    aiDocs: ai.length ? ai : null
+  });
+  return content;
+}
+
+function serializeGen(g, opts = {}) {
+  const formats = genFormats(g);
+  const base = {
     id: g.id, repo: g.repo, branch: g.branch, track: g.track,
-    docTypes: j(g.docTypes, []), format: g.format, instructions: g.instructions,
+    docTypes: j(g.docTypes, []), format: g.format, formats, instructions: g.instructions,
     files: j(g.files, []), skillName: g.skillName || '',
     status: g.status, step: g.step, steps: j(g.steps, []),
     title: g.title, content: g.content, preview: g.preview || '',
@@ -324,6 +351,21 @@ function serializeGen(g) {
     })(),
     score: g.score, createdAt: g.createdAt
   };
+  // Per-format outputs for the preview tabs — detail endpoint only, and only
+  // once the pipeline is complete. Each format renders independently so one
+  // failure never hides the others.
+  if (opts.withOutputs && g.status === 'complete') {
+    base.outputs = {};
+    for (const f of formats) {
+      const fd = formatDef(g.track, f) || {};
+      try {
+        base.outputs[f] = { format: f, name: fd.name || f.toUpperCase(), ext: fd.ext || '.txt', content: renderFormatContent(g, f), error: null };
+      } catch (e) {
+        base.outputs[f] = { format: f, name: fd.name || f.toUpperCase(), ext: fd.ext || '.txt', content: '', error: e.message || 'Render failed' };
+      }
+    }
+  }
+  return base;
 }
 
 function buildSteps({ provider, instructions, files, skillName }) {
@@ -416,22 +458,30 @@ async function runPipeline(genId) {
 }
 
 apiRouter.post('/generations', async (req, res) => {
-  const { repo, branch = 'main', track, docTypes, format, instructions = '', files = [], provider = 'github', skillName = '', skill = '', brief = null, output = null } = req.body || {};
+  const { repo, branch = 'main', track, docTypes, format, formats, instructions = '', files = [], provider = 'github', skillName = '', skill = '', brief = null, output = null } = req.body || {};
   if (String(skill).length > 60000) return res.status(400).json({ error: 'SKILL.md is too large (60 KB max)' });
   if (track !== 'technical' && track !== 'marketing') return res.status(400).json({ error: 'Invalid track' });
   if (!Array.isArray(docTypes) || docTypes.length === 0) return res.status(400).json({ error: 'Select at least one document type' });
-  const fmt = formatDef(track, format);
-  if (!fmt) return res.status(400).json({ error: 'Unknown format' });
-  if (!fmt.ok) return res.status(400).json({ error: 'This output format is not currently supported. We will add support for it in a future release.' });
+  // One or many output formats: `formats` (ordered, deduped) wins when sent;
+  // the single `format` field keeps every existing client working unchanged.
+  const requested = [...new Set((Array.isArray(formats) && formats.length ? formats : [format]).map(String))];
+  if (!requested.length || !requested[0]) return res.status(400).json({ error: 'Select at least one output format' });
+  for (const f of requested) {
+    const def = formatDef(track, f);
+    if (!def) return res.status(400).json({ error: 'Unknown format: ' + f });
+    if (!def.ok) return res.status(400).json({ error: def.name + ' is not currently supported. We will add support for it in a future release.' });
+  }
+  const primaryFormat = requested[0];
+  const fmt = formatDef(track, primaryFormat);
   const steps = buildSteps({ provider, instructions, files, skillName });
   const gen = await prisma.generation.create({
     data: {
       userId: req.uid, repo: repo || provider, branch, track,
       provider: ['github', 'gitlab', 'bitbucket'].includes(provider) ? provider : 'github',
-      docTypes: JSON.stringify(docTypes), format, instructions,
+      docTypes: JSON.stringify(docTypes), format: primaryFormat, instructions,
       files: JSON.stringify(files), skillName: String(skillName), skill: String(skill),
       brief: JSON.stringify(brief || {}),
-      output: JSON.stringify(output || {}),
+      output: JSON.stringify({ ...(output || {}), formats: requested }),
       status: 'queued', steps: JSON.stringify(steps)
     }
   });
@@ -449,13 +499,17 @@ apiRouter.get('/generations', async (req, res) => {
 apiRouter.get('/generations/:id', async (req, res) => {
   const g = await prisma.generation.findFirst({ where: { id: req.params.id, userId: req.uid } });
   if (!g) return res.status(404).json({ error: 'Not found' });
-  res.json({ generation: serializeGen(g) });
+  res.json({ generation: serializeGen(g, { withOutputs: true }) });
 });
 
 apiRouter.get('/generations/:id/download', async (req, res) => {
   const g = await prisma.generation.findFirst({ where: { id: req.params.id, userId: req.uid } });
   if (!g || g.status !== 'complete') return res.status(404).json({ error: 'Not ready' });
-  const fmt = formatDef(g.track, g.format) || { ext: '.txt' };
+  // ?fmt= downloads any format that was requested for this generation;
+  // without it the primary format keeps the old behavior exactly.
+  const wanted = req.query.kind === 'report' ? g.format : String(req.query.fmt || g.format);
+  if (!genFormats(g).includes(wanted)) return res.status(400).json({ error: 'Format not part of this generation' });
+  const fmt = formatDef(g.track, wanted) || { ext: '.txt' };
   const base = (g.title || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-');
   if (req.query.kind === 'report') {
     // Quality report export — always the LIVE state (scores, fixes, diffs),
@@ -483,12 +537,14 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
   }
   // Binary formats are built for real at download time from the stored
   // Markdown master (which already includes any applied fixes).
-  if (g.format === 'word' || g.format === 'pdf') {
+  if (wanted === 'word' || wanted === 'pdf') {
     try {
-      const args = { md: g.content, title: g.title, output: j(g.output, {}) };
-      const buf = g.format === 'word' ? await buildDocx(args) : await buildPdf(args);
-      res.setHeader('Content-Disposition', 'attachment; filename="' + base + (g.format === 'word' ? '.docx' : '.pdf') + '"');
-      res.setHeader('Content-Type', g.format === 'word'
+      // The word/pdf renderer emits the Markdown master the binary builders consume.
+      const md = renderFormatContent(g, wanted);
+      const args = { md, title: g.title, output: j(g.output, {}) };
+      const buf = wanted === 'word' ? await buildDocx(args) : await buildPdf(args);
+      res.setHeader('Content-Disposition', 'attachment; filename="' + base + (wanted === 'word' ? '.docx' : '.pdf') + '"');
+      res.setHeader('Content-Type', wanted === 'word'
         ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         : 'application/pdf');
       return res.send(buf);
@@ -502,7 +558,7 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
     : 'text/plain; charset=utf-8';
   res.setHeader('Content-Disposition', 'attachment; filename="' + base + fmt.ext + '"');
   res.setHeader('Content-Type', ct);
-  res.send(g.content);
+  res.send(renderFormatContent(g, wanted));
 });
 
 /* Quality */

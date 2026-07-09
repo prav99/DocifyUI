@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, Notif, HelpLink } from '../ui.jsx';
+import { NavBar, HelpLink } from '../ui.jsx';
 
 // Mirrors DEFAULT_OUTPUT on the server (server/src/adapters/llm.js).
 const OUT_DEFAULTS = {
@@ -70,8 +70,16 @@ export default function Format() {
   );
 
   const list = catalog.formats[flow.track] || [];
-  const cur = list.find((f) => f.id === flow.format) || null;
-  const unsupported = cur && !cur.ok;
+  // Multi-select: flow.formats is the ordered selection; flow.format mirrors
+  // the first pick so every existing consumer keeps working.
+  const selected = (flow.formats && flow.formats.length ? flow.formats : (flow.format ? [flow.format] : []))
+    .filter((id) => list.some((f) => f.id === id));
+  const toggleFormat = (f) => {
+    if (!f.ok) { toast('info', 'Coming soon', f.name + ' is on the roadmap — pick a supported format for now'); return; }
+    const next = selected.includes(f.id) ? selected.filter((x) => x !== f.id) : [...selected, f.id];
+    setFlow({ formats: next, format: next[0] || '', genId: null });
+  };
+  const selNames = selected.map((id) => (list.find((f) => f.id === id) || {}).name).filter(Boolean);
 
   async function generate() {
     setBusy(true);
@@ -87,7 +95,7 @@ export default function Format() {
         method: 'POST',
         body: {
           repo: flow.repo || flow.provider, branch: 'main', track: flow.track,
-          docTypes: flow.docTypes, format: flow.format,
+          docTypes: flow.docTypes, format: selected[0], formats: selected,
           instructions, files: flow.files, provider: flow.provider || 'github',
           skillName: flow.skillName || '', skill: flow.skillContent || '',
           brief: { audience: flow.briefAudience || '', emphasis: flow.briefEmphasis || '', tone: flow.briefTone || '' },
@@ -104,31 +112,27 @@ export default function Format() {
     <>
       <div className="page">
         <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <h1 className="h04">Choose an output format</h1>
+          <h1 className="h04">Choose output formats</h1>
           <HelpLink topic="format" />
         </div>
-        <p className="body01 t2 mt3">Formats differ by track. Everything on the roadmap is listed — items marked coming soon are visible so you can tell us they matter.</p>
+        <p className="body01 t2 mt3">Select one or more — every selected format is generated from the same content and gets its own preview and download.</p>
 
         <div className="grid4 mt7">
-          {list.map((f) => (
-            <div key={f.id} className={'tile tile--click' + (flow.format === f.id ? ' tile--selected' : '')}
-              onClick={() => setFlow({ format: f.id, genId: null })}>
-              <div className="row row--between">
-                <p className="h01">{f.name}</p>
-                {f.ok ? null : <span className="tag tag--gray">Coming soon</span>}
+          {list.map((f) => {
+            const idx = selected.indexOf(f.id);
+            return (
+              <div key={f.id} className={'tile tile--click' + (idx >= 0 ? ' tile--selected' : '')}
+                onClick={() => toggleFormat(f)}>
+                <div className="row row--between">
+                  <p className="h01">{f.name}</p>
+                  {idx >= 0 ? <span className="tag tag--blue">{selected.length > 1 ? '✓ ' + (idx + 1) : '✓'}</span>
+                    : f.ok ? null : <span className="tag tag--gray">Coming soon</span>}
+                </div>
+                <p className="helper mt2">{f.desc}</p>
               </div>
-              <p className="helper mt2">{f.desc}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
-
-        {unsupported && (
-          <div className="mt6">
-            <Notif kind="warning" title="Format not yet supported">
-              This output format is not currently supported. We will add support for it in a future release.
-            </Notif>
-          </div>
-        )}
 
         {/* ---- Output options ---- */}
         <div className="mt7">
@@ -205,9 +209,9 @@ export default function Format() {
         </div>
       </div>
       <NavBar back="/doctype"
-        nextLabel={unsupported ? 'Pick a supported format to continue' : 'Generate document'}
-        disabled={unsupported || !flow.format || busy}
-        note={unsupported ? null : cur ? 'Output: ' + cur.name : null}
+        nextLabel={selected.length > 1 ? 'Generate ' + selected.length + ' formats' : 'Generate document'}
+        disabled={!selected.length || busy}
+        note={selNames.length ? (selNames.length > 1 ? 'Outputs: ' : 'Output: ') + selNames.join(', ') : 'Select at least one format'}
         onNext={generate} />
     </>
   );
