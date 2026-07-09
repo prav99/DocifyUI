@@ -953,18 +953,6 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .editbox{width:100%;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.7;background:var(--field-01);border:none;border-bottom:1px solid var(--border-strong);padding:12px 16px;min-height:180px;resize:vertical;color:var(--text-primary)}
 .editbox:focus{outline:2px solid var(--focus);outline-offset:-2px}
 
-/* ============ Landing: cinematic problem band ============ */
-.probband{position:relative;background:#161616;padding:56px 48px 48px;overflow:hidden}
-.probband .gridlines{position:absolute;inset:0;background-image:linear-gradient(rgba(141,141,141,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(141,141,141,.1) 1px,transparent 1px);background-size:64px 64px;pointer-events:none}
-.probgrid{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:40px}
-@media(max-width:900px){.probgrid{grid-template-columns:1fr;gap:28px}.probband{padding:40px 24px 36px}}
-.probcard{border-top:2px solid #fa4d56;padding-top:20px;height:100%}
-.probicon{width:96px;height:56px;display:block;margin-bottom:16px}
-.probword{font-size:clamp(28px,2.2vw,36px);line-height:1.2;font-weight:600;color:#f4f4f4;letter-spacing:-.2px}
-.probsub{font-size:15px;line-height:1.55;color:#a8a8a8;margin-top:10px;max-width:300px}
-.probbridge{position:relative;margin-top:44px;font-size:clamp(20px,1.8vw,26px);line-height:1.35;color:#c6c6c6;font-weight:400}
-.probbridge span{color:#78a9ff;font-weight:600}
-
 /* ============ Landing polish: value tiles + film anchors ============ */
 .valtile{border-top:2px solid transparent;transition:transform .15s var(--ease),box-shadow .15s var(--ease),border-color .15s var(--ease)}
 .valtile:hover{transform:translateY(-4px);border-top-color:var(--button-primary);box-shadow:0 12px 24px rgba(22,22,22,.12)}

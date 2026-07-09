@@ -239,47 +239,6 @@ function IlluAutomate() {
   );
 }
 
-/* ---------- Animated problem vignettes ---------- */
-function ProbIcon({ kind }) {
-  if (kind === 'stale') {
-    return (
-      <svg className="probicon" viewBox="0 0 96 56" fill="none" aria-hidden="true">
-        <line x1="6" y1="16" x2="90" y2="16" stroke="#393939" strokeWidth="2" />
-        {[16, 34, 52, 70].map((x, i) => (
-          <circle key={x} className="pulse" style={{ animationDelay: (i * 0.35) + 's' }} cx={x} cy="16" r="4.5" fill="#4589ff" />
-        ))}
-        <circle cx="88" cy="16" r="4.5" fill="#42be65" />
-        <rect x="6" y="36" width="52" height="8" fill="#262626" stroke="#393939" />
-        <rect x="6" y="36" width="18" height="8" fill="#fa4d56" opacity="0.85" />
-        <text x="64" y="44" fill="#8d8d8d" fontFamily="IBM Plex Mono, monospace" fontSize="9">v0.9</text>
-      </svg>
-    );
-  }
-  if (kind === 'buried') {
-    return (
-      <svg className="probicon" viewBox="0 0 96 56" fill="none" aria-hidden="true">
-        {[42, 30, 18].map((y, i) => (
-          <rect key={y} className="shim" style={{ animationDelay: (i * 0.4) + 's' }}
-            x={14 + i * 7} y={y} width={64 - i * 14} height="9" fill="#262626" stroke="#393939" />
-        ))}
-        <circle className="pulse" cx="76" cy="12" r="7" fill="none" stroke="#f1c21b" strokeWidth="2" />
-        <line x1="81" y1="17" x2="88" y2="24" stroke="#f1c21b" strokeWidth="2.5" />
-      </svg>
-    );
-  }
-  return (
-    <svg className="probicon" viewBox="0 0 96 56" fill="none" aria-hidden="true">
-      <rect x="8" y="10" width="44" height="30" fill="#262626" stroke="#393939" />
-      <rect x="16" y="18" width="28" height="4" fill="#525252" />
-      <rect x="16" y="27" width="20" height="4" fill="#393939" />
-      <circle className="pulse" cx="74" cy="25" r="12" fill="none" stroke="#4589ff" strokeWidth="2" />
-      <text x="70" y="30" fill="#4589ff" fontFamily="IBM Plex Mono, monospace" fontSize="13">?</text>
-      <line className="flowline" x1="52" y1="25" x2="60" y2="25" stroke="#fa4d56" strokeWidth="2" strokeDasharray="3 3" />
-      <line x1="66" y1="17" x2="82" y2="33" stroke="#fa4d56" strokeWidth="2" opacity="0.9" />
-    </svg>
-  );
-}
-
 /* ---------- Page data ---------- */
 
 const FEATURES = [
@@ -430,33 +389,10 @@ export default function Landing() {
             this. It is simply what happens when documentation is a manual step in an automated
             world — read by machines that were never considered when it was written.
           </p>
+          <p className="lead mt5" style={{ maxWidth: 680 }}>DocGen ends that story. Watch it happen.</p>
         </Reveal>
       </div>
 
-      {/* The problem, staged — three acts, animated */}
-      <div className="page" style={{ paddingTop: 40, paddingBottom: 0 }}>
-        <div className="probband">
-          <div className="gridlines" />
-          <div className="probgrid">
-            {[
-              ['stale', 'Stale.', 'Code merges every day. Documentation updates once a quarter — if someone remembers.'],
-              ['buried', 'Buried.', 'Writers excavate commits, tickets, and chat threads for every page. Releases wait.'],
-              ['invisible', 'Invisible.', 'AI assistants answer from content they can parse and trust. Unstructured docs never make the shortlist.']
-            ].map(([icon, big, sub], i) => (
-              <Reveal key={big} delay={i * 150}>
-                <div className="probcard">
-                  <ProbIcon kind={icon} />
-                  <p className="probword">{big}</p>
-                  <p className="probsub">{sub}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-          <Reveal delay={480}>
-            <p className="probbridge">DocGen ends that story. <span>Watch it happen.</span></p>
-          </Reveal>
-        </div>
-      </div>
 
       {/* SECTION 2 · Meet DocGen — Film 1: complete automation */}
       <div className="page" id="film-automation" style={{ paddingTop: 40, paddingBottom: 32 }}>
