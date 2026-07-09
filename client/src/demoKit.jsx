@@ -55,6 +55,51 @@ export function musicStart() {
   } catch { /* audio unavailable */ }
 }
 
+/* ---------------- interaction sound effects ----------------
+   Tiny WebAudio cues per scene: click (UI action), whoosh (scene hook),
+   chime (completion), success (resolution chord). Always quiet, under VO. */
+export function sfx(kind) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!musicCtx) musicCtx = new AC();
+    const ctx = musicCtx;
+    if (ctx.state === 'suspended') ctx.resume();
+    const t = ctx.currentTime;
+    const out = ctx.createGain();
+    out.connect(ctx.destination);
+    const tone = (freq, at, dur, vol, type = 'sine') => {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.linearRampToValueAtTime(vol, t + at + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+      o.connect(g); g.connect(out);
+      o.start(t + at); o.stop(t + at + dur + 0.05);
+    };
+    if (kind === 'click') {
+      tone(1600, 0, 0.06, 0.045, 'triangle'); tone(2400, 0.005, 0.04, 0.02, 'sine');
+    } else if (kind === 'whoosh') {
+      const len = Math.floor(ctx.sampleRate * 0.45);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.2;
+      f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2600, t + 0.4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.05, t + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      src.connect(f); f.connect(g); g.connect(out); src.start(t);
+    } else if (kind === 'chime') {
+      tone(880, 0, 0.5, 0.05); tone(1318.5, 0.12, 0.6, 0.04);
+    } else if (kind === 'success') {
+      tone(523.25, 0, 0.4, 0.045); tone(659.25, 0.1, 0.4, 0.04); tone(783.99, 0.2, 0.6, 0.045);
+    }
+  } catch { /* audio unavailable */ }
+}
+
 export function musicStop() {
   try {
     if (!musicNodes || !musicCtx) return;
@@ -95,7 +140,7 @@ export function narrate(text, onEnd) {
     const u = new SpeechSynthesisUtterance(text);
     if (!cachedVoice) cachedVoice = pickVoice();
     if (cachedVoice) u.voice = cachedVoice;
-    u.rate = 0.9;
+    u.rate = 1.0;
     u.pitch = 1;
     u.volume = 1;
     let done = false;
@@ -163,9 +208,10 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
     const tryAdvance = () => {
       if (!alive || advanced || !speechDone || !minDone) return;
       advanced = true;
-      setTimeout(() => { if (alive) setScene((s) => (s + 1) % scenes.length); }, 900);
+      setTimeout(() => { if (alive) setScene((s) => (s + 1) % scenes.length); }, 450);
     };
     const tMin = setTimeout(() => { minDone = true; tryAdvance(); }, scenes[scene].dur);
+    if (sound && scenes[scene].sfx) sfx(scenes[scene].sfx);
     if (sound) narrate(scenes[scene].vo, () => { speechDone = true; tryAdvance(); });
     const tGuard = setTimeout(() => { speechDone = true; minDone = true; tryAdvance(); }, scenes[scene].dur + 20000);
     return () => { alive = false; clearTimeout(tMin); clearTimeout(tGuard); };

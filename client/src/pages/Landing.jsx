@@ -381,15 +381,16 @@ export default function Landing() {
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">THE STORY EVERY TEAM KNOWS</p>
           <h2 className="feathead" style={{ maxWidth: 720 }}>Your next customer will never read your docs. Their AI assistant will.</h2>
-          <p className="lead t2 mt5" style={{ maxWidth: 680 }}>
-            Somewhere right now, a developer is asking ChatGPT how to integrate a payments API.
-            The assistant answers from whichever documentation it can find, parse, and trust —
-            and recommends that product. Meanwhile the code shipped on Friday, the quick start
-            still 404s, and the guide describes a screen redesigned two sprints ago. Nobody chose
-            this. It is simply what happens when documentation is a manual step in an automated
-            world — read by machines that were never considered when it was written.
+          <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
+            Right now, a developer is asking ChatGPT how to integrate a payments API. The
+            assistant answers — and recommends — whichever product&rsquo;s docs it can find and trust.
+            Meanwhile your quick start still 404s, and your guide shows a screen you redesigned
+            two sprints ago.
           </p>
-          <p className="lead mt5" style={{ maxWidth: 680 }}>DocGen ends that story. Watch it happen.</p>
+          <div className="relief mt6">
+            <p className="relief-main">DocGen ends that pain — <span className="relief-blue">for good.</span></p>
+            <p className="relief-sub">Take a breath. Press play. Watch it happen <span className="relief-arrow" aria-hidden="true">↓</span></p>
+          </div>
         </Reveal>
       </div>
 
@@ -399,11 +400,10 @@ export default function Landing() {
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">SECTION 02 · MEET DOCGEN — FILM 01</p>
           <h2 className="feathead">Your code changes. Your documentation updates automatically.</h2>
-          <p className="lead t2 mt3" style={{ maxWidth: 660 }}>
-            DocGen is the intelligent automation layer between your development work and your published
-            documentation — generation, validation, AI optimisation, and publishing in one loop.
-            This film is the whole story in ninety seconds: a pull request merges, and verified
-            documentation ships. Press play.
+          <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
+            DocGen closes the loop between your code and your published docs — generate, validate,
+            optimise for AI, publish. Thirty seconds: a pull request merges, verified documentation
+            ships. Press play.
           </p>
         </Reveal>
         <Reveal delay={120}><div className="vidwrap"><AutomationDemo /></div></Reveal>
@@ -439,9 +439,8 @@ export default function Landing() {
           <p className="eyebrow eyebrow--blue mb3">FILM 02 · GENERATE ON DEMAND</p>
           <h2 className="feathead">Complex technical input → professional documentation, in minutes</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
-            The standard workflow, end to end: pick a source, a document type, a format, and an
-            audience — then watch DocGen collect the source information, write the document,
-            verify it, and export it. Press play, or click any step to skip ahead.
+            Pick a source, a document type, and a format — DocGen writes it, verifies it, and
+            exports it. Thirty seconds, start to finish.
           </p>
         </Reveal>
         <Reveal delay={120}><div className="vidwrap"><GenerateDemo /></div></Reveal>
@@ -472,10 +471,9 @@ export default function Landing() {
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">FILM 03 · AI COMPATIBILITY</p>
           <h2 className="feathead">Documentation people understand — and AI systems trust</h2>
-          <p className="lead t2 mt3" style={{ maxWidth: 660 }}>
-            Traditional documentation was written for human readers only. This film opens the AI
-            Compatibility dashboard: an AI Search Readiness Score, nine dimensions machines actually
-            weigh, and the exact fixes that take one document from 62 to 91.
+          <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
+            Your docs were written for people. This film shows the AI Readiness Score — what
+            machines actually weigh, and the exact fixes that take one document from 62 to 91.
           </p>
         </Reveal>
         <Reveal delay={120}><div className="vidwrap"><AICompatDemo /></div></Reveal>
@@ -621,8 +619,8 @@ export default function Landing() {
             <h2 className="h04" style={{ color: '#fff', maxWidth: 640 }}>Your code already tells the story. Let DocGen turn it into documentation.</h2>
             <div className="row mt6" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start generating documentation<span className="ico">→</span></button>
-              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-automation'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Watch product demo</button>
-              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-ai'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Explore AI compatibility</button>
+              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-automation'); if (el) el.scrollIntoView(); }}>Watch product demo</button>
+              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-ai'); if (el) el.scrollIntoView(); }}>Explore AI compatibility</button>
               <button className="btn btn--ghostdark" onClick={() => nav('/source')}>Connect your repository</button>
             </div>
           </Reveal>
