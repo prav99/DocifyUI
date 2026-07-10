@@ -283,12 +283,6 @@ const FEATURES = [
   }
 ];
 
-const QUOTES = [
-  { q: 'We regenerate the API reference on every merge now. What used to be a 3-day post-release scramble is a 4-minute pipeline step, and the quality gate catches broken links before customers do.', n: 'Head of Documentation', c: 'Series C fintech, 40-person eng team', s: '11 hours saved per release' },
-  { q: 'The ranking prediction changed how we prioritize. We watched our citation probability climb from 51% to 97% as we applied fixes — and two weeks later, ChatGPT and Gemini were actually citing our reference in integration answers.', n: 'Platform Engineering Lead', c: 'Developer tools company', s: 'Citation probability 51% → 97%' },
-  { q: 'Two writers support nine product teams. DocGen drafts, we edit. The style-guide findings alone replaced our entire manual review checklist.', n: 'Technical Writing Manager', c: 'Enterprise SaaS, 300 employees', s: '2.3 hours saved per document' }
-];
-
 const SRCS = ['GitHub', 'GitLab', 'Bitbucket', 'Jira', 'Confluence', 'Notion', 'OpenAPI'];
 const FMTS = ['DITA', 'PDF', 'Word', 'Markdown'];
 
@@ -365,7 +359,7 @@ export default function Landing() {
         <div className="gridlines" />
         <div className="heroinner">
           <div>
-            <p className="eyebrow mb3">AI DOCUMENTATION INTELLIGENCE PLATFORM</p>
+            <p className="eyebrow mb3">DOCIFY · AI DOCUMENTATION INTELLIGENCE</p>
             <h1 className="display">Documentation that AI understands, trusts, and ranks.</h1>
             <p className="lead t2 mt5" style={{ maxWidth: 560 }}>
               DocGen turns your code commits into standards-grade documentation, cross-examines every
@@ -558,9 +552,9 @@ export default function Landing() {
         <div className="page" style={{ padding: '0 24px' }}>
           <Reveal>
             <div className="grid3">
-              <div><p className="metricnum"><CountUp to={2.1} decimals={1} suffix=" hrs" /></p><p className="body01 t2 mt3">Average writer time saved per generated document, measured across pilot teams.</p></div>
-              <div><p className="metricnum"><CountUp to={46} suffix=" pts" /></p><p className="body01 t2 mt3">Median AI citation-probability lift after applying the judge&apos;s fixes — measured across ChatGPT, Claude, and Gemini estimates.</p></div>
-              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Broken links shipped by teams using the quality gate on merge. The pipeline blocks them.</p></div>
+              <div><p className="metricnum"><CountUp to={30} suffix=" sec" /></p><p className="body01 t2 mt3">From merged pull request to an updated, quality-gated document — the whole loop, shown in the film above.</p></div>
+              <div><p className="metricnum"><CountUp to={5} suffix=" formats" /></p><p className="body01 t2 mt3">DITA, PDF, Word, HTML, and Markdown from one generation — every format previewed and exported separately.</p></div>
+              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Broken links shipped with the quality gate on — documents below the bar are blocked, not published.</p></div>
             </div>
           </Reveal>
         </div>
@@ -597,23 +591,25 @@ export default function Landing() {
         </Reveal>
       </div>
 
-      {/* Testimonials */}
+      {/* Founder note — honest, launch-day authentic. Replaces placeholder
+          testimonials: no invented customers, ever. */}
       <div className="page" style={{ paddingTop: 0, paddingBottom: 96 }}>
         <Reveal>
-          <h2 className="feathead mb6">Measured in hours returned to writing teams</h2>
+          <div className="tile tile--white" style={{ padding: '32px 36px', borderLeft: '3px solid #0f62fe', maxWidth: 860 }}>
+            <p className="eyebrow eyebrow--blue mb3">A NOTE FROM THE FOUNDER</p>
+            <p className="body02" style={{ fontSize: 18, lineHeight: 1.65 }}>
+              &ldquo;I built this because every team I&rsquo;ve seen ships code daily while their docs quietly go
+              stale — and today, AI assistants answer your customers from whatever documentation they can
+              find and trust. Everything on this page is real and free to try in the next five minutes.
+              I&rsquo;m onboarding the first 20 founding customers personally: 50% off forever, and I set up
+              your pipeline with you on a call.&rdquo;
+            </p>
+            <p className="h01 mt6">Praveen Kumar</p>
+            <p className="helper mt2">
+              Founder, Docify · <a href={supportMailto('Founding customer')}>{SUPPORT_EMAIL}</a> — I reply personally
+            </p>
+          </div>
         </Reveal>
-        <div className="grid3" style={{ alignItems: 'stretch' }}>
-          {QUOTES.map((x, i) => (
-            <Reveal key={x.s} delay={i * 140}>
-              <div className="tile tile--white quotecard" style={{ padding: 24, display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <span className="tag tag--teal">{x.s}</span>
-                <p className="body01 mt5" style={{ flex: 1 }}>&ldquo;{x.q}&rdquo;</p>
-                <p className="h01 mt6">{x.n}</p>
-                <p className="helper mt2">{x.c}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
       </div>
 
       {/* FAQ — answers the questions buyers and search engines ask */}

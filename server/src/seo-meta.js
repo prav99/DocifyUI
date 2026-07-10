@@ -13,7 +13,7 @@ const DEFAULT_DESC = 'DocGen automates technical documentation end to end: conne
 // tags (in-app routes are noindexed via robots.txt anyway).
 export const PAGE_META = {
   '/': {
-    title: 'DocGen — Automated AI Documentation Generator with Quality & AI Search Readiness Scores',
+    title: 'Docify — Documentation that updates itself when your code changes | DocGen',
     desc: DEFAULT_DESC
   },
   '/pricing': {
