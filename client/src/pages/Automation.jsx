@@ -814,6 +814,7 @@ function Detail({ id, onBack, onEdit }) {
 
 /* ---------------- Main: management dashboard ---------------- */
 export default function Automation() {
+  const nav = useNavigate();
   const [profiles, setProfiles] = useState(null);
   const [catalog, setCatalog] = useState(null);
   const [view, setView] = useState({ mode: 'list' });
@@ -883,6 +884,14 @@ export default function Automation() {
               <button className="btn btn--primary" onClick={() => setView({ mode: 'wizard' })}>
                 New automation pipeline<span className="ico">+</span>
               </button>
+            </div>
+
+            <div className="syncnote mt5" role="note">
+              <strong>Prefer to approve every change first?</strong>&nbsp;Use{' '}
+              <a href="/sync" onClick={(e) => { e.preventDefault(); nav('/sync'); }}>Doc sync</a> — each AI rewrite
+              waits in a review queue as a side-by-side diff with reasoning, and nothing touches your document until
+              you approve it. Automation here can also hold runs for approval: set &ldquo;Require approval&rdquo; in
+              the wizard&rsquo;s publish step.
             </div>
 
             {profiles.length === 0 ? (

@@ -134,7 +134,25 @@ export default function Generate() {
             {gen.status === 'failed' && <p className="body01 mt5" style={{ color: 'var(--support-error)' }}>Generation failed — go back and retry.</p>}
           </div>
           <div>
-            {done ? <Preview gen={gen} /> : (
+            {done ? (
+              <>
+                <Preview gen={gen} />
+                <div className="synccta mt5">
+                  <div>
+                    <p className="h01">This document is current today. Keep it that way.</p>
+                    <p className="body01 t2 mt2">
+                      <strong>Doc sync</strong> watches <span className="mono">{gen.repo}</span> and proposes a
+                      section-level rewrite for every merge — you see the exact diff with the AI&rsquo;s reasoning,
+                      and <strong>nothing publishes until you approve it</strong>. Every approval is versioned, so you
+                      can roll back any change.
+                    </p>
+                  </div>
+                  <button className="btn btn--primary" onClick={() => nav('/sync')}>
+                    Review-first updates<span className="ico">→</span>
+                  </button>
+                </div>
+              </>
+            ) : (
               <div className="tile" style={{ padding: 24 }}>
                 <h2 className="h02 mb5">Preview</h2>
                 <p className="body01 t2">The rendered preview appears here when the pipeline finishes — with every option you configured applied.</p>
