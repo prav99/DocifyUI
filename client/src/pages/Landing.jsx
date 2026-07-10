@@ -370,22 +370,12 @@ function PageNav() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   return (
-    <>
-      <nav className="pagenav" aria-label="Page sections">
-        {NAV_SECTIONS.map(([id, label]) => (
-          <button key={id} type="button" className={'pagenav-item' + (active === id ? ' on' : '')}
-            aria-current={active === id ? 'true' : undefined} onClick={() => go(id)}>
-            <span className="pagenav-dot" aria-hidden="true" /><span className="pagenav-label">{label}</span>
-          </button>
-        ))}
-      </nav>
-      <nav className="pagenav-m" aria-label="Page sections" ref={barRef}>
-        {NAV_SECTIONS.map(([id, label]) => (
-          <button key={id} type="button" className={'pagenav-mchip' + (active === id ? ' on' : '')}
-            aria-current={active === id ? 'true' : undefined} onClick={() => go(id)}>{label}</button>
-        ))}
-      </nav>
-    </>
+    <nav className="pagenav-m" aria-label="Page sections" ref={barRef}>
+      {NAV_SECTIONS.map(([id, label]) => (
+        <button key={id} type="button" className={'pagenav-mchip' + (active === id ? ' on' : '')}
+          aria-current={active === id ? 'true' : undefined} onClick={() => go(id)}>{label}</button>
+      ))}
+    </nav>
   );
 }
 
@@ -501,7 +491,7 @@ export default function Landing() {
             optimise for AI, publish. Thirty seconds: a pull request merges, verified documentation
             ships. Press play.
           </p>
-          <ol className="flowsteps mt5" aria-label="Workflow after a merge">
+          <ol className="flowsteps" aria-label="Workflow after a merge">
             {[['1', 'Merge lands', 'Webhook fires on push or merged PR'],
               ['2', 'Sections rewritten', 'Only the affected sections — never a duplicate file'],
               ['3', 'Judge gates it', 'An LLM judge scores quality; failures are held, not shipped'],
@@ -686,7 +676,7 @@ export default function Landing() {
       </div>
 
       {/* Trust & security — why it's safe to connect your source */}
-      <div className="page" id="trust" style={{ paddingTop: 0, paddingBottom: 40 }}>
+      <div className="page" id="trust" style={{ paddingTop: 0, paddingBottom: 80 }}>
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">TRUST &amp; SECURITY</p>
           <h2 className="feathead mb5">Built to be trusted with your source</h2>
@@ -702,27 +692,6 @@ export default function Landing() {
                 </div>
               </Reveal>
             ))}
-          </div>
-        </Reveal>
-      </div>
-
-      {/* Founder note — honest, launch-day authentic. Replaces placeholder
-          testimonials: no invented customers, ever. */}
-      <div className="page" style={{ paddingTop: 0, paddingBottom: 96 }}>
-        <Reveal>
-          <div className="tile tile--white" style={{ padding: '32px 36px', borderLeft: '3px solid #0f62fe', maxWidth: 860 }}>
-            <p className="eyebrow eyebrow--blue mb3">A NOTE FROM THE FOUNDER</p>
-            <p className="body02" style={{ fontSize: 18, lineHeight: 1.65 }}>
-              &ldquo;I built this because every team I&rsquo;ve seen ships code daily while their docs quietly go
-              stale — and today, AI assistants answer your customers from whatever documentation they can
-              find and trust. Everything on this page is real and free to try in the next five minutes.
-              I&rsquo;m onboarding the first 20 founding customers personally: 50% off forever, and I set up
-              your pipeline with you on a call.&rdquo;
-            </p>
-            <p className="h01 mt6">Praveen Kumar</p>
-            <p className="helper mt2">
-              Founder, Docify · <a href={supportMailto('Founding customer')}>{SUPPORT_EMAIL}</a> — I reply personally
-            </p>
           </div>
         </Reveal>
       </div>
