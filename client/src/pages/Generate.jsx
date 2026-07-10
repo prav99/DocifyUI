@@ -315,6 +315,14 @@ function Preview({ gen }) {
         {' · '}{out.name} output
       </p>
 
+      {gen.grounded === false && (
+        <div className="mt3" style={{ background: '#fff8e1', border: '1px solid #f1c21b', borderLeft: '3px solid #f1c21b', padding: '10px 14px', fontSize: 13, lineHeight: 1.5 }}>
+          <strong>Sample structure shown.</strong> AI grounding was not active for this run, so the content
+          below demonstrates the document structure rather than your repository&rsquo;s actual code.
+          Repository-grounded generation activates automatically when AI generation is enabled on the server.
+        </div>
+      )}
+
       <div className="row mt2" style={{ flexWrap: 'wrap', gap: 6 }}>
         {chips.map((c, i) => <span key={c.label + i} className={'tag ' + c.cls}>{c.label}</span>)}
         {accent && (

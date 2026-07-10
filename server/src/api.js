@@ -352,6 +352,7 @@ function renderPreviewFor(g, docType, fmt) {
 function serializeGen(g, opts = {}) {
   const formats = genFormats(g);
   const base = {
+    grounded: j(g.aiDocs, []).length > 0, // real AI content vs template structure
     id: g.id, repo: g.repo, branch: g.branch, track: g.track,
     docTypes: j(g.docTypes, []), format: g.format, formats, instructions: g.instructions,
     files: j(g.files, []), skillName: g.skillName || '',

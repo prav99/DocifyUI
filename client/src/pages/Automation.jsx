@@ -824,6 +824,13 @@ export default function Automation() {
     return d.profiles;
   }
   useEffect(() => { load().catch(() => {}); getCatalog().then(setCatalog).catch(() => {}); }, []);
+  // Live status: while any pipeline has a run in flight, poll so the card
+  // flips to published/held without a manual refresh.
+  useEffect(() => {
+    if (!profiles || !profiles.some((p) => (p.runs || []).some((r) => r.status === 'running'))) return undefined;
+    const t = setTimeout(() => load().catch(() => {}), 1500);
+    return () => clearTimeout(t);
+  }, [profiles]);
 
   async function act(p, action) {
     try {

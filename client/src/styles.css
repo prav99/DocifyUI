@@ -37,7 +37,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .topbar .logo .mark{width:20px;height:20px;background:var(--button-primary);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600}
 .crumb{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topnav{display:flex;gap:2px;margin-left:var(--sp-03)}
-.topnav a{font-size:14px;color:var(--text-secondary);padding:0 12px;line-height:46px;border-bottom:2px solid transparent;text-decoration:none}
+.topnav a{font-size:14px;color:var(--text-secondary);padding:0 12px;line-height:46px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap}
 .topnav a:hover{color:var(--text-primary);background:var(--layer-01)}
 .topnav a.on{color:var(--text-primary);border-bottom-color:var(--button-primary)}
 .topbar .spacer{flex:1}
@@ -1100,3 +1100,5 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .prevsrc::-webkit-scrollbar-thumb,.demo-rail::-webkit-scrollbar-thumb,.scrollx::-webkit-scrollbar-thumb{background:#c6c6c6}
 /* Safari: momentum + no rubber-band jitter on players */
 .demo-stage,.jd-stage{-webkit-overflow-scrolling:touch}
+
+@media(max-width:560px){.topnav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}.topnav::-webkit-scrollbar{display:none}}
