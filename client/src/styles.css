@@ -1110,3 +1110,48 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .syncnote a{color:#0f62fe;font-weight:600;text-decoration:none}
 .syncnote a:hover{text-decoration:underline}
 @media (max-width:600px){.synccta{flex-direction:column;align-items:stretch}.synccta .btn{width:100%;justify-content:center}}
+
+/* ==== Landing v3: sticky page-journey nav + IBM-inspired sections ==== */
+/* Desktop rail (dots; labels on hover 1080-1399px, always visible >=1400px) */
+.pagenav{position:fixed;left:14px;top:50%;transform:translateY(-50%);z-index:60;display:none;flex-direction:column;gap:0}
+@media(min-width:1080px){.pagenav{display:flex}}
+.pagenav-item{display:flex;align-items:center;gap:10px;background:none;border:none;padding:6px 6px;cursor:pointer;color:#8d8d8d;font-family:inherit;font-size:12.5px;letter-spacing:.02em;text-align:left;line-height:1.2}
+.pagenav-dot{width:8px;height:8px;border-radius:50%;background:#c6c6c6;flex-shrink:0;transition:background .2s,box-shadow .2s}
+.pagenav-item:hover{color:var(--text-primary,#161616)}
+.pagenav-item:hover .pagenav-dot{background:#78a9ff}
+.pagenav-item.on{color:var(--text-primary,#161616);font-weight:600}
+.pagenav-item.on .pagenav-dot{background:#0f62fe;box-shadow:0 0 0 3px rgba(15,98,254,.18)}
+.pagenav-item:focus-visible{outline:2px solid #0f62fe;outline-offset:1px}
+.pagenav-label{white-space:nowrap;opacity:0;transform:translateX(-4px);transition:opacity .18s,transform .18s;pointer-events:none}
+.pagenav-item:hover .pagenav-label{opacity:1;transform:none;background:#ffffff;box-shadow:0 1px 5px rgba(0,0,0,.18);padding:3px 9px}
+@media(min-width:1400px){
+  .pagenav-label{opacity:1;transform:none}
+  .pagenav-item:hover .pagenav-label{background:none;box-shadow:none;padding:0}
+}
+/* Mobile / tablet: sticky chip bar under the 48px topbar */
+.pagenav-m{position:sticky;top:48px;z-index:59;display:flex;gap:6px;overflow-x:auto;background:rgba(255,255,255,.96);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-bottom:1px solid var(--border-subtle,#e0e0e0);padding:8px 16px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.pagenav-m::-webkit-scrollbar{display:none}
+@media(min-width:1080px){.pagenav-m{display:none}}
+.pagenav-mchip{flex-shrink:0;border:1px solid #d0d0d0;background:#fff;padding:5px 12px;border-radius:14px;font-family:inherit;font-size:12px;color:#525252;cursor:pointer;transition:background .15s,color .15s}
+.pagenav-mchip.on{background:#0f62fe;border-color:#0f62fe;color:#fff;font-weight:600}
+.pagenav-mchip:focus-visible{outline:2px solid #0f62fe;outline-offset:1px}
+/* Anchored sections land below sticky bars */
+#overview,#how-it-works,#connect,#generate,#quality,#ai-readiness,#teams,#integrations,#trust,#faq,#start{scroll-margin-top:64px}
+@media(max-width:1079px){#overview,#how-it-works,#connect,#generate,#quality,#ai-readiness,#teams,#integrations,#trust,#faq,#start{scroll-margin-top:100px}}
+
+/* Definition block — the quotable "What is Docify?" */
+.defblock{border-left:3px solid #0f62fe;background:var(--layer-01,#f4f4f4);padding:22px 26px;max-width:860px}
+.deftext{font-size:17px;line-height:1.65;color:var(--text-primary,#161616)}
+
+/* Post-merge workflow stepper */
+.flowsteps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;list-style:none;padding:0;margin:0;max-width:980px}
+.flowstep{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;background:#ffffff;border:1px solid var(--border-subtle,#e0e0e0);border-top:2px solid #0f62fe;padding:12px 14px}
+.flowstep-n{width:22px;height:22px;border-radius:50%;background:#0f62fe;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:1px}
+@media(max-width:900px){.flowsteps{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.flowsteps{grid-template-columns:1fr}}
+
+/* Trust & security grid */
+.trustgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.trusttile{background:#ffffff;border:1px solid var(--border-subtle,#e0e0e0);border-top:2px solid #24a148;padding:20px;height:100%}
+@media(max-width:1000px){.trustgrid{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.trustgrid{grid-template-columns:1fr}}

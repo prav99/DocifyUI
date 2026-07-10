@@ -315,6 +315,80 @@ export const FAQS = [
   }
 ];
 
+/* ---- Sticky page-journey navigation (IBM-style table of contents) ----
+   Desktop ≥1400px: dot + label rail pinned left. 1080–1399px: dot rail,
+   labels on hover. <1080px: sticky horizontal chip bar under the topbar.
+   Active section is computed from scroll position (deterministic, cheap). */
+const NAV_SECTIONS = [
+  ['overview', 'Overview'],
+  ['how-it-works', 'How it works'],
+  ['connect', 'Connect sources'],
+  ['generate', 'Generate docs'],
+  ['quality', 'Quality gate'],
+  ['ai-readiness', 'AI readiness'],
+  ['teams', 'For your team'],
+  ['trust', 'Trust & security'],
+  ['faq', 'FAQ'],
+  ['start', 'Get started']
+];
+
+function PageNav() {
+  const [active, setActive] = useState('overview');
+  const barRef = useRef(null);
+  useEffect(() => {
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const mark = window.scrollY + window.innerHeight * 0.35;
+        let cur = NAV_SECTIONS[0][0];
+        for (const [id] of NAV_SECTIONS) {
+          const el = document.getElementById(id);
+          if (el && el.offsetTop <= mark) cur = id;
+        }
+        // Bottom of page: force the last section active.
+        if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 8) {
+          cur = NAV_SECTIONS[NAV_SECTIONS.length - 1][0];
+        }
+        setActive(cur);
+      });
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, []);
+  // Keep the active chip visible in the mobile bar without moving the page.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const chip = bar.querySelector('.pagenav-mchip.on');
+    if (chip) bar.scrollTo({ left: chip.offsetLeft - bar.clientWidth / 2 + chip.clientWidth / 2, behavior: 'smooth' });
+  }, [active]);
+  const go = (id) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  return (
+    <>
+      <nav className="pagenav" aria-label="Page sections">
+        {NAV_SECTIONS.map(([id, label]) => (
+          <button key={id} type="button" className={'pagenav-item' + (active === id ? ' on' : '')}
+            aria-current={active === id ? 'true' : undefined} onClick={() => go(id)}>
+            <span className="pagenav-dot" aria-hidden="true" /><span className="pagenav-label">{label}</span>
+          </button>
+        ))}
+      </nav>
+      <nav className="pagenav-m" aria-label="Page sections" ref={barRef}>
+        {NAV_SECTIONS.map(([id, label]) => (
+          <button key={id} type="button" className={'pagenav-mchip' + (active === id ? ' on' : '')}
+            aria-current={active === id ? 'true' : undefined} onClick={() => go(id)}>{label}</button>
+        ))}
+      </nav>
+    </>
+  );
+}
+
 function FaqItem({ q, a }) {
   const [open, setOpen] = useState(false);
   return (
@@ -354,6 +428,7 @@ export default function Landing() {
   );
   return (
     <>
+      <PageNav />
       {/* Hero */}
       <section className="heroband">
         <div className="gridlines" />
@@ -384,7 +459,7 @@ export default function Landing() {
       </section>
 
       {/* The problem — story opening */}
-      <div className="page" style={{ paddingTop: 72, paddingBottom: 0 }}>
+      <div className="page" id="overview" style={{ paddingTop: 72, paddingBottom: 0 }}>
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">THE STORY EVERY TEAM KNOWS</p>
           <h2 className="feathead" style={{ maxWidth: 720 }}>Your next customer will never read your docs. Their AI assistant will.</h2>
@@ -399,20 +474,44 @@ export default function Landing() {
             <p className="relief-sub">See the complete workflow, in thirty seconds <span className="relief-arrow" aria-hidden="true">↓</span></p>
           </div>
         </Reveal>
+        {/* What is Docify — one crisp, quotable definition */}
+        <Reveal delay={100}>
+          <div className="defblock mt7">
+            <p className="label01 t2 mb3">WHAT IS DOCIFY?</p>
+            <p className="deftext">
+              Docify is an AI documentation platform. Connect GitHub, GitLab, Bitbucket, Jira, or an
+              OpenAPI spec — it writes standards-grade documentation from your real source, updates the
+              affected sections on every merge, blocks anything that fails its quality gate, and scores
+              how likely ChatGPT, Claude, and Gemini are to find and cite every page.
+            </p>
+          </div>
+        </Reveal>
       </div>
 
 
       {/* SECTION 2 · Meet DocGen — Film 1: complete automation */}
-      <div className="page" id="film-automation" style={{ paddingTop: 40, paddingBottom: 32 }}>
+      <div className="page" id="how-it-works" style={{ paddingTop: 40, paddingBottom: 32 }}>
+        <div id="film-automation" />
         <Reveal>
           <SeriesMeter step={1} />
-          <p className="eyebrow eyebrow--blue mb3">MEET DOCGEN</p>
+          <p className="eyebrow eyebrow--blue mb3">HOW IT WORKS</p>
           <h2 className="feathead">Your code changes. Your documentation updates automatically.</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
             DocGen closes the loop between your code and your published docs — generate, validate,
             optimise for AI, publish. Thirty seconds: a pull request merges, verified documentation
             ships. Press play.
           </p>
+          <ol className="flowsteps mt5" aria-label="Workflow after a merge">
+            {[['1', 'Merge lands', 'Webhook fires on push or merged PR'],
+              ['2', 'Sections rewritten', 'Only the affected sections — never a duplicate file'],
+              ['3', 'Judge gates it', 'An LLM judge scores quality; failures are held, not shipped'],
+              ['4', 'Published & scored', 'Live docs plus an AI-readiness score per page']].map(([n, t, d]) => (
+              <li key={n} className="flowstep">
+                <span className="flowstep-n mono">{n}</span>
+                <span><strong>{t}</strong><br /><span className="t2">{d}</span></span>
+              </li>
+            ))}
+          </ol>
         </Reveal>
         <Reveal delay={120}><div className="vidwrap"><AutomationDemo /></div></Reveal>
       </div>
@@ -434,12 +533,12 @@ export default function Landing() {
       </div>
 
       {/* SECTION 3 · Connect existing tools */}
-      <div className="page featlist" style={{ paddingTop: 8, paddingBottom: 0 }}>
+      <div className="page featlist" id="connect" style={{ paddingTop: 8, paddingBottom: 0 }}>
         {chapter(0)}
       </div>
 
       {/* SECTION 4 · Generate + Film 3: standard workflow */}
-      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 0 }}>
+      <div className="page featlist" id="generate" style={{ paddingTop: 0, paddingBottom: 0 }}>
         {chapter(1)}
       </div>
       <div className="page" id="film-generate" style={{ paddingTop: 24, paddingBottom: 32 }}>
@@ -455,13 +554,8 @@ export default function Landing() {
         <Reveal delay={120}><div className="vidwrap"><GenerateDemo /></div></Reveal>
       </div>
 
-      {/* SECTION 5 · Continuously updated */}
-      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 0 }}>
-        {chapter(4)}
-      </div>
-
       {/* SECTION 6 · Validate quality */}
-      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 0 }}>
+      <div className="page featlist" id="quality" style={{ paddingTop: 0, paddingBottom: 0 }}>
         {chapter(2)}
         <Reveal>
           <div className="row mt2 mb6" style={{ flexWrap: 'wrap', gap: 8 }}>
@@ -473,7 +567,7 @@ export default function Landing() {
       </div>
 
       {/* SECTION 7 · Optimise for AI discovery + Film 2 */}
-      <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 0 }}>
+      <div className="page featlist" id="ai-readiness" style={{ paddingTop: 0, paddingBottom: 0 }}>
         {chapter(3)}
       </div>
       <div className="page" id="film-ai" style={{ paddingTop: 24, paddingBottom: 32 }}>
@@ -519,13 +613,13 @@ export default function Landing() {
         </Reveal>
       </div>
 
-      {/* Chapter 5 */}
+      {/* Chapter 5 · Always current — the automation payoff */}
       <div className="page featlist" style={{ paddingTop: 0, paddingBottom: 56 }}>
         {chapter(4)}
       </div>
 
       {/* SECTION 8 · Value for every team */}
-      <div className="page" style={{ paddingTop: 24, paddingBottom: 56 }}>
+      <div className="page" id="teams" style={{ paddingTop: 24, paddingBottom: 56 }}>
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">WHAT EACH TEAM GETS</p>
           <h2 className="feathead mb6">Measurable value, role by role</h2>
@@ -561,7 +655,7 @@ export default function Landing() {
       </section>
 
       {/* Integrations */}
-      <div className="page" style={{ paddingTop: 88, paddingBottom: 88 }}>
+      <div className="page" id="integrations" style={{ paddingTop: 88, paddingBottom: 88 }}>
         <Reveal>
           <h2 className="feathead">Every documentation source, every output format</h2>
           <p className="lead t2 mt3">No partial matrices, no asterisks. Supported means fully supported.</p>
@@ -591,6 +685,27 @@ export default function Landing() {
         </Reveal>
       </div>
 
+      {/* Trust & security — why it's safe to connect your source */}
+      <div className="page" id="trust" style={{ paddingTop: 0, paddingBottom: 40 }}>
+        <Reveal>
+          <p className="eyebrow eyebrow--blue mb3">TRUST &amp; SECURITY</p>
+          <h2 className="feathead mb5">Built to be trusted with your source</h2>
+          <div className="trustgrid">
+            {[['Read-only access', 'OAuth scopes limited to reading repository contents and commit history — Docify can never write to your code.'],
+              ['Code never stored', 'Files are read at generation time, used to write the document, and discarded. Your source is not our database.'],
+              ['You approve every change', 'Doc sync queues each AI rewrite as a side-by-side diff with reasoning — nothing publishes until you approve, and every approval is versioned.'],
+              ['Broken docs are blocked', 'The quality gate holds any document that fails its checks. Below the bar means not published — automatically.']].map(([t, d], i) => (
+              <Reveal key={t} delay={i * 80}>
+                <div className="trusttile">
+                  <p className="h01">{t}</p>
+                  <p className="body01 t2 mt3">{d}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </Reveal>
+      </div>
+
       {/* Founder note — honest, launch-day authentic. Replaces placeholder
           testimonials: no invented customers, ever. */}
       <div className="page" style={{ paddingTop: 0, paddingBottom: 96 }}>
@@ -613,7 +728,7 @@ export default function Landing() {
       </div>
 
       {/* FAQ — answers the questions buyers and search engines ask */}
-      <div className="page" style={{ paddingTop: 0, paddingBottom: 96 }}>
+      <div className="page" id="faq" style={{ paddingTop: 0, paddingBottom: 96 }}>
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">FREQUENTLY ASKED QUESTIONS</p>
           <h2 className="feathead mb6">AI documentation, automated — common questions</h2>
@@ -624,7 +739,7 @@ export default function Landing() {
       </div>
 
       {/* Final CTA */}
-      <section className="ctaband">
+      <section className="ctaband" id="start">
         <div style={{ maxWidth: 1056, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
             <p className="eyebrow mb3">START TODAY</p>
