@@ -690,8 +690,9 @@ function firstPlainLine(md) {
 // Everything a customer can configure about the rendered output.
 export const DEFAULT_OUTPUT = {
   showStandardMeta: false, // provenance line (standard · source · date) — opt-in
+  coverPage: false, // document identity table (version/date) — opt-in; readers rarely need it
   // Cover & identity
-  coverPage: true, title: '', subtitle: '', company: '', trademark: '',
+   title: '', subtitle: '', company: '', trademark: '',
   author: '', version: '', docId: '', classification: 'none',
   showDate: true, dateFormat: 'iso',
   // Structure

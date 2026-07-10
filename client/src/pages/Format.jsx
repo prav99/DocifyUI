@@ -6,7 +6,7 @@ import { NavBar, HelpLink } from '../ui.jsx';
 
 // Mirrors DEFAULT_OUTPUT on the server (server/src/adapters/llm.js).
 const OUT_DEFAULTS = {
-  coverPage: true, showStandardMeta: false, title: '', subtitle: '', company: '', trademark: '',
+  coverPage: false, showStandardMeta: false, title: '', subtitle: '', company: '', trademark: '',
   author: '', version: '', docId: '', classification: 'none',
   showDate: true, dateFormat: 'iso',
   toc: true, tocDepth: 2, numberedHeadings: false,
@@ -149,7 +149,7 @@ export default function Format() {
 
           <div className="acc">
             {accItem('cover', 'Cover & identity', 'title, organization, classification, date', <>
-              {tog('coverPage', 'Cover block', 'Document information table under the title')}
+              {tog('coverPage', 'Cover block', 'Adds the document identity table (version, date) — off by default')}
               {txt('title', 'Title override', 'Leave blank to use the document type')}
               {txt('subtitle', 'Subtitle', 'e.g. Integration guide for the v2 platform')}
               {txt('company', 'Company / product name', 'e.g. Acme Corp')}
