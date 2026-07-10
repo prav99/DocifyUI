@@ -986,6 +986,10 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .asst-launcher:hover{background:var(--button-primary-hover)}
 .asst-launcher:active{background:var(--button-primary-active)}
 .asst-launcher:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.asst-launcher::after{content:'';position:absolute;inset:-2px;border:2px solid rgba(15,98,254,.55);pointer-events:none;animation:asst-pulse 2.8s ease-out infinite}
+.asst-launcher.open::after{display:none}
+@keyframes asst-pulse{0%{transform:scale(1);opacity:.8}60%{transform:scale(1.32);opacity:0}100%{transform:scale(1.32);opacity:0}}
+@media (prefers-reduced-motion:reduce){.asst-launcher::after{animation:none;display:none}}
 .asst-panel{position:fixed;right:20px;bottom:88px;z-index:140;width:372px;max-width:calc(100vw - 24px);height:540px;max-height:calc(100vh - 120px);background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 8px 28px rgba(22,22,22,.28);display:flex;flex-direction:column;animation:fadeup .2s var(--ease)}
 .asst-head{background:#161616;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex:none}
 .asst-title{font-size:14px;font-weight:600;letter-spacing:.16px}

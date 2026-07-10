@@ -98,11 +98,17 @@ function answerFor(q) {
   return bestScore >= 3 ? best : null;
 }
 
-const IcChat = () => (
-  <svg width="26" height="26" viewBox="0 0 32 32" fill="#ffffff" aria-hidden="true">
-    <path d="M16 4C9.4 4 4 8.7 4 14.5c0 3.3 1.8 6.3 4.6 8.2L8 28l5.5-2.6c.8.1 1.6.2 2.5.2 6.6 0 12-4.7 12-10.5S22.6 4 16 4z" />
-    <rect x="10" y="12" width="12" height="2" fill="#0f62fe" />
-    <rect x="10" y="16" width="8" height="2" fill="#0f62fe" />
+const IcAiBot = () => (
+  <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+    <line x1="14" y1="5" x2="14" y2="9" stroke="#ffffff" strokeWidth="2" />
+    <circle cx="14" cy="4" r="2" fill="#ffffff" />
+    <rect x="5" y="9" width="18" height="13" rx="3" fill="#ffffff" />
+    <circle cx="10.5" cy="14.5" r="1.7" fill="#0f62fe" />
+    <circle cx="17.5" cy="14.5" r="1.7" fill="#0f62fe" />
+    <path d="M10.5 18.4c1 .9 2.2 1.3 3.5 1.3s2.5-.4 3.5-1.3" stroke="#0f62fe" strokeWidth="1.6" strokeLinecap="round" />
+    <path d="M9 22v3.4L12.4 22z" fill="#ffffff" />
+    <path d="M26 3.5l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z" fill="#ffffff" />
+    <path d="M27.5 13l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" fill="#ffffff" opacity="0.85" />
   </svg>
 );
 
@@ -214,11 +220,11 @@ export default function Assistant() {
 
       <button
         className={'asst-launcher' + (open ? ' open' : '')}
-        aria-label={open ? 'Close assistant' : 'Open assistant — ask about DocGen'}
+        aria-label={open ? 'Close AI assistant' : 'Open AI assistant — ask about DocGen'}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        {open ? <span style={{ fontSize: 20, color: '#fff' }}>✕</span> : <IcChat />}
+        {open ? <span style={{ fontSize: 20, color: '#fff' }}>✕</span> : <IcAiBot />}
       </button>
     </>
   );
