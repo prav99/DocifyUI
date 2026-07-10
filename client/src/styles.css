@@ -1050,3 +1050,5 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .prevframe--pdf iframe{box-shadow:0 2px 12px rgba(0,0,0,.4)}
 .prevsrc--struct{margin-top:0;border:1px solid var(--border-subtle)}
 @media (max-width:640px){.prevtab{padding:10px 12px;font-size:13px}}
+.genlayout>div{min-width:0}
+.prevsrc{overflow-x:auto;max-width:100%}
