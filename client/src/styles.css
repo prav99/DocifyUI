@@ -1066,6 +1066,6 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 /* ---- video series meter (replaces FILM 01/02/03 text) ---- */
 .filmmeter{display:flex;align-items:center;gap:6px;margin-bottom:14px}
 .filmmeter-seg{height:3px;width:52px;background:#e0e0e0;transition:background .2s}
-.filmmeter-seg.on{background:#0f62fe}
-.filmmeter-seg.done{background:#a6c8ff}
+.filmmeter-seg.on{background:#78a9ff}
+.filmmeter-seg.done{background:#0f62fe}
 .filmmeter-label{font-size:12px;color:#6f6f6f;margin-left:4px;letter-spacing:.5px}

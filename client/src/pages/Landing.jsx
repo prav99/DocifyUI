@@ -256,27 +256,27 @@ function IlluAutomate() {
 
 const FEATURES = [
   {
-    eyebrow: 'SECTION 03 · CONNECT YOUR TOOLS', title: 'It starts where your truth already lives',
+    eyebrow: 'CONNECT YOUR TOOLS', title: 'It starts where your truth already lives',
     body: 'One authorization — the same grant that signs you in. DocGen reads your repository the way your best writer would: structure, comments, commit history, API annotations. Read-only, never stored, nothing to configure.',
     illu: <IlluSource />
   },
   {
-    eyebrow: 'SECTION 04 · GENERATE', title: 'Every commit becomes a draft',
+    eyebrow: 'GENERATE', title: 'Every commit becomes a draft',
     body: 'Not a template with blanks — a real document, drafted from what the code actually says and rebuilt when it changes. Eleven document types, each held to an open standard — Diátaxis, OpenAPI 3.1, Keep a Changelog — in DITA, PDF, Word, HTML, or Markdown.',
     illu: <IlluGenerate />
   },
   {
-    eyebrow: 'SECTION 06 · VALIDATE QUALITY', title: 'Then comes the cross-examination',
+    eyebrow: 'VALIDATE QUALITY', title: 'Then comes the cross-examination',
     body: 'Before anything ships, an AI judge reads every section the way a machine will. Does the title match real queries? Does each passage stand alone? Is there an example where a reader expects one? Every finding arrives with a one-click fix — and a projected score gain.',
     illu: <IlluVerify />
   },
   {
-    eyebrow: 'SECTION 07 · AI DISCOVERY', title: 'Know where you will rank — before you publish',
+    eyebrow: 'AI DISCOVERY', title: 'Know where you will rank — before you publish',
     body: 'This is the part nobody else shows you. DocGen models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, links, readability, completeness — and puts a number on your chance of being retrieved and cited. Apply the fixes and watch the number climb.',
     illu: <IlluRank />
   },
   {
-    eyebrow: 'SECTION 05 · ALWAYS CURRENT', title: 'And then you never do this again',
+    eyebrow: 'ALWAYS CURRENT', title: 'And then you never do this again',
     body: 'Build a pipeline once: repository, branch, triggers, documents, AI thresholds, publishing. Every push, merged pull request, feature change, bug fix, and configuration update then flows into the documentation automatically — placed into your existing documents at the best-matching section, never as a duplicate. The release and its documentation ship together.',
     illu: <IlluAutomate />,
     cta: ['Build your pipeline', '/automation']
@@ -533,7 +533,7 @@ export default function Landing() {
       {/* SECTION 8 · Value for every team */}
       <div className="page" style={{ paddingTop: 24, paddingBottom: 56 }}>
         <Reveal>
-          <p className="eyebrow eyebrow--blue mb3">SECTION 08 · WHAT EACH TEAM GETS</p>
+          <p className="eyebrow eyebrow--blue mb3">WHAT EACH TEAM GETS</p>
           <h2 className="feathead mb6">Measurable value, role by role</h2>
         </Reveal>
         <div className="grid3" style={{ alignItems: 'stretch' }}>
@@ -631,7 +631,7 @@ export default function Landing() {
       <section className="ctaband">
         <div style={{ maxWidth: 1056, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
-            <p className="eyebrow mb3">SECTION 09 · START</p>
+            <p className="eyebrow mb3">START TODAY</p>
             <h2 className="h04" style={{ color: '#fff', maxWidth: 640 }}>Your code already tells the story. Let DocGen turn it into documentation.</h2>
             <div className="row mt6" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start generating documentation<span className="ico">→</span></button>
