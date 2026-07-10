@@ -8,7 +8,7 @@ import { listRepos as listBitbucket, listBranches as bbBranches } from './adapte
 import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces, verifyJiraIssues, verifyConfluencePage } from './adapters/atlassian.js';
 import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
-import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, FRAMEWORK } from './adapters/llm.js';
+import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, renderMarkdownPreview, FRAMEWORK } from './adapters/llm.js';
 import { fetchRepoFiles } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
@@ -317,21 +317,36 @@ function genFormats(g) {
   return [...new Set(list)];
 }
 
-// Deterministic re-render of the SAME generated sections into another format.
-// generateDocument is a pure renderer when aiDocs are supplied, so every
-// format is derived from one source of truth — no extra model calls, and
-// applied quality fixes carry through because the primary content is reused.
-function renderFormatContent(g, fmt) {
-  if (fmt === g.format && g.content) return g.content;
-  const ai = j(g.aiDocs, []);
-  const { content } = generateDocument({
-    track: g.track, docTypes: j(g.docTypes, []), format: fmt,
+// Deterministic re-render of the generated sections for ONE document type in
+// ONE format. generateDocument is a pure renderer when aiDocs are supplied, so
+// every (docType × format) cell derives from one source of truth — no extra
+// model calls, applied quality fixes carry through, and no content from one
+// document type can leak into another because each render is scoped.
+function renderOne(g, docType, fmt) {
+  const ai = j(g.aiDocs, []).filter((d) => !docType || d.type === docType);
+  const types = docType ? [docType] : j(g.docTypes, []);
+  const { title, content } = generateDocument({
+    track: g.track, docTypes: types, format: fmt,
     repo: g.repo, instructions: g.instructions,
     skill: g.skill || '', skillName: g.skillName || '',
     brief: j(g.brief, {}), output: j(g.output, {}),
     aiDocs: ai.length ? ai : null
   });
-  return content;
+  return { title, content };
+}
+
+// Rendered HTML preview for a cell, chosen by format so the preview always
+// LOOKS like the format it represents (never Word chrome for Markdown).
+function renderPreviewFor(g, docType, fmt) {
+  if (fmt === 'markdown') {
+    const { title, content } = renderOne(g, docType, 'markdown');
+    return renderMarkdownPreview(content, title);
+  }
+  if (fmt === 'html' || fmt === 'htmlsnip' || fmt === 'email' || fmt === 'epub') {
+    return renderOne(g, docType, fmt).content; // the markup IS the preview
+  }
+  if (fmt === 'dita' || fmt === 'docbook') return ''; // structured source view only
+  return renderOne(g, docType, 'html').content; // word/pdf → paginated page render
 }
 
 function serializeGen(g, opts = {}) {
@@ -351,17 +366,25 @@ function serializeGen(g, opts = {}) {
     })(),
     score: g.score, createdAt: g.createdAt
   };
-  // Per-format outputs for the preview tabs — detail endpoint only, and only
-  // once the pipeline is complete. Each format renders independently so one
-  // failure never hides the others.
+  // Outputs grid for the preview tabs — one independent cell per
+  // (document type × output format). Detail endpoint only, once complete.
+  // Each cell renders in isolation so one failure never hides the others and
+  // no document's content can appear inside another's preview.
   if (opts.withOutputs && g.status === 'complete') {
+    const types = j(g.docTypes, []);
+    base.docTypeNames = Object.fromEntries(types.map((t) => [t, docTypeName(g.track, t)]));
     base.outputs = {};
-    for (const f of formats) {
-      const fd = formatDef(g.track, f) || {};
-      try {
-        base.outputs[f] = { format: f, name: fd.name || f.toUpperCase(), ext: fd.ext || '.txt', content: renderFormatContent(g, f), error: null };
-      } catch (e) {
-        base.outputs[f] = { format: f, name: fd.name || f.toUpperCase(), ext: fd.ext || '.txt', content: '', error: e.message || 'Render failed' };
+    for (const t of types) {
+      for (const f of formats) {
+        const fd = formatDef(g.track, f) || {};
+        const key = t + '::' + f;
+        const cell = { key, docType: t, docTypeName: docTypeName(g.track, t), format: f, name: fd.name || f.toUpperCase(), ext: fd.ext || '.txt' };
+        try {
+          const { title, content } = renderOne(g, t, f);
+          base.outputs[key] = { ...cell, title, content, preview: renderPreviewFor(g, t, f), error: null };
+        } catch (e) {
+          base.outputs[key] = { ...cell, title: '', content: '', preview: '', error: e.message || 'Render failed' };
+        }
       }
     }
   }
@@ -509,8 +532,13 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
   // without it the primary format keeps the old behavior exactly.
   const wanted = req.query.kind === 'report' ? g.format : String(req.query.fmt || g.format);
   if (!genFormats(g).includes(wanted)) return res.status(400).json({ error: 'Format not part of this generation' });
+  // ?doc= downloads a single document type; omitted = the whole set (legacy).
+  const types = j(g.docTypes, []);
+  const wantDoc = req.query.doc ? String(req.query.doc) : null;
+  if (wantDoc && !types.includes(wantDoc)) return res.status(400).json({ error: 'Document type not part of this generation' });
   const fmt = formatDef(g.track, wanted) || { ext: '.txt' };
-  const base = (g.title || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const rendered = req.query.kind === 'report' ? null : renderOne(g, wantDoc, wanted);
+  const base = String((rendered && rendered.title) || g.title || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   if (req.query.kind === 'report') {
     // Quality report export — always the LIVE state (scores, fixes, diffs),
     // in a reviewer-friendly HTML or a CI-friendly JSON.
@@ -540,8 +568,8 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
   if (wanted === 'word' || wanted === 'pdf') {
     try {
       // The word/pdf renderer emits the Markdown master the binary builders consume.
-      const md = renderFormatContent(g, wanted);
-      const args = { md, title: g.title, output: j(g.output, {}) };
+      const md = rendered.content;
+      const args = { md, title: rendered.title || g.title, output: j(g.output, {}) };
       const buf = wanted === 'word' ? await buildDocx(args) : await buildPdf(args);
       res.setHeader('Content-Disposition', 'attachment; filename="' + base + (wanted === 'word' ? '.docx' : '.pdf') + '"');
       res.setHeader('Content-Type', wanted === 'word'
@@ -558,7 +586,7 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
     : 'text/plain; charset=utf-8';
   res.setHeader('Content-Disposition', 'attachment; filename="' + base + fmt.ext + '"');
   res.setHeader('Content-Type', ct);
-  res.send(renderFormatContent(g, wanted));
+  res.send(rendered.content);
 });
 
 /* Quality */

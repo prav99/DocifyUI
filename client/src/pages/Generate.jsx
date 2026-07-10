@@ -113,7 +113,7 @@ export default function Generate() {
         </div>
         <p className="body01 t2 mt3">
           From <span className="mono">{gen.repo}</span> → {(gen.formats && gen.formats.length ? gen.formats : [gen.format]).map((f) => f.toUpperCase()).join(' · ')}
-          {gen.docTypes.length > 1 ? ' · ' + gen.docTypes.length + ' documents in this set' : ''}
+          {gen.docTypes.length > 1 ? ' · ' + gen.docTypes.length + ' documents, each previewed separately' : ''}
         </p>
         <div className="genlayout mt7">
           <div className="tile tile--white" style={{ padding: 24, alignSelf: 'start' }}>
@@ -159,14 +159,13 @@ export default function Generate() {
 }
 
 /* =========================================================================
-   Multi-format preview: one tab per selected output format, each rendered by
-   the renderer that matches the format — never the Word layout for everything.
-   Tabs come from the server's format-keyed outputs; switching tabs never
-   regenerates or loses content, and each tab has its own download.
+   Preview grid: one independent cell per (document type × output format).
+   Server returns outputs keyed "type::format", each with its own title,
+   content, format-true preview HTML, and error state. Nothing is shared, so
+   no document's content can appear inside another's tab.
    ========================================================================= */
-const PAGINATED = ['pdf', 'word'];
-const WEBLIKE = ['html', 'htmlsnip', 'email', 'epub'];
 const XMLSTRUCT = ['dita', 'docbook'];
+const RAWHTML = ['html', 'htmlsnip', 'email', 'epub'];
 
 function FormatPreview({ gen, out, view }) {
   const oc = gen.output || {};
@@ -174,12 +173,12 @@ function FormatPreview({ gen, out, view }) {
   if (out.error) {
     return (
       <div className="tile mt5" style={{ padding: 24, borderLeft: '3px solid var(--support-error)' }}>
-        <p className="h01">This format failed to render</p>
-        <p className="body01 t2 mt2">{out.error} — the other formats are unaffected. Go back and regenerate to retry.</p>
+        <p className="h01">{out.name} preview failed</p>
+        <p className="body01 t2 mt2">{out.error} — every other output is unaffected. Regenerate to retry this one.</p>
       </div>
     );
   }
-  if (!out.content && !gen.preview) {
+  if (!out.content) {
     return <div className="tile mt5" style={{ padding: 24 }}><p className="body01 t2">Preparing {out.name} output…</p></div>;
   }
   if (view === 'source') {
@@ -192,7 +191,7 @@ function FormatPreview({ gen, out, view }) {
     return (
       <div className="prevframe prevframe--pdf mt5">
         <div className="prevpagebar prevpagebar--pdf">PDF page preview · {pageBits}</div>
-        <PreviewFrame title="PDF preview" html={gen.preview || out.content} />
+        <PreviewFrame title={out.title + ' — PDF preview'} html={out.preview} />
       </div>
     );
   }
@@ -200,87 +199,123 @@ function FormatPreview({ gen, out, view }) {
     return (
       <div className="prevframe prevframe--word mt5">
         <div className="prevpagebar prevpagebar--word">Word (.docx) preview · {pageBits}</div>
-        <PreviewFrame title="Word preview" html={gen.preview || out.content} />
+        <PreviewFrame title={out.title + ' — Word preview'} html={out.preview} />
       </div>
     );
   }
-  if (WEBLIKE.includes(f)) {
+  if (f === 'markdown') {
+    // Rendered Markdown — GitHub-style flow, not a paginated page.
+    return (
+      <div className="prevframe prevframe--md mt5">
+        <div className="prevpagebar prevpagebar--md">Rendered Markdown · headings, lists, code, tables, quotes — switch to Source for raw .md</div>
+        <PreviewFrame title={out.title + ' — Markdown preview'} html={out.preview} />
+      </div>
+    );
+  }
+  if (RAWHTML.includes(f)) {
     return (
       <div className="prevframe mt5">
         <div className="prevpagebar">Rendered {out.name} — exactly the markup you download</div>
-        <PreviewFrame title={out.name + ' preview'} html={out.content} />
+        <PreviewFrame title={out.title + ' — ' + out.name + ' preview'} html={out.preview} />
       </div>
     );
   }
   if (XMLSTRUCT.includes(f)) {
     return (
       <div className="mt5">
-        <div className="prevpagebar prevpagebar--xml">Structured {out.name} preview — element tree with readable formatting</div>
+        <div className="prevpagebar prevpagebar--xml">Structured {out.name} — element tree with readable formatting</div>
         <pre className="codeblock prevsrc prevsrc--struct" dangerouslySetInnerHTML={{ __html: highlight(out.content, f) }} />
       </div>
     );
   }
-  // Markdown and any other text format: rendered document view.
   return (
-    <div className="prevframe prevframe--md mt5">
-      <div className="prevpagebar">Rendered Markdown preview — switch to Source for the raw .md</div>
-      <PreviewFrame title="Markdown preview" html={gen.preview || out.content} />
+    <div className="prevframe mt5">
+      <div className="prevpagebar">Rendered {out.name} preview</div>
+      <PreviewFrame title={out.title + ' preview'} html={out.preview || out.content} />
     </div>
   );
 }
 
 function Preview({ gen }) {
-  const order = gen.formats && gen.formats.length ? gen.formats : [gen.format];
-  // Server-rendered per-format outputs; single-format fallback keeps the old
-  // flow working even against a stale server response.
-  const outputs = gen.outputs || { [gen.format]: { format: gen.format, name: gen.format.toUpperCase(), content: gen.content, error: null } };
-  const [active, setActive] = useState(order[0]);
+  const docTypes = gen.docTypes || [];
+  const formats = gen.formats && gen.formats.length ? gen.formats : [gen.format];
+  const names = gen.docTypeNames || {};
+  const outputs = gen.outputs || {};
+
+  const [doc, setDoc] = useState(docTypes[0]);
+  const [fmt, setFmt] = useState(formats[0]);
   const [view, setView] = useState('rendered');
   const [dl, setDl] = useState(false);
-  const act = outputs[active] ? active : order.find((f) => outputs[f]) || order[0];
-  const out = outputs[act] || { format: act, name: String(act).toUpperCase(), content: '', error: null };
+
+  // Selection is validated against what the server actually returned, so
+  // changing the generation can never leave a tab pointing at a stale cell.
+  const activeDoc = docTypes.includes(doc) ? doc : docTypes[0];
+  const activeFmt = formats.includes(fmt) ? fmt : formats[0];
+  const key = activeDoc + '::' + activeFmt;
+  const out = outputs[key] || {
+    key, docType: activeDoc, docTypeName: names[activeDoc] || activeDoc,
+    format: activeFmt, name: String(activeFmt).toUpperCase(),
+    title: gen.title, content: gen.content, preview: gen.preview, error: null
+  };
   const { chips, accent } = buildChips(gen);
 
-  async function dlFormat() {
+  async function dlActive() {
     setDl(true);
     try {
-      await download('/generations/' + gen.id + '/download?fmt=' + act);
-      toast('success', 'Download started', out.name + ' export');
+      await download('/generations/' + gen.id + '/download?fmt=' + activeFmt + '&doc=' + activeDoc);
+      toast('success', 'Download started', out.title + ' · ' + out.name);
     } catch (e) { toast('error', 'Download failed', e.message); }
     finally { setDl(false); }
   }
 
+  const cellErr = (d, f) => (outputs[d + '::' + f] || {}).error;
+  const docHasError = (d) => formats.some((f) => cellErr(d, f));
+
   return (
     <div>
       <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <h2 className="h02">Preview{order.length === 1 ? ' · ' + out.name : ''}</h2>
+        <h2 className="h02">Preview</h2>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <div className="seg" style={{ width: 220 }}>
             <button className={view === 'rendered' ? 'on' : ''} onClick={() => setView('rendered')}>Rendered</button>
             <button className={view === 'source' ? 'on' : ''} onClick={() => setView('source')}>Source</button>
           </div>
-          <button className="btn btn--ghost" disabled={dl || !!out.error} onClick={dlFormat}>
+          <button className="btn btn--ghost" disabled={dl || !!out.error} onClick={dlActive}>
             {dl ? 'Preparing…' : 'Download ' + out.name}
           </button>
         </div>
       </div>
 
-      {order.length > 1 && (
-        <div className="prevtabs mt4" role="tablist" aria-label="Output format previews">
-          {order.map((f) => {
-            const o = outputs[f];
-            return (
-              <button key={f} role="tab" aria-selected={f === act}
-                className={'prevtab' + (f === act ? ' on' : '') + (o && o.error ? ' err' : '')}
-                onClick={() => setActive(f)}>
-                {(o && o.name) || f.toUpperCase()}{o && o.error ? ' ⚠' : ''}
-              </button>
-            );
-          })}
+      {docTypes.length > 1 && (
+        <div className="prevtabs prevtabs--doc mt4" role="tablist" aria-label="Document previews">
+          {docTypes.map((d) => (
+            <button key={d} role="tab" aria-selected={d === activeDoc}
+              className={'prevtab' + (d === activeDoc ? ' on' : '') + (docHasError(d) ? ' err' : '')}
+              onClick={() => setDoc(d)}>
+              {names[d] || d}{docHasError(d) ? ' ⚠' : ''}
+            </button>
+          ))}
         </div>
       )}
 
-      <div className="row mt3" style={{ flexWrap: 'wrap', gap: 6 }}>
+      {formats.length > 1 && (
+        <div className="prevtabs prevtabs--fmt mt3" role="tablist" aria-label="Output format previews">
+          {formats.map((f) => (
+            <button key={f} role="tab" aria-selected={f === activeFmt}
+              className={'prevtab prevtab--sm' + (f === activeFmt ? ' on' : '') + (cellErr(activeDoc, f) ? ' err' : '')}
+              onClick={() => setFmt(f)}>
+              {(outputs[activeDoc + '::' + f] || {}).name || f.toUpperCase()}{cellErr(activeDoc, f) ? ' ⚠' : ''}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="helper mt3">
+        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{out.title || names[activeDoc]}</span>
+        {' · '}{out.name} output
+      </p>
+
+      <div className="row mt2" style={{ flexWrap: 'wrap', gap: 6 }}>
         {chips.map((c, i) => <span key={c.label + i} className={'tag ' + c.cls}>{c.label}</span>)}
         {accent && (
           <span className="tag tag--outline">
@@ -289,7 +324,8 @@ function Preview({ gen }) {
         )}
       </div>
 
-      <FormatPreview gen={gen} out={out} view={view} />
+      {/* key forces a clean remount per cell — no state reuse across tabs */}
+      <FormatPreview key={key + ':' + view} gen={gen} out={out} view={view} />
     </div>
   );
 }

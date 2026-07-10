@@ -527,6 +527,33 @@ function inlineHtml(t) {
 }
 
 // Converts the Markdown this engine itself produces (a known subset) to HTML.
+/* Markdown preview: renders the .md the way GitHub/VS Code renders it —
+   deliberately different from the paginated Word/PDF page: no cover furniture,
+   full-width flow, visible code blocks, tables, blockquotes, rules. */
+const MD_CSS = [
+  'body{font-family:"IBM Plex Sans",-apple-system,system-ui,sans-serif;color:#1f2328;max-width:900px;margin:0;padding:24px 32px;line-height:1.65;font-size:15px}',
+  'h1{font-size:28px;font-weight:600;padding-bottom:.3em;border-bottom:1px solid #d1d9e0;margin:24px 0 16px}',
+  'h2{font-size:21px;font-weight:600;padding-bottom:.3em;border-bottom:1px solid #d1d9e0;margin:24px 0 16px}',
+  'h3{font-size:17px;font-weight:600;margin:24px 0 16px}',
+  'p{margin:0 0 16px}',
+  'a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}',
+  'code{font-family:"IBM Plex Mono",ui-monospace,monospace;background:#eff1f3;padding:.2em .4em;border-radius:6px;font-size:85%}',
+  'pre{background:#f6f8fa;border-radius:6px;padding:16px;overflow:auto;line-height:1.45;margin:0 0 16px}',
+  'pre code{background:none;padding:0;font-size:100%}',
+  'blockquote{margin:0 0 16px;padding:0 1em;color:#59636e;border-left:.25em solid #d1d9e0}',
+  'ul,ol{padding-left:2em;margin:0 0 16px}li{margin:.25em 0}',
+  'table{border-collapse:collapse;margin:0 0 16px;display:block;overflow:auto;width:max-content;max-width:100%}',
+  'th,td{border:1px solid #d1d9e0;padding:6px 13px}th{background:#f6f8fa;font-weight:600}',
+  'tr:nth-child(2n) td{background:#f6f8fa}',
+  'hr{height:.25em;border:0;background:#d1d9e0;margin:24px 0}',
+  'strong{font-weight:600}'
+].join('');
+
+export function renderMarkdownPreview(md, title) {
+  return '<!doctype html><html><head><meta charset="utf-8"><title>' + escX(title || 'Markdown preview') +
+    '</title><style>' + MD_CSS + '</style></head><body class="md-preview">' + mdToHtml(md) + '</body></html>';
+}
+
 export function mdToHtml(md) {
   const out = [];
   const lines = String(md).split('\n');
@@ -662,6 +689,7 @@ function firstPlainLine(md) {
 /* ---------------- Output options ---------------- */
 // Everything a customer can configure about the rendered output.
 export const DEFAULT_OUTPUT = {
+  showStandardMeta: false, // provenance line (standard · source · date) — opt-in
   // Cover & identity
   coverPage: true, title: '', subtitle: '', company: '', trademark: '',
   author: '', version: '', docId: '', classification: 'none',
@@ -966,7 +994,11 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   if (oc.docId && oc.docId.trim()) coverRows.push(['Document ID', '`' + oc.docId.trim() + '`']);
   if (oc.classification !== 'none') coverRows.push(['Classification', '**' + String(oc.classification).toUpperCase() + '**']);
   if (oc.showDate) coverRows.push(['Date', fmtDate(oc)]);
-  parts.push('> Standard: ' + (tpl ? tpl.standard : 'DocGen default') + ' · Source: `' + repo + '`' + (oc.showDate ? ' · ' + fmtDate(oc) : ''));
+  // Provenance line (standard + source repo). OFF by default — it is
+  // authoring metadata, not reader content. Opt in with output.showStandardMeta.
+  if (oc.showStandardMeta) {
+    parts.push('> Standard: ' + (tpl ? tpl.standard : 'DocGen default') + ' · Source: `' + repo + '`' + (oc.showDate ? ' · ' + fmtDate(oc) : ''));
+  }
   if (!noFurniture) {
     parts.push('', aiDocs
       ? 'Documentation for `' + repo + '`, generated from the repository source.'
@@ -1108,7 +1140,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
       '<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.0">',
       '  <info>',
       '    <title>' + escX(title) + '</title>',
-      '    <subtitle>Standard: ' + escX(tpl ? tpl.standard : 'DocGen default') + ' · Source: ' + escX(repo) + '</subtitle>',
+      ...(oc.showStandardMeta ? ['    <subtitle>Standard: ' + escX(tpl ? tpl.standard : 'DocGen default') + ' · Source: ' + escX(repo) + '</subtitle>'] : []),
       '  </info>'
     ];
     for (const [h, body] of sections) {

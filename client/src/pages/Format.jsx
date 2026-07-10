@@ -6,7 +6,7 @@ import { NavBar, HelpLink } from '../ui.jsx';
 
 // Mirrors DEFAULT_OUTPUT on the server (server/src/adapters/llm.js).
 const OUT_DEFAULTS = {
-  coverPage: true, title: '', subtitle: '', company: '', trademark: '',
+  coverPage: true, showStandardMeta: false, title: '', subtitle: '', company: '', trademark: '',
   author: '', version: '', docId: '', classification: 'none',
   showDate: true, dateFormat: 'iso',
   toc: true, tocDepth: 2, numberedHeadings: false,
@@ -162,6 +162,7 @@ export default function Format() {
                 ['confidential', 'Confidential'], ['restricted', 'Restricted']
               ])}
               {tog('showDate', 'Show date')}
+              {tog('showStandardMeta', 'Show source & standard line', 'Adds “Standard: … · Source: repo” above the intro — off by default')}
               {sel('dateFormat', 'Date format', [
                 ['iso', 'ISO 8601 (2026-07-04)'], ['long', 'Long (July 4, 2026)']
               ])}

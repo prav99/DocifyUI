@@ -1056,3 +1056,9 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 @media (max-width:640px){.prevtab{padding:10px 12px;font-size:13px}}
 .genlayout>div{min-width:0}
 .prevsrc{overflow-x:auto;max-width:100%}
+.prevtabs--doc .prevtab{font-size:15px}
+.prevtabs--fmt{border-bottom:none;gap:4px}
+.prevtab--sm{padding:6px 12px;font-size:13px;border:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle);background:var(--layer-01)}
+.prevtab--sm.on{background:var(--background);border-bottom-color:var(--link-primary)}
+.prevpagebar--md{background:#f6f8fa;color:#59636e;border-bottom:1px solid #d1d9e0}
+.prevframe--md iframe{background:#ffffff}
