@@ -1069,3 +1069,34 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .filmmeter-seg.on{background:#78a9ff}
 .filmmeter-seg.done{background:#0f62fe}
 .filmmeter-label{font-size:12px;color:#6f6f6f;margin-left:4px;letter-spacing:.5px}
+
+/* ============ Mobile polish v2: newer components + cross-OS rendering ============ */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+@media(max-width:600px){
+  .prevframe iframe{height:420px}
+  .prevframe--pdf{padding:12px}
+  .prevpagebar{white-space:normal;line-height:1.5}
+  .relief-main{font-size:22px}
+  .relief-sub{font-size:14px}
+  .filmmeter-seg{width:40px}
+  .nextcard{padding:14px 16px}
+  .nextcard-title{font-size:14px}
+  .asst-panel{right:8px;left:8px;width:auto;bottom:84px;height:70vh}
+  .ctaband .row{flex-direction:column;align-items:stretch}
+  .ctaband .btn{width:100%;justify-content:center}
+  .quotecard,.tile--white{padding:20px !important}
+  .vp2-title{font-size:18px}
+  .vp2-sub{display:none}
+  .seg{width:100% !important}
+}
+@media(max-width:400px){
+  .display{font-size:27px}
+  .metricnum{font-size:30px}
+  .prevtab{padding:8px 10px;font-size:12px}
+}
+/* Windows: neat thin scrollbars inside scroll regions (Chrome/Edge) */
+.prevsrc::-webkit-scrollbar,.demo-rail::-webkit-scrollbar,.scrollx::-webkit-scrollbar{height:8px;width:8px}
+.prevsrc::-webkit-scrollbar-thumb,.demo-rail::-webkit-scrollbar-thumb,.scrollx::-webkit-scrollbar-thumb{background:#c6c6c6}
+/* Safari: momentum + no rubber-band jitter on players */
+.demo-stage,.jd-stage{-webkit-overflow-scrolling:touch}
