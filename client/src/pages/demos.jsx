@@ -64,7 +64,7 @@ const AUTO_SCENES = [
     label: 'Hook', dur: 4500, sfx: 'whoosh',
     vo: 'Every merge changes the truth. Here is how your documentation keeps up — automatically.',
     render: () => (
-      <TitleSlate kicker="FILM 01 · COMPLETE AUTOMATION"
+      <TitleSlate kicker="COMPLETE AUTOMATION"
         title="Your code changes. Your documentation updates automatically."
         sub="From merged pull request to verified, published documentation — no human in the loop until approval." />
     )
@@ -136,7 +136,7 @@ const AUTO_SCENES = [
         <div style={{ padding: '4px 0 10px' }}>
           <span className="jd-verdict">Your code changes. Your documentation updates automatically.</span>
         </div>
-        <NextPointer target="film-ai" kicker="FILM 03 · AI READINESS"
+        <NextPointer target="film-ai" kicker="AI READINESS"
           title="See how Docify checks your documentation for AI Readiness" />
       </div>
     )
@@ -145,7 +145,7 @@ const AUTO_SCENES = [
 
 export function AutomationDemo() {
   return <DemoShell name="complete automation" crumb="docgen / automation / on-merge" scenes={AUTO_SCENES}
-    posterMeta={{ kicker: 'FILM 01 · COMPLETE AUTOMATION', title: 'Your code changes. Your documentation updates automatically.', sub: 'A pull request merges — and verified, published documentation follows. The whole loop in 30 seconds.', mins: '30 sec' }} />;
+    posterMeta={{ kicker: 'COMPLETE AUTOMATION', title: 'Your code changes. Your documentation updates automatically.', sub: 'A pull request merges — and verified, published documentation follows. The whole loop in 30 seconds.', mins: '30 sec' }} />;
 }
 
 /* =========================================================================
@@ -162,7 +162,7 @@ const AICOMPAT_SCENES = [
     label: 'Hook', dur: 4500, sfx: 'whoosh',
     vo: 'Your next reader may be an AI assistant. Is your documentation ready for it?',
     render: () => (
-      <TitleSlate kicker="FILM 03 · AI READINESS"
+      <TitleSlate kicker="AI READINESS"
         title="Readable by people. Discoverable by AI."
         sub="Analyse any document for AI search readiness, see exactly what holds it back, and fix it before you publish." />
     )
@@ -229,7 +229,7 @@ const AICOMPAT_SCENES = [
         <div style={{ padding: '4px 0 10px' }}>
           <span className="jd-verdict">Documentation people understand — and AI can discover.</span>
         </div>
-        <NextPointer target="film-generate" kicker="FILM 02 · GENERATE ON DEMAND"
+        <NextPointer target="film-generate" kicker="GENERATE ON DEMAND"
           title="Explore the complete document-generation workflow" />
       </div>
     )
@@ -238,7 +238,7 @@ const AICOMPAT_SCENES = [
 
 export function AICompatDemo() {
   return <DemoShell name="AI readiness" crumb="docgen / quality / ai-readiness" scenes={AICOMPAT_SCENES}
-    posterMeta={{ kicker: 'FILM 03 · AI READINESS', title: 'Readable by people. Discoverable by AI.', sub: 'The AI Search Readiness Score, the exact fixes, and one document climbing from 62 to 91 — in 30 seconds.', mins: '30 sec' }} />;
+    posterMeta={{ kicker: 'AI READINESS', title: 'Readable by people. Discoverable by AI.', sub: 'The AI Search Readiness Score, the exact fixes, and one document climbing from 62 to 91 — in 30 seconds.', mins: '30 sec' }} />;
 }
 
 /* =========================================================================
@@ -249,7 +249,7 @@ const GEN_SCENES = [
     label: 'Hook', dur: 4500, sfx: 'whoosh',
     vo: 'Weeks of writing — or one workflow. Watch complex source content become professional documentation, in minutes.',
     render: () => (
-      <TitleSlate kicker="FILM 02 · GENERATE ON DEMAND"
+      <TitleSlate kicker="GENERATE ON DEMAND"
         title="Complex source content → professional documentation, in minutes."
         sub="Pick a source, a document, a format — DocGen writes it from the truth, then proves its quality." />
     )
@@ -314,7 +314,7 @@ const GEN_SCENES = [
             <span key={f} className="demo-chip" style={{ animationDelay: (0.1 + i * 0.4) + 's', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12 }}>⬇ {f}</span>
           ))}
         </div>
-        <NextPointer target="film-automation" kicker="FILM 01 · AUTOMATION"
+        <NextPointer target="film-automation" kicker="AUTOMATION"
           title="Discover how Docify automates documentation after every code change" />
       </div>
     )
@@ -323,5 +323,5 @@ const GEN_SCENES = [
 
 export function GenerateDemo() {
   return <DemoShell name="standard generation" crumb="docgen / generate / new-project" scenes={GEN_SCENES}
-    posterMeta={{ kicker: 'FILM 02 · GENERATE ON DEMAND', title: 'Complex source content → professional documentation, in minutes.', sub: 'Source, document type, format, audience — then generation, verification, and export. In 30 seconds.', mins: '30 sec' }} />;
+    posterMeta={{ kicker: 'GENERATE ON DEMAND', title: 'Complex source content → professional documentation, in minutes.', sub: 'Source, document type, format, audience — then generation, verification, and export. In 30 seconds.', mins: '30 sec' }} />;
 }

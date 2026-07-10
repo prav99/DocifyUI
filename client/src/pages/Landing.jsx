@@ -6,6 +6,19 @@ import { SUPPORT_EMAIL, supportMailto } from '../config.js';
 import { AutomationDemo, AICompatDemo, GenerateDemo } from './demos.jsx';
 
 /* ---------- Scroll-reveal wrapper ---------- */
+/* Thin series meter: which of the three product videos this section is —
+   quiet, professional, no numbering shouted in text. */
+function SeriesMeter({ step }) {
+  return (
+    <div className="filmmeter" aria-label={'Video ' + step + ' of 3'}>
+      {[1, 2, 3].map((i) => (
+        <span key={i} className={'filmmeter-seg' + (i === step ? ' on' : i < step ? ' done' : '')} />
+      ))}
+      <span className="filmmeter-label mono">{step} / 3</span>
+    </div>
+  );
+}
+
 function Reveal({ children, delay = 0, className = '' }) {
   const ref = useRef(null);
   const [on, setOn] = useState(false);
@@ -398,7 +411,8 @@ export default function Landing() {
       {/* SECTION 2 · Meet DocGen — Film 1: complete automation */}
       <div className="page" id="film-automation" style={{ paddingTop: 40, paddingBottom: 32 }}>
         <Reveal>
-          <p className="eyebrow eyebrow--blue mb3">SECTION 02 · MEET DOCGEN — FILM 01</p>
+          <SeriesMeter step={1} />
+          <p className="eyebrow eyebrow--blue mb3">MEET DOCGEN</p>
           <h2 className="feathead">Your code changes. Your documentation updates automatically.</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
             DocGen closes the loop between your code and your published docs — generate, validate,
@@ -436,7 +450,8 @@ export default function Landing() {
       </div>
       <div className="page" id="film-generate" style={{ paddingTop: 24, paddingBottom: 32 }}>
         <Reveal>
-          <p className="eyebrow eyebrow--blue mb3">FILM 02 · GENERATE ON DEMAND</p>
+          <SeriesMeter step={2} />
+          <p className="eyebrow eyebrow--blue mb3">GENERATE ON DEMAND</p>
           <h2 className="feathead">Complex technical input → professional documentation, in minutes</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
             Pick a source, a document type, and a format — DocGen writes it, verifies it, and
@@ -469,7 +484,8 @@ export default function Landing() {
       </div>
       <div className="page" id="film-ai" style={{ paddingTop: 24, paddingBottom: 32 }}>
         <Reveal>
-          <p className="eyebrow eyebrow--blue mb3">FILM 03 · AI COMPATIBILITY</p>
+          <SeriesMeter step={3} />
+          <p className="eyebrow eyebrow--blue mb3">AI READINESS</p>
           <h2 className="feathead">Documentation people understand — and AI systems trust</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
             Your docs were written for people. This film shows the AI Readiness Score — what
