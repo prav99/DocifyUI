@@ -188,6 +188,22 @@ const TOPICS = {
       ['A change I expected was filtered out', 'Check the Filtered out tab — every skip shows its rationale (commit type, internal-only surface, below threshold) and can be documented anyway with one click.']
     ]
   },
+  governance: {
+    title: 'Documentation Governance',
+    page: '/governance',
+    intro: 'A dedicated workspace for correcting documentation you ALREADY have: analyze structure and writing, apply a style guide, review every change, approve, and export — end to end.',
+    steps: [
+      'Step 1 — Documents: select existing documents, upload a file, paste content, or import from a repository. Multiple documents run through the same governance settings together.',
+      'Step 2 — Style & type: pick a style guide (Docify Professional, enterprise classic, Microsoft-, Google-, Apple-, Atlassian-style, or marketing), the target document type (decides the recommended structure), and optional per-run instructions. Your organization profile from Settings applies on top and always wins.',
+      'Step 3 — Analyze & correct: every document is diagnosed first — consistency scores, current vs recommended structure side by side, missing sections, and writing findings. Then "Correct" rebuilds each document with staged progress; you can leave the page, proposals land in the review queue regardless.',
+      'Step 4 — Review & export: each proposal shows before → after scores. Approve (the corrected version becomes the live document; the old version is kept), dismiss, download the corrected file, or open the full side-by-side diff in Doc sync.'
+    ],
+    issues: [
+      ['Correction seems stuck', 'Large documents take a minute or two per document. The progress bar shows the current stage — and even if you close the page, the proposal appears in the review queue when ready.'],
+      ['I want the repository updated too', 'Docify deliberately holds read-only access to your repositories. Download the corrected file and commit it yourself — nothing is ever pushed to your code without you.'],
+      ['Scores did not reach 100', 'Some findings need human judgment (long sentences that are genuinely necessary, structural choices). The remaining findings are listed on the Quality page with recommendations.']
+    ]
+  },
   settings: {
     title: 'Team & settings',
     page: '/settings',
@@ -241,7 +257,7 @@ const TOPICS = {
   }
 };
 
-const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'sync', 'settings', 'pricing', 'checkout', 'docs'];
+const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'sync', 'governance', 'settings', 'pricing', 'checkout', 'docs'];
 
 export default function Help() {
   const { topic } = useParams();

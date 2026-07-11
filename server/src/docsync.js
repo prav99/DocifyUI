@@ -20,7 +20,7 @@ import { prisma } from './db.js';
 import { evaluateCommit, loadRepoConfig, DEFAULT_CONFIG, SAMPLE_YAML, SAMPLE_INSTRUCTIONS } from './adapters/relevance.js';
 import { fetchRepoFile } from './adapters/repofiles.js';
 import { matchSurroundingStyle, resolveWritingPolicy, compileStylePrompt, styleAudit, autofixText } from './adapters/styleguide.js';
-import { aiRestructureDocument } from './adapters/llm.js';
+import { aiRestructureDocument, blueprintOutline } from './adapters/llm.js';
 import { freshToken } from './auth.js';
 
 export const syncRouter = Router();
@@ -749,8 +749,22 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
   if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
   const docType = ['userguide', 'api', 'install', 'quickstart', 'troubleshoot', 'relnotes', 'admin']
     .includes(String((req.body || {}).docType)) ? String(req.body.docType) : 'userguide';
+  // Per-job style overrides from the Governance workspace: a guide bias and
+  // free-form notes for THIS run, layered over the saved tenant profile.
+  const guideOverride = ['docify', 'ibm', 'microsoft', 'google', 'apple', 'atlassian', 'marketing', 'custom']
+    .includes(String((req.body || {}).guide)) ? String(req.body.guide) : '';
+  const jobNotes = String((req.body || {}).notes || '').slice(0, 4000);
   try {
-    const tenant = await prisma.writingProfile.findUnique({ where: { userId: req.uid } }).catch(() => null);
+    let tenant = await prisma.writingProfile.findUnique({ where: { userId: req.uid } }).catch(() => null);
+    if (guideOverride || jobNotes) {
+      const cfg = tenant ? JSON.parse(tenant.config || '{}') : {};
+      if (jobNotes) cfg.notes = [cfg.notes, jobNotes].filter(Boolean).join('\n');
+      tenant = {
+        ...(tenant || { name: 'Job style', voice: '', version: 0 }),
+        guide: guideOverride || (tenant ? tenant.guide : 'docify'),
+        config: JSON.stringify(cfg)
+      };
+    }
     const policy = resolveWritingPolicy({ track: 'technical', docType, tenant });
     const before = String(row.content || '');
     if (before.trim().length < 40) return res.status(400).json({ error: 'The document is too short to standardize' });
@@ -789,6 +803,50 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
       scores: { before: auditBefore.scores, after: auditAfter.scores }
     });
   } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+/* ---------------- Governance: analysis before correction ----------------
+   Read-only diagnosis of a document against a type blueprint and the
+   resolved writing policy: current vs recommended structure, missing
+   sections, and the full consistency audit. Nothing is modified. */
+syncRouter.post('/documents/:id/analyze', async (req, res) => {
+  const row = await ownDoc(req, res);
+  if (!row) return;
+  if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
+  const docType = ['userguide', 'api', 'install', 'quickstart', 'troubleshoot', 'relnotes', 'admin']
+    .includes(String((req.body || {}).docType)) ? String(req.body.docType) : 'userguide';
+  try {
+    const tenant = await prisma.writingProfile.findUnique({ where: { userId: req.uid } }).catch(() => null);
+    const policy = resolveWritingPolicy({ track: 'technical', docType, tenant });
+    const audit = styleAudit(String(row.content || ''), policy);
+    const current = j(row.sections, []).map((s) => ({ title: s.title, level: s.level || 1 }));
+    const recommended = blueprintOutline('technical', docType);
+    // Which recommended sections the document plausibly covers already.
+    const blob = current.map((s) => s.title.toLowerCase()).join(' | ');
+    const coverage = recommended.map((r) => ({
+      title: r,
+      present: r.toLowerCase().split(/\s+/).some((w) => w.length > 3 && blob.includes(w))
+    }));
+    res.json({
+      docType,
+      current,
+      recommended: coverage,
+      missing: coverage.filter((c) => !c.present).map((c) => c.title),
+      audit,
+      profile: { styleLabel: policy.styleLabel, guide: policy.styleProfile, tenantVersion: policy.tenantProfile ? policy.tenantProfile.version : null }
+    });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Download a document's live content as a file (original or corrected — the
+// content IS the latest approved state; versions hold history).
+syncRouter.get('/documents/:id/download', async (req, res) => {
+  const row = await ownDoc(req, res);
+  if (!row) return;
+  const safe = String(row.name || 'document.md').replace(/[^\w.-]+/g, '_');
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '"');
+  res.send(String(row.content || ''));
 });
 
 /* ---------------- Relevance: decisions audit + overrides + config ---------- */

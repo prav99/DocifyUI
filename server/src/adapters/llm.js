@@ -1625,6 +1625,16 @@ function parseSectionsArray(raw) {
   throw new Error('Unparseable sections array from model');
 }
 
+// The blueprint outline for a document type — used by the Governance
+// workspace to show "current structure vs recommended structure".
+export function blueprintOutline(track, docType) {
+  const tpl = TEMPLATES[docType];
+  if (!tpl) return ['Overview'];
+  try {
+    return tpl.sections({ product: 'X', version: '', date: '', repo: '', brief: {} }).map(([h]) => h);
+  } catch { return ['Overview']; }
+}
+
 /* ---------------- Full-document standardization ----------------
    For the startup whose docs were written by ten developers with ten styles:
    rebuild an EXISTING document against a type blueprint in ONE voice — every

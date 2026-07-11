@@ -153,8 +153,12 @@ export const DEFAULT_TERMS = [
 
 export const STYLE_GUIDES = {
   docify: 'Docify Professional Style (default)',
+  ibm: 'Bias toward classic enterprise technical-writing conventions: strict clarity, formal register, rigorous procedural writing, global readability and translation readiness first',
   microsoft: 'Bias toward Microsoft Writing Style conventions: warm-but-crisp, contractions welcome, sentence case everywhere',
   google: 'Bias toward Google developer-documentation conventions: second person, present tense, standard American spelling',
+  apple: 'Bias toward minimal, polished consumer-product writing: short sentences, no jargon, benefit-first phrasing',
+  atlassian: 'Bias toward practical team-documentation conventions: friendly, direct, example-heavy',
+  marketing: 'Marketing-content style: benefit-led, energetic, concrete proof points over adjectives',
   custom: 'Organization style guide (from the tenant profile notes)'
 };
 
