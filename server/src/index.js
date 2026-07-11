@@ -82,7 +82,9 @@ app.use('/api/auth/signup', rateLimiter({ windowMs: 60000, max: Number(process.e
 app.use('/api/auth/login', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/verify-otp', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'docgen-api', pid: process.pid }));
+// /api/health now lives in apiRouter (component-level checks, 200 or 503 for
+// external monitors); this minimal liveness ping moved to /api/ping.
+app.get('/api/ping', (req, res) => res.json({ ok: true, service: 'docgen-api', pid: process.pid }));
 app.use('/api/auth', authRouter);
 app.use('/api', apiRouter);
 
