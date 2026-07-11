@@ -559,7 +559,7 @@ function ReviewQueue({ pending, onDecided, refresh }) {
         {pending.map((u) => (
           <button key={u.id} className={'qitem' + (u.id === selId ? ' on' : '')} onClick={() => setSelId(u.id)}
             role="option" aria-selected={u.id === selId}>
-            <span className="qmsg">{u.message}</span>
+            <span className="qmsg">{u.message}{u.reasoning && u.reasoning.demo && <span className="tag tag--sample" style={{ marginLeft: 6 }}>sample</span>}</span>
             <span className="qmeta">
               <span className="mono">{u.commit}</span>
               <span>→ {u.anchor.anchorPath || u.anchor.title}</span>
@@ -582,10 +582,13 @@ function ReviewQueue({ pending, onDecided, refresh }) {
               <div>
                 <h3 className="h02">{sel.message}</h3>
                 <p className="helper mt2">
-                  <span className="mono">{sel.commit}</span> · {sel.author} · {sel.branch} · {sel.docName} · {fmtDate(sel.createdAt)}
+                  <span className="mono">{sel.commit}</span> · {sel.author}{r.demo ? ' (fictional author)' : ''} · {sel.branch} · {sel.docName} · {fmtDate(sel.createdAt)}
                 </p>
               </div>
-              <KindTag kind={sel.kind} />
+              <span className="row" style={{ gap: 8 }}>
+                {r.demo && <span className="tag tag--sample">sample commit</span>}
+                <KindTag kind={sel.kind} />
+              </span>
             </div>
             <div className="ctlfiles">{sel.files.map((f) => <span key={f}>{f}</span>)}</div>
           </div>
@@ -671,32 +674,33 @@ function Timeline({ onOpenQueue }) {
       </div>
     );
   }
-  // Demo-feed commits carry fictional authors (Meera Krishnan, Daniel Osei,
-  // Sofia Marques). Label them clearly so nobody mistakes sample history for
-  // another person's real work.
-  const DEMO_AUTHORS = ['Meera Krishnan', 'Daniel Osei', 'Sofia Marques'];
-  const hasDemo = tl.some((c) => DEMO_AUTHORS.includes(c.author));
+  // Commits from the built-in demo feed are flagged server-side (c.demo).
+  // Label them unmistakably: fictional authors must never read as real users.
+  const hasDemo = tl.some((c) => c.demo);
   return (
     <div className="ctl">
       {hasDemo && (
-        <div className="syncnote" role="note" style={{ marginBottom: 16 }}>
-          <strong>Sample repository history.</strong>&nbsp;Commits marked <span className="tag tag--gray">sample</span> come
-          from Docify&rsquo;s built-in demo feed — the authors are fictional. Connect a webhook (Automation page)
-          and your real commits replace them.
+        <div className="demonote" role="note">
+          <span className="demonote-badge">SAMPLE</span>
+          <span>
+            <b>This is demo repository history.</b> Entries marked <span className="tag tag--sample">sample</span> come
+            from Docify&rsquo;s built-in example feed — the commit authors are fictional characters, not real people.
+            Connect a webhook from the Automation page and your real commits take their place.
+          </span>
         </div>
       )}
       {tl.map((c) => {
         const allDone = c.updates.every((u) => u.status !== 'pending');
-        const isDemo = DEMO_AUTHORS.includes(c.author);
+        const isDemo = c.demo;
         return (
           <div key={c.commit + c.at} className={'ctlitem' + (allDone ? ' ctlitem--done' : '')}>
             <div className="ctlcard">
               <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
-                <p className="body01"><b>{c.message}</b>{isDemo && <span className="tag tag--gray" style={{ marginLeft: 8 }}>sample</span>}</p>
+                <p className="body01"><b>{c.message}</b>{isDemo && <span className="tag tag--sample" style={{ marginLeft: 8 }}>sample</span>}</p>
                 <span className="helper">{fmtDate(c.at)}</span>
               </div>
               <p className="helper mt2">
-                <span className="mono">{c.commit}</span> · {c.author}{isDemo ? ' (fictional)' : ''} · {c.branch}
+                <span className="mono">{c.commit}</span> · {c.author}{isDemo ? ' (fictional author)' : ''} · {c.branch}
                 {c.adds || c.dels ? <span> · <span style={{ color: 'var(--support-success)' }}>+{c.adds}</span> <span style={{ color: 'var(--support-error)' }}>−{c.dels}</span></span> : null}
               </p>
               <div className="ctlfiles">{c.files.map((f) => <span key={f}>{f}</span>)}</div>
@@ -882,9 +886,9 @@ function FilteredOut({ onDocumented }) {
         <div key={d.id} className="syncdoc syncdoc--ready" style={{ borderLeftColor: '#8d8d8d' }}>
           <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
             <div style={{ minWidth: 0 }}>
-              <p className="h01" style={{ fontWeight: 600 }}>{d.message}</p>
+              <p className="h01" style={{ fontWeight: 600 }}>{d.message}{d.demo && <span className="tag tag--sample" style={{ marginLeft: 8 }}>sample</span>}</p>
               <p className="helper mt2">
-                <span className="mono">{d.sha}</span>{d.author ? ' · ' + d.author : ''} · {fmtDate(d.createdAt)}
+                <span className="mono">{d.sha}</span>{d.author ? ' · ' + d.author + (d.demo ? ' (fictional)' : '') : ''} · {fmtDate(d.createdAt)}
                 {d.repo ? ' · ' + d.repo : ''}
               </p>
             </div>

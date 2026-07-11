@@ -338,7 +338,9 @@ export function buildUpdate(doc, commit) {
     confidence: confFrom(s.score, total)
   }));
   const confidence = confFrom(best.score, total);
+  const fromDemoFeed = COMMIT_FEED.some((c) => c.sha === commit.sha);
   const reasoning = {
+    demo: fromDemoFeed, // provenance: built-in sample feed, fictional author
     why: kind === 'update-existing'
       ? 'The change maps to “' + best.title + '” (p.' + page + ') — its heading and body share the strongest vocabulary with this commit, so that section is updated in place.'
       : 'No existing section fully covers this change — a new “' + subTitle + '” sub-section is spliced under “' + best.title + '” (p.' + page + '), the closest matching parent.',
@@ -720,7 +722,9 @@ syncRouter.get('/relevance/decisions', async (req, res) => {
       id: d.id, docId: d.docId, repo: d.repo, sha: d.sha, message: d.message, author: d.author,
       files: j(d.files, []), verdict: d.verdict, score: d.score, category: d.category,
       rationale: d.rationale, stage: d.stage, eliminatedBy: d.eliminatedBy,
-      surfaces: j(d.surfaces, []), overridden: d.overridden, createdAt: d.createdAt
+      surfaces: j(d.surfaces, []), overridden: d.overridden,
+      demo: COMMIT_FEED.some((c) => c.sha === d.sha), // sample-feed provenance
+      createdAt: d.createdAt
     }))
   });
 });
@@ -889,6 +893,9 @@ syncRouter.get('/timeline', async (req, res) => {
       byCommit.set(key, {
         commit: u.commit, message: u.message, author: u.author, branch: u.branch,
         files: j(u.files, []), adds: meta ? meta.adds : 0, dels: meta ? meta.dels : 0,
+        // Truth about provenance: commits from the built-in demo feed are
+        // SAMPLE data with fictional authors — the UI labels them clearly.
+        demo: Boolean(meta),
         at: u.createdAt, updates: []
       });
     }

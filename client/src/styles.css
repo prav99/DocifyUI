@@ -1141,6 +1141,12 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 @media(max-width:1000px){.trustgrid{grid-template-columns:1fr 1fr}}
 @media(max-width:520px){.trustgrid{grid-template-columns:1fr}}
 
+/* ==== Sample-data provenance: demo commits must never read as real work ==== */
+.tag--sample{background:#f4f4f4;color:#6f6f6f;border:1px dashed #a8a8a8;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase}
+.demonote{display:flex;gap:12px;align-items:flex-start;background:#fcf4d6;border:1px solid #f1c21b;border-left:3px solid #f1c21b;padding:12px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.55;color:#525252}
+.demonote-badge{flex-shrink:0;background:#161616;color:#f1c21b;font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;padding:3px 8px;margin-top:2px}
+.demonote b{color:#161616}
+
 /* ==== Repository hub: enterprise data table + side panels ==== */
 .hubbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .hubsearch{max-width:320px;flex:1 1 220px}
