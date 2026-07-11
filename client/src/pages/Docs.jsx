@@ -240,6 +240,28 @@ const SUPPORTING = [
       { p: 'Set the gate to match your risk tolerance. The JSON report variant exposes overall score, verdict, dimensions, and open findings — pipe it into dashboards or block deploys when the score drops.' }
     ]}
   ]},
+  { t: 'Lifecycle & approvals', items: [
+    { slug: 'documents-lifecycle', name: 'The Documents tab', sum: 'Every generated document: versions, inline comparison, and an approval workflow before publishing.', body: [
+      { p: 'The Documents tab is the single source of truth for everything Docify has generated: a searchable, filterable table showing each document’s repository, type and format, source (Manual or Automation), quality score, version count, approval status, and generation date.' },
+      { h: 'Version history — automatic and lossless' },
+      { p: 'Every time regeneration changes a document, the outgoing content is snapshotted as a version before it is replaced — this happens inside the pipeline itself, so it cannot be skipped. Expand any row to see the timeline: compare any version with the current one in an inline side-by-side view (additions green, removals red, unchanged blocks collapsed, next/previous change navigation), download any version, or restore one — restoring snapshots the current state first, so nothing is ever lost.' },
+      { h: 'The approval workflow' },
+      { ul: ['Draft → Under review → Approved → Published, movable in any direction', 'Every transition is recorded: who, when, from → to, with an optional note — a complete audit trail', 'A regeneration that changes content always resets the document for fresh review — approved status never silently survives a content change'] },
+      { p: 'Publishing marks the version your pipeline treats as distributable. Docify deliberately never pushes to your repositories — download the file and commit it, or export from the Export step.' }
+    ]},
+    { slug: 'approval-gate', name: 'The automation approval gate', sum: 'Regenerations wait for human sign-off instead of publishing themselves.', body: [
+      { p: 'By default an automation pipeline regenerates and publishes within its quality thresholds. For teams that want a human decision before anything is distributed, enable “Route regenerated documents through the Documents tab” in the pipeline wizard’s Quality checks step.' },
+      { ul: ['Every regeneration lands as Under review in the Documents tab', 'The previous content is already snapshotted as a version, so the review compares real before/after', 'Only versions you approve count as publishable — the gate reads exactly the statuses you set'] },
+      { p: 'Combined with the quality gate (score threshold) and Require approval (per-run holds), this gives three independent controls: quality, run-level, and document-level.' }
+    ]},
+    { slug: 'standardize-workspace', name: 'The Standardize workspace', sum: 'Rebuild existing documentation to one clean standard — four steps, everything reviewable.', body: [
+      { p: 'Standardize (in the top navigation) is a dedicated workspace for documentation you already have — written by many people, in any state. Four steps: pick documents (from Docify, an upload, pasted content, or a repository import), choose a style guide and target document type, analyze and correct, then review and export.' },
+      { h: 'Analysis before correction' },
+      { p: 'Every document is diagnosed first: writing-consistency scores, the current structure side by side with the recommended blueprint (✓ present, ＋ missing), and concrete writing findings with occurrence counts. Correction then rebuilds each document in one voice with a real percentage progress bar — and you can leave the page; proposals land in the review queue regardless.' },
+      { h: 'Review without leaving the page' },
+      { p: 'Each proposal shows before → after scores and an inline “View changes” comparison. Approve, dismiss, or download — the approved version becomes the live document and the previous one is kept. Navigation between steps is free, and your step, selection, and settings survive a page refresh.' }
+    ]}
+  ]},
   { t: 'Account & security', items: [
     { slug: 'roles-permissions', name: 'Roles and permissions', sum: 'Viewer, Operator, and Admin roles on team plans.', body: [
       { p: 'Viewers read documents and reports; Operators generate and apply fixes; Admins manage sources, automation, and billing. Enterprise adds SSO and custom roles.' }

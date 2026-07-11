@@ -162,7 +162,8 @@ const TOPICS = {
       'Set the quality gate — regenerated documents below this score are held for review instead of published.',
       'Copy the CI snippet into your repository’s workflow to trigger regeneration from your pipeline.',
       'Automation profiles let you run several pipelines (different repos, document sets, formats) side by side; each has its own webhook secret and run history.',
-      'Jira event triggers: in the wizard’s Triggers step, open Advanced, enable Jira, and pick events (issue Done/Closed, created, updated, comment added). Point a Jira webhook at the profile’s endpoint with ?token=<secret> — issue events then run the pipeline directly, no merge required.'
+      'Jira event triggers: in the wizard’s Triggers step, open Advanced, enable Jira, and pick events (issue Done/Closed, created, updated, comment added). Point a Jira webhook at the profile’s endpoint with ?token=<secret> — issue events then run the pipeline directly, no merge required.',
+      'Approval gate: in the Quality checks step, “Route regenerated documents through the Documents tab” sends every regeneration to Under review instead of publishing — the previous content is snapshotted as a version, and only what you approve counts as publishable.'
     ],
     issues: [
       ['Webhook not firing', 'Verify the webhook URL and secret in your repo settings match the profile, and that the push was to the watched branch.'],
@@ -196,7 +197,7 @@ const TOPICS = {
       'Every completed generation appears in the table — searchable by title or repository, filterable by provider and status. Click a row to expand it.',
       'Version timeline: each time regeneration changes a document, the outgoing content is snapshotted automatically. Compare any version against the current one in the side-by-side diff (added green, removed red, unchanged collapsed, jump between changes), download it, or restore it — restoring snapshots the current state first, so nothing is ever lost.',
       'Approval workflow: move a document through Draft → Under review → Approved → Published. Every transition is recorded in the approval history with who and when.',
-      'Automation integration: in the pipeline wizard (Quality checks step), enable “Route regenerated documents through Import History” — regenerations then land as Under review instead of silently replacing approved content. Only versions you approve count as publishable.'
+      'Automation integration: in the pipeline wizard (Quality checks step), enable “Route regenerated documents through the Documents tab” — regenerations then land as Under review instead of silently replacing approved content. Only versions you approve count as publishable.'
     ],
     issues: [
       ['A document went back to Draft', 'Regeneration changed its content — a changed document always needs fresh review. The previous state is in the version timeline.'],
@@ -212,7 +213,8 @@ const TOPICS = {
       'Step 1 — Documents: select existing documents, upload a file, paste content, or import from a repository. Multiple documents run through the same governance settings together.',
       'Step 2 — Style & type: pick a style guide (Docify Professional, enterprise classic, Microsoft-, Google-, Apple-, Atlassian-style, or marketing), the target document type (decides the recommended structure), and optional per-run instructions. Your organization profile from Settings applies on top and always wins.',
       'Step 3 — Analyze & correct: every document is diagnosed first — consistency scores, current vs recommended structure side by side, missing sections, and writing findings. Then "Correct" rebuilds each document with staged progress; you can leave the page, proposals land in the review queue regardless.',
-      'Step 4 — Review & export: each proposal shows before → after scores. Approve (the corrected version becomes the live document; the old version is kept), dismiss, download the corrected file, or open the full side-by-side diff in Doc sync.'
+      'Step 4 — Review & export: each proposal shows before → after scores and a “View changes” link that expands the full comparison inline — red lines are the original, green are the corrected version, unchanged parts collapsed, with next/previous change navigation. Approve (the corrected version becomes the live document; the old version is kept), dismiss, or download the corrected file — all without leaving the page.',
+      'Navigation is free: click any step at any time (only a running correction locks the stepper), and your step, selection, and style settings survive a page refresh.'
     ],
     issues: [
       ['Correction seems stuck', 'Large documents take a minute or two per document. The progress bar shows the current stage — and even if you close the page, the proposal appears in the review queue when ready.'],
