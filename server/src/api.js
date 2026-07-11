@@ -294,20 +294,54 @@ apiRouter.delete('/sources/:provider', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Connection summary for the code hosts. "Connected" means a verified OAuth
+// token is on file — the pickers use this to show honest provider states and
+// to never offer repositories from an unconnected provider.
+apiRouter.get('/connections', async (req, res) => {
+  const hosts = ['github', 'gitlab', 'bitbucket'];
+  const rows = await prisma.source.findMany({ where: { userId: req.uid, provider: { in: hosts } } });
+  const connections = {};
+  for (const p of hosts) {
+    const src = rows.find((r) => r.provider === p);
+    const expired = !!(src && src.expiresAt && new Date(src.expiresAt) <= new Date() && !src.refreshToken);
+    const m = src && src.detail ? String(src.detail).match(/\(as ([^)]+)\)/) : null;
+    connections[p] = {
+      connected: !!(src && src.token) && !expired,
+      expired,
+      account: m ? m[1] : null
+    };
+  }
+  res.json({ connections });
+});
+
 apiRouter.get('/repos', async (req, res) => {
   const provider = String(req.query.provider || 'github');
   const src = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
+  const isHost = ['github', 'gitlab', 'bitbucket'].includes(provider);
   try {
-    // For OAuth sources, silently renew the access token if it has expired.
-    const token = ['github', 'gitlab', 'bitbucket'].includes(provider)
-      ? await freshToken(src)
-      : (src ? src.token : '');
-    if (provider === 'gitlab') return res.json({ repos: await listGitlab(token) });
-    if (provider === 'bitbucket') return res.json({ repos: await listBitbucket(token) });
+    if (isHost) {
+      // A code host only ever lists repositories the connected account can
+      // truly access. No valid token → connected:false and an EMPTY list;
+      // the UI shows a "connect" state instead of stale or sample data.
+      let token = '';
+      try { token = await freshToken(src); }
+      catch (e) { return res.json({ repos: [], connected: false, reason: e.message }); }
+      if (!token) return res.json({ repos: [], connected: false });
+      try {
+        const repos = provider === 'gitlab' ? await listGitlab(token)
+          : provider === 'bitbucket' ? await listBitbucket(token)
+          : await listRepos(token);
+        return res.json({ repos, connected: true });
+      } catch (e) {
+        // Token on file but the provider rejected it (revoked / lost scope).
+        return res.json({ repos: [], connected: false, reason: e.message + ' — reconnect ' + provider + ' to continue' });
+      }
+    }
+    const token = src ? src.token : '';
     if (provider === 'jira') return res.json({ repos: src ? await listJiraProjects(src.detail, token) : [] });
     if (provider === 'confluence') return res.json({ repos: src ? await listConfluenceSpaces(src.detail, token) : [] });
     if (provider === 'notion') return res.json({ repos: token ? await listNotion(token) : [] });
-    return res.json({ repos: await listRepos(token) });
+    return res.status(400).json({ error: 'Unknown provider' });
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }

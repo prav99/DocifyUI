@@ -37,11 +37,18 @@ export default function Source() {
   const [wlEmail, setWlEmail] = useState(user ? user.email : '');
   const [busy, setBusy] = useState(false);
   const [hubRepos, setHubRepos] = useState(null); // Repository hub: connect once, use everywhere
+  const [hosts, setHosts] = useState({}); // per code host: { loading, connected, repos, reason }
+  const [oauthAvail, setOauthAvail] = useState({}); // which hosts have real OAuth configured
+  const [repoQ, setRepoQ] = useState('');
+  const [provFilter, setProvFilter] = useState('');
 
   const sources = flow.sources || [];
   const cfg = flow.srcCfg || {};
+  const setCfg = (id, patch) =>
+    setFlow((f) => ({ srcCfg: { ...(f.srcCfg || {}), [id]: { ...((f.srcCfg || {})[id] || {}), ...patch } } }));
 
   useEffect(() => { getCatalog().then(setCatalog); }, []);
+  useEffect(() => { api('/auth/providers').then(setOauthAvail).catch(() => {}); }, []);
   useEffect(() => {
     api('/hub/repositories?per=100&enabled=true')
       .then((d) => setHubRepos(d.repositories))
@@ -82,11 +89,39 @@ export default function Source() {
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Lazily load pick-lists: code hosts immediately, token sources once connected.
+  // Code hosts: load connection status + the real repository list together.
+  // The server answers connected:false with an EMPTY list when no valid OAuth
+  // token is on file — unconnected providers never show repositories.
   useEffect(() => {
     sources
-      .filter((p) => lists[p] === undefined &&
-        (KIND[p] === 'picker' || (PICK_AFTER[p] && (cfg[p] || {}).connected)))
+      .filter((p) => KIND[p] === 'picker' && hosts[p] === undefined)
+      .forEach((p) => {
+        setHosts((h) => ({ ...h, [p]: { loading: true, connected: false, repos: [] } }));
+        api('/repos?provider=' + p)
+          .then((d) => setHosts((h) => ({ ...h, [p]: { loading: false, connected: d.connected !== false, repos: d.repos || [], reason: d.reason || '' } })))
+          .catch((e) => setHosts((h) => ({ ...h, [p]: { loading: false, connected: false, repos: [], reason: e.message } })));
+      });
+  }, [sources, hosts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trust guard: a selection is only valid while the account can still access
+  // it. If the provider is disconnected, the token expired, or permission was
+  // removed, clear the stale selection (hub-verified and public picks stay).
+  useEffect(() => {
+    sources.filter((p) => KIND[p] === 'picker').forEach((p) => {
+      const st = hosts[p];
+      const c = cfg[p] || {};
+      if (!st || st.loading || !c.sel || c.custom || c.fromHub) return;
+      if (!st.connected || !(st.repos || []).some((r) => r.name === c.sel)) {
+        setCfg(p, { sel: '' });
+        toast('info', 'Selection cleared', c.sel + ' is no longer accessible from your ' + p + ' account.');
+      }
+    });
+  }, [hosts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Token sources (Jira, Confluence, Notion): load pick-lists once connected.
+  useEffect(() => {
+    sources
+      .filter((p) => lists[p] === undefined && PICK_AFTER[p] && (cfg[p] || {}).connected)
       .forEach((p) => {
         setLists((l) => ({ ...l, [p]: null })); // mark loading
         api('/repos?provider=' + p)
@@ -101,8 +136,19 @@ export default function Source() {
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
   const byId = (id) => catalog.sources.find((x) => x.id === id);
-  const setCfg = (id, patch) =>
-    setFlow((f) => ({ srcCfg: { ...(f.srcCfg || {}), [id]: { ...((f.srcCfg || {})[id] || {}), ...patch } } }));
+
+  // Hand the browser to the provider's consent screen; the flow (selections,
+  // progress) is already persisted in sessionStorage, and /oauth/complete
+  // returns the user straight back here with the new connection live.
+  function connectHost(p) {
+    const name = byId(p) ? byId(p).name : p;
+    if (!oauthAvail[p]) {
+      return toast('error', name + ' connection isn’t available yet',
+        name + ' OAuth is not configured on the server. You can still document any public repository below.');
+    }
+    try { sessionStorage.setItem('authDest', '/source'); } catch { /* best effort */ }
+    window.location.href = '/api/auth/oauth/' + p;
+  }
 
   function toggle(s) {
     if (!s.avail) {
@@ -196,6 +242,7 @@ export default function Source() {
     finally { setBusy(false); }
   }
 
+  const hostIds = sources.filter((id) => KIND[id] === 'picker');
   const allReady = sources.length > 0 && sources.every(isReady);
   const pending = sources.filter((id) => !isReady(id)).map((id) => byId(id).name);
   const primary = sources.find((id) => KIND[id] === 'picker' || KIND[id] === 'url');
@@ -273,7 +320,163 @@ export default function Source() {
             </div>
             <p className="helper mt2 mb5">Each source needs one detail. The first code source becomes the primary input for generation.</p>
             <div className="stack">
-              {sources.map((id) => {
+              {hostIds.length > 0 && (() => {
+                // ONE panel for every code host: connection chips, an honest
+                // repository list (connected accounts only), compact selection.
+                const readyCount = hostIds.filter((p) => !!(cfg[p] || {}).sel).length;
+                const checking = hostIds.some((p) => !hosts[p] || hosts[p].loading);
+                const connected = hostIds.filter((p) => hosts[p] && hosts[p].connected);
+                const unconnected = hostIds.filter((p) => hosts[p] && !hosts[p].loading && !hosts[p].connected);
+                const q = repoQ.trim().toLowerCase();
+                const hubByProv = {};
+                (hubRepos || []).forEach((r) => { (hubByProv[r.provider] = hubByProv[r.provider] || []).push(r); });
+                const rows = [];
+                hostIds.forEach((p) => {
+                  const st = hosts[p];
+                  if (st && st.connected) {
+                    (st.repos || []).forEach((r) =>
+                      rows.push({ provider: p, name: r.name, branch: r.branch, priv: r.private, updated: r.updated, hub: false }));
+                  }
+                  (hubByProv[p] || []).forEach((r) => {
+                    // Hub entries under an unconnected provider are shown only
+                    // when public — those need no account to read.
+                    if (!(st && st.connected) && r.visibility !== 'public') return;
+                    if (!rows.some((x) => x.provider === p && x.name === r.repo)) {
+                      rows.push({ provider: p, name: r.repo, branch: r.branch, hub: true, ruleSetName: r.ruleSetName });
+                    }
+                  });
+                });
+                const visible = rows.filter((r) =>
+                  (!provFilter || r.provider === provFilter) && (!q || r.name.toLowerCase().includes(q)));
+                return (
+                  <div className="srccard" style={{ borderLeftColor: readyCount === hostIds.length ? 'var(--support-success)' : 'var(--support-warning)' }}>
+                    <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
+                      <div>
+                        <p className="h01">Select repositories</p>
+                        <p className="helper mt2">Only repositories your connected accounts can access are listed.</p>
+                      </div>
+                      {readyCount === hostIds.length ? <span className="tag tag--green">Ready ✓</span> : <span className="tag tag--amber">Needs setup</span>}
+                    </div>
+
+                    <div className="connrow mt5">
+                      {hostIds.map((p) => {
+                        const st = hosts[p] || {};
+                        const on = !!st.connected;
+                        return (
+                          <span key={p} className={'connchip' + (on ? ' connchip--on' : '')}>
+                            <span className="conndot" aria-hidden="true" />
+                            {byId(p).name} · {!hosts[p] || st.loading ? 'Checking…' : on ? 'Connected' : 'Not connected'}
+                          </span>
+                        );
+                      })}
+                      <button type="button" className="linkbtn" style={{ marginLeft: 'auto' }}
+                        onClick={() => nav('/repos?return=' + encodeURIComponent('/source'))}>
+                        Manage repositories
+                      </button>
+                    </div>
+
+                    {unconnected.map((p) => (
+                      <div key={p} className="notconn mt4">
+                        <div>
+                          <p className="body01"><b>{byId(p).name} is not connected</b></p>
+                          <p className="helper mt2">{hosts[p].reason || 'Connect ' + byId(p).name + ' to browse and select repositories.'}</p>
+                        </div>
+                        <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => connectHost(p)}>
+                          {hosts[p].reason ? 'Reconnect' : 'Connect'} {byId(p).name}
+                        </button>
+                      </div>
+                    ))}
+
+                    {connected.length > 0 && (
+                      <>
+                        <div className="row mt5" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                          <input className="input" style={{ flex: '1 1 220px', maxWidth: 340 }} placeholder="Search repositories"
+                            aria-label="Search repositories" value={repoQ} onChange={(e) => setRepoQ(e.target.value)} />
+                          {connected.length > 1 && (
+                            <select className="select select--slim" style={{ width: 'auto' }} aria-label="Filter by provider"
+                              value={provFilter} onChange={(e) => setProvFilter(e.target.value)}>
+                              <option value="">All providers</option>
+                              {connected.map((p) => <option key={p} value={p}>{byId(p).name}</option>)}
+                            </select>
+                          )}
+                          <span className="helper" style={{ marginLeft: 'auto' }}>{readyCount} selected</span>
+                        </div>
+                        {checking ? (
+                          <p className="helper mt4">Loading repositories…</p>
+                        ) : visible.length === 0 ? (
+                          <div className="repoempty mt4">
+                            <p className="body01">{rows.length === 0 ? 'No repositories found' : 'No matching repositories'}</p>
+                            <p className="helper mt2">
+                              {rows.length === 0
+                                ? 'Check your permissions or connect another account.'
+                                : 'Try another search or connect a new repository.'}
+                            </p>
+                            <button type="button" className="linkbtn mt2" onClick={() => nav('/repos?return=' + encodeURIComponent('/source'))}>
+                              Add or manage repositories
+                            </button>
+                          </div>
+                        ) : (
+                          <ul className="repolist mt4">
+                            {visible.map((r) => {
+                              const c = cfg[r.provider] || {};
+                              const sel = !c.custom && c.sel === r.name;
+                              return (
+                                <li key={r.provider + '/' + r.name}>
+                                  <button type="button" className={'reporow' + (sel ? ' reporow--sel' : '')} aria-pressed={sel}
+                                    onClick={() => setCfg(r.provider, sel
+                                      ? { sel: '', custom: false, fromHub: false }
+                                      : { sel: r.name, custom: false, fromHub: r.hub })}>
+                                    <span className="reporow-check" aria-hidden="true">{sel ? <IcCheck c="#ffffff" /> : null}</span>
+                                    <span className="reporow-name">{r.name}</span>
+                                    <span className={'provtag prov--' + r.provider}>{byId(r.provider).name}</span>
+                                    {r.branch ? <span className="reporow-meta">{r.branch}</span> : null}
+                                    {r.priv !== undefined ? <span className="reporow-meta">{r.priv ? 'Private' : 'Public'}</span> : null}
+                                    {r.hub ? <span className="tag tag--blue">Hub{r.ruleSetName ? ' · ' + r.ruleSetName : ''}</span> : null}
+                                    {r.updated ? <span className="reporow-meta reporow-upd">{r.updated}</span> : null}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </>
+                    )}
+
+                    {readyCount > 0 && (
+                      <div className="mt4">
+                        <p className="label01 t2">SELECTED REPOSITORIES</p>
+                        <div className="row mt2" style={{ flexWrap: 'wrap', gap: 8 }}>
+                          {hostIds.filter((p) => (cfg[p] || {}).sel).map((p) => (
+                            <span key={p} className="selchip">
+                              {byId(p).name} / {cfg[p].sel}
+                              <button type="button" aria-label={'Remove ' + cfg[p].sel}
+                                onClick={() => setCfg(p, { sel: '', custom: false, fromHub: false })}>✕</button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <details className="pubrepo mt5">
+                      <summary>Use any public repository instead</summary>
+                      <div className="row" style={{ flexWrap: 'wrap', gap: 12, marginTop: 10 }}>
+                        {hostIds.map((p) => (
+                          <div key={p} className="field" style={{ flex: '1 1 200px', maxWidth: 260, marginBottom: 0 }}>
+                            <label htmlFor={'custom-' + p}>{byId(p).name} (owner/name)</label>
+                            <input id={'custom-' + p} className="input" placeholder="e.g. expressjs/express"
+                              value={(cfg[p] || {}).custom ? (cfg[p].sel || '') : ''}
+                              onChange={(e) => setCfg(p, { sel: e.target.value.trim(), custom: true, fromHub: false })} />
+                          </div>
+                        ))}
+                      </div>
+                      <p className="helper mt2">Public repositories need no connection — DocGen reads them anonymously.</p>
+                    </details>
+
+                    <RepoHubCta label="Can’t find the repository you need?" action="Connect or manage repositories" style={{ marginTop: 16 }} />
+                  </div>
+                );
+              })()}
+              {sources.filter((id) => KIND[id] !== 'picker').map((id) => {
                 const s = byId(id);
                 const c = cfg[id] || {};
                 const ready = isReady(id);
@@ -298,52 +501,6 @@ export default function Source() {
                     </div>
 
                     <div className="mt5">
-                      {KIND[id] === 'picker' && (
-                        <div style={{ maxWidth: 520 }}>
-                          <div className="field" style={{ marginBottom: 0 }}>
-                            <label htmlFor={'sel-' + id}>{PICKER_LABEL[id]}</label>
-                            <select id={'sel-' + id} className="select" value={c.custom ? '' : (c.sel || '')} onChange={(e) => setCfg(id, { sel: e.target.value, custom: false })}>
-                              <option value="" disabled>
-                                {lists[id] === null || lists[id] === undefined ? 'Loading…' : 'Choose a ' + PICKER_LABEL[id].toLowerCase() + '…'}
-                              </option>
-                              {(lists[id] || []).map((r) => (
-                                <option key={r.name} value={r.name}>
-                                  {[r.name, r.branch, r.updated ? 'updated ' + r.updated : ''].filter(Boolean).join(' · ')}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          {hubRepos && hubRepos.filter((r) => r.provider === id).length > 0 && (
-                            <div className="field mt3" style={{ marginBottom: 0 }}>
-                              <label htmlFor={'hub-' + id}>From your Repository hub</label>
-                              <select id={'hub-' + id} className="select" value={c.fromHub ? (c.sel || '') : ''}
-                                onChange={(e) => setCfg(id, { sel: e.target.value, custom: false, fromHub: true })}>
-                                <option value="" disabled>Choose a connected repository…</option>
-                                {hubRepos.filter((r) => r.provider === id).map((r) => (
-                                  <option key={r.id} value={r.repo}>
-                                    {r.repo + ' · ' + (r.ruleSetName || 'Default rules')}
-                                  </option>
-                                ))}
-                              </select>
-                              <span className="helper">Rule sets assigned in the hub apply automatically to this generation.</span>
-                            </div>
-                          )}
-                          <div className="field mt3" style={{ marginBottom: 0 }}>
-                            <label htmlFor={'custom-' + id}>Or any public {PICKER_LABEL[id].toLowerCase()} (owner/name)</label>
-                            <input id={'custom-' + id} className="input" placeholder="e.g. expressjs/express"
-                              value={c.custom ? (c.sel || '') : ''}
-                              onChange={(e) => setCfg(id, { sel: e.target.value.trim(), custom: true })} />
-                          </div>
-                          <RepoHubCta
-                            label={hubRepos && !hubRepos.filter((r) => r.provider === id).length
-                              ? 'No repositories connected yet.'
-                              : 'Need a different repository?'}
-                            action={hubRepos && !hubRepos.filter((r) => r.provider === id).length
-                              ? 'Connect repository'
-                              : 'Add or manage repositories'} />
-                        </div>
-                      )}
-
                       {KIND[id] === 'url' && (
                         c.verified ? (
                           <div className="row" style={{ flexWrap: 'wrap' }}>
