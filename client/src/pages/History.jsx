@@ -52,7 +52,7 @@ function lineDiff(aText, bText) {
   return ops;
 }
 
-function DiffView({ before, after, labels }) {
+export function DiffView({ before, after, labels }) {
   const ops = useMemo(() => lineDiff(before, after), [before, after]);
   const [open, setOpen] = useState({}); // expanded collapsed blocks
   const changeIdx = ops.map((o, k) => (o.type !== 'same' ? k : -1)).filter((k) => k >= 0);

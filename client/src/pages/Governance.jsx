@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, download } from '../api.js';
 import { toast } from '../store.jsx';
 import { HelpLink } from '../ui.jsx';
+import { DiffView } from './History.jsx';
 import { usePageMeta } from '../seo.js';
 
 /* =====================================================================
@@ -69,6 +70,7 @@ export default function Governance() {
   // Step 4 — proposals
   const [proposals, setProposals] = useState(null);
   const [actBusy, setActBusy] = useState('');
+  const [showDiff, setShowDiff] = useState(''); // proposal id whose changes are expanded inline
 
   const loadDocs = () => api('/sync/documents').then((d) => setDocs(d.documents || [])).catch(() => setDocs([]));
   useEffect(() => { loadDocs(); }, []);
@@ -488,9 +490,22 @@ export default function Governance() {
                             Download corrected file
                           </button>
                         )}
-                        <button className="linkbtn" onClick={() => nav('/sync')}>Full diff in Doc sync</button>
+                        <button className="linkbtn" onClick={() => setShowDiff(showDiff === u.id ? '' : u.id)}>
+                          {showDiff === u.id ? 'Hide changes' : 'View changes'}
+                        </button>
                       </div>
                     </div>
+                    {showDiff === u.id && (() => {
+                      const d = typeof u.diff === 'string' ? JSON.parse(u.diff || '{}') : (u.diff || {});
+                      return (
+                        <div className="mt3">
+                          <DiffView
+                            before={(d.before || []).join('\n')}
+                            after={(d.after || []).join('\n')}
+                            labels="red = original document · green = corrected version" />
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
