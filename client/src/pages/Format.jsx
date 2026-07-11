@@ -99,9 +99,12 @@ export default function Format() {
         brief: { audience: flow.briefAudience || '', emphasis: flow.briefEmphasis || '', tone: flow.briefTone || '' },
         output: {
           ...OUT_DEFAULTS, ...(flow.outputCfg || {}),
-          // Jira as a source: the pipeline fetches these issues' full content
-          // (description, comments, links) as source material.
-          ...((flow.jiraIssues || []).length ? { jiraIssues: flow.jiraIssues } : {})
+          // Non-repository sources: the pipeline fetches the full content of
+          // every selected item (issues, specs, pages) as source material.
+          ...((flow.jiraIssues || []).length ? { jiraIssues: flow.jiraIssues } : {}),
+          ...((flow.openapiSpecs || []).length ? { openapiSpecs: flow.openapiSpecs } : {}),
+          ...((flow.notionPages || []).length ? { notionPages: flow.notionPages, notionChildren: !!flow.notionChildren } : {}),
+          ...((flow.confluencePages || []).length ? { confluencePages: flow.confluencePages, confluenceChildren: !!flow.confluenceChildren } : {})
         }
       };
       const d = await api('/generations', { method: 'POST', body });

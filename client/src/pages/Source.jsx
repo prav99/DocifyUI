@@ -204,6 +204,406 @@ function JiraIssuePicker({ cfg, patch, project }) {
   );
 }
 
+/* ================= Shared: multi-select results + chips ================= */
+function ResultList({ results, checked, setChecked, onAdd, onCancel, empty }) {
+  const n = Object.values(checked).filter(Boolean).length;
+  if (!results) return null;
+  if (!results.length) return <p className="helper mt3">{empty}</p>;
+  return (
+    <div className="jiraresults mt3">
+      {results.map((r) => (
+        <label key={r.id || r.key} className="jirarow">
+          <input type="checkbox" checked={!!checked[r.id || r.key]}
+            onChange={(e) => setChecked((c) => ({ ...c, [r.id || r.key]: e.target.checked }))} />
+          <span className="jirarow-sum"><b>{r.title}</b></span>
+          <span className="reporow-meta">{[r.kind, r.space, r.updated].filter(Boolean).join(' · ')}</span>
+        </label>
+      ))}
+      <div className="row" style={{ gap: 12, padding: '10px 14px', flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn--tertiary btn--sm btn--center" disabled={!n}
+          onClick={() => onAdd(results.filter((r) => checked[r.id || r.key]))}>Add selected ({n})</button>
+        <button type="button" className="linkbtn" onClick={() => onAdd(results)}>Add all {results.length}</button>
+        <button type="button" className="linkbtn" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function SelChips({ items, onRemove, onClear, noun }) {
+  if (!items.length) return null;
+  return (
+    <div className="mt4">
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {items.map((i) => (
+          <span key={i.id} className="iskey" title={i.title}>
+            <span className="iskey-sum" style={{ color: '#0043ce' }}>{i.title.length > 38 ? i.title.slice(0, 38) + '…' : i.title}</span>
+            <button type="button" aria-label={'Remove ' + i.title} onClick={() => onRemove(i.id)}>✕</button>
+          </span>
+        ))}
+      </div>
+      <p className="helper mt2">
+        {items.length} {noun}{items.length > 1 ? 's' : ''} selected as source material.
+        {' '}<button type="button" className="linkbtn" onClick={onClear}>Clear all</button>
+      </p>
+    </div>
+  );
+}
+
+/* ================= Notion picker: pages & databases ================= */
+function NotionPicker({ cfg, patch }) {
+  const items = cfg.items || [];
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState(null);
+  const [checked, setChecked] = useState({});
+
+  async function search() {
+    setBusy(true); setResults(null); setChecked({});
+    try {
+      const d = await api('/notion/search?q=' + encodeURIComponent(q));
+      setResults(d.items || []);
+    } catch (e) { toast('error', 'Notion search failed', e.message); }
+    finally { setBusy(false); }
+  }
+  const add = (list) => {
+    const have = new Set(items.map((i) => i.id));
+    const fresh = list.filter((i) => !have.has(i.id));
+    if (fresh.length) patch({ items: [...items, ...fresh.map((i) => ({ id: i.id, title: i.title, kind: i.kind }))] });
+    const dup = list.length - fresh.length;
+    if (dup) toast('info', dup + ' duplicate' + (dup > 1 ? 's' : '') + ' skipped', 'Already selected.');
+    setResults(null); setChecked({});
+  };
+
+  return (
+    <div className="field mt5" style={{ maxWidth: 680, marginBottom: 0 }}>
+      <label>Source pages &amp; databases</label>
+      <p className="helper">
+        Selected pages become the source material — headings, text, lists, tables, code blocks,
+        and database rows are all read. Only pages shared with your integration appear.
+      </p>
+      <div className="row mt3" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input className="input" style={{ flex: '1 1 280px', maxWidth: 420 }}
+          placeholder="Search by title — leave empty for recent pages"
+          aria-label="Search Notion pages" value={q}
+          onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') search(); }} />
+        <button type="button" className="btn btn--tertiary btn--sm btn--center" disabled={busy} onClick={search}>
+          {busy ? 'Searching…' : q.trim() ? 'Search' : 'Browse recent'}
+        </button>
+      </div>
+      <ResultList results={results} checked={checked} setChecked={setChecked} onAdd={add}
+        onCancel={() => { setResults(null); setChecked({}); }}
+        empty="Nothing found — is the page shared with your integration? (Page → ⋯ → Connections)" />
+      <SelChips items={items} noun="item"
+        onRemove={(id) => patch({ items: items.filter((x) => x.id !== id) })}
+        onClear={() => patch({ items: [] })} />
+      {items.length > 0 && (
+        <p className="mt2">
+          <label className="row" style={{ gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!cfg.includeChildren}
+              onChange={(e) => patch({ includeChildren: e.target.checked })} />
+            Include child pages of the selected pages
+          </label>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ================= Confluence picker: spaces, pages, CQL ================= */
+function ConfluencePicker({ cfg, patch, space }) {
+  const items = cfg.items || [];
+  const [mode, setMode] = useState('browse'); // browse | search | cql
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState(null);
+  const [checked, setChecked] = useState({});
+
+  async function run() {
+    setBusy(true); setResults(null); setChecked({});
+    try {
+      const params = mode === 'cql'
+        ? 'cql=' + encodeURIComponent(q)
+        : 'q=' + encodeURIComponent(mode === 'search' ? q : '') + '&space=' + encodeURIComponent(space || '');
+      const d = await api('/confluence/search?' + params);
+      setResults(d.pages || []);
+    } catch (e) { toast('error', 'Could not fetch pages', e.message); }
+    finally { setBusy(false); }
+  }
+  const add = (list) => {
+    const have = new Set(items.map((i) => i.id));
+    const fresh = list.filter((i) => !have.has(i.id));
+    if (fresh.length) patch({ items: [...items, ...fresh.map((i) => ({ id: i.id, title: i.title, space: i.space }))] });
+    const dup = list.length - fresh.length;
+    if (dup) toast('info', dup + ' duplicate' + (dup > 1 ? 's' : '') + ' skipped', 'Already selected.');
+    setResults(null); setChecked({});
+  };
+
+  return (
+    <div className="field mt5" style={{ maxWidth: 680, marginBottom: 0 }}>
+      <label>Source pages</label>
+      <p className="helper">
+        Selected pages become the source material — body, headings, tables, code macros, and labels
+        are all read. Pages from multiple spaces can be combined.
+      </p>
+      <div className="row mt3" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {[['browse', 'Browse space'], ['search', 'Search'], ['cql', 'CQL']].map(([id, l]) => (
+          <button key={id} type="button" className={'chip' + (mode === id ? ' on' : '')}
+            onClick={() => { setMode(id); setResults(null); setQ(''); }}>{l}</button>
+        ))}
+      </div>
+      <div className="row mt3" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {mode !== 'browse' && (
+          <input className="input" style={{ flex: '1 1 280px', maxWidth: 420 }}
+            placeholder={mode === 'search' ? 'Search pages by title or text…' : 'CQL — e.g. space = ENG AND label = "api" order by lastmodified desc'}
+            aria-label={'Confluence ' + mode} value={q}
+            onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') run(); }} />
+        )}
+        {mode === 'browse' && (
+          <span className="helper">{space ? 'Latest pages in ' + space.split(' ')[0] : 'Pick a space above, or use Search / CQL.'}</span>
+        )}
+        <button type="button" className="btn btn--tertiary btn--sm btn--center" disabled={busy} onClick={run}>
+          {busy ? 'Working…' : mode === 'browse' ? 'List pages' : mode === 'cql' ? 'Run query' : 'Search'}
+        </button>
+      </div>
+      <ResultList results={results} checked={checked} setChecked={setChecked} onAdd={add}
+        onCancel={() => { setResults(null); setChecked({}); }}
+        empty="No pages matched — restricted pages are never listed." />
+      <SelChips items={items} noun="page"
+        onRemove={(id) => patch({ items: items.filter((x) => x.id !== id) })}
+        onClear={() => patch({ items: [] })} />
+      {items.length > 0 && (
+        <p className="mt2">
+          <label className="row" style={{ gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!cfg.includeChildren}
+              onChange={(e) => patch({ includeChildren: e.target.checked })} />
+            Include child pages of the selected pages
+          </label>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ================= OpenAPI / Swagger picker: specs + endpoint tree ================= */
+function OpenApiPicker({ cfg, patch }) {
+  const specs = cfg.specs || [];
+  const [method, setMethod] = useState('url'); // url | paste | repo
+  const [inp, setInp] = useState({ url: '', text: '', repo: '', path: '', branch: 'main' });
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(null); // { summary, source } awaiting endpoint choice
+  const [opsChecked, setOpsChecked] = useState({});
+  const set = (k, v) => setInp((x) => ({ ...x, [k]: v }));
+
+  const srcLabel = (s) => s.url ? s.url : s.text ? 'pasted specification' : s.repo + '/' + s.path;
+
+  async function inspect() {
+    const source = method === 'url' ? { url: inp.url.trim() }
+      : method === 'paste' ? { text: inp.text }
+      : { provider: 'github', repo: inp.repo.trim(), branch: inp.branch.trim() || 'main', path: inp.path.trim().replace(/^\//, '') };
+    if (method === 'repo' && (!source.repo || !source.path)) {
+      return toast('error', 'Repository and file path are required', 'e.g. acme/payments-api and openapi/openapi.yaml');
+    }
+    const dupe = specs.some((s) => JSON.stringify(s.source) === JSON.stringify(source));
+    if (dupe) return toast('info', 'Already added', 'That specification is in your list.');
+    setBusy(true);
+    try {
+      const d = await api('/openapi/inspect', { method: 'POST', body: source });
+      const all = {};
+      d.summary.operations.forEach((o) => { all[o.key] = true; });
+      setOpsChecked(all);
+      setPending({ summary: d.summary, source });
+    } catch (e) { toast('error', 'Could not read the specification', e.message); }
+    finally { setBusy(false); }
+  }
+
+  function addPending() {
+    const { summary, source } = pending;
+    const selected = summary.operations.filter((o) => opsChecked[o.key]).map((o) => o.key);
+    if (!selected.length) return toast('error', 'Select at least one endpoint', 'Or add the whole specification.');
+    const errors = summary.issues.filter((i) => i.level === 'error').length;
+    patch({
+      specs: [...specs, {
+        uid: Math.random().toString(36).slice(2, 9),
+        source, title: summary.title, version: summary.version, specVersion: summary.specVersion,
+        endpoints: summary.endpoints,
+        ops: selected.length === summary.operations.length ? 'all' : selected,
+        opsCount: selected.length,
+        findings: summary.issues.length, errors
+      }]
+    });
+    setPending(null); setOpsChecked({});
+    setInp({ url: '', text: '', repo: '', path: '', branch: 'main' });
+  }
+
+  // Group pending operations by tag for the tree view.
+  const groups = {};
+  if (pending) pending.summary.operations.forEach((o) => { (groups[o.tags[0]] = groups[o.tags[0]] || []).push(o); });
+  const nChecked = Object.values(opsChecked).filter(Boolean).length;
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <p className="helper">
+        Add one or more API specifications — the selected endpoints become the source material
+        (parameters, request/response schemas, and authentication are all read).
+      </p>
+
+      {specs.length > 0 && (
+        <div className="stack mt4" style={{ gap: 8 }}>
+          {specs.map((s) => (
+            <div key={s.uid} className="pickblock">
+              <div className="pickrow">
+                <span className="provtag">{(s.specVersion || '').startsWith('2') ? 'Swagger' : 'OpenAPI'}</span>
+                <span className="pickrow-sel">
+                  <IcCheck />
+                  <b>{s.title}{s.version ? ' v' + s.version : ''}</b>
+                  <span className="reporow-meta">
+                    {(s.ops === 'all' ? s.endpoints + ' endpoints' : s.opsCount + ' of ' + s.endpoints + ' endpoints')}
+                    {' · ' + srcLabel(s.source)}
+                  </span>
+                </span>
+                {s.errors > 0
+                  ? <span className="tag tag--red">{s.errors} error{s.errors > 1 ? 's' : ''}</span>
+                  : s.findings > 0
+                    ? <span className="tag tag--amber">{s.findings} finding{s.findings > 1 ? 's' : ''}</span>
+                    : <span className="tag tag--green">Valid ✓</span>}
+                <button type="button" className="linkbtn"
+                  onClick={() => patch({ specs: specs.filter((x) => x.uid !== s.uid) })}>Remove</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!pending && (
+        <>
+          <div className="row mt4" style={{ gap: 6, flexWrap: 'wrap' }}>
+            {[['url', 'From URL'], ['paste', 'Paste spec'], ['repo', 'From repository']].map(([id, l]) => (
+              <button key={id} type="button" className={'chip' + (method === id ? ' on' : '')}
+                onClick={() => setMethod(id)}>{l}</button>
+            ))}
+          </div>
+          <div className="mt3">
+            {method === 'url' && (
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input className="input" style={{ flex: '1 1 300px', maxWidth: 460 }}
+                  placeholder="https://api.acme.dev/openapi.json — JSON or YAML"
+                  aria-label="Specification URL" value={inp.url}
+                  onChange={(e) => set('url', e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') inspect(); }} />
+                <button type="button" className="btn btn--tertiary btn--sm btn--center" disabled={busy} onClick={inspect}>
+                  {busy ? 'Reading…' : 'Inspect'}
+                </button>
+              </div>
+            )}
+            {method === 'paste' && (
+              <div>
+                <textarea className="textarea mono" rows={6} style={{ fontSize: 12.5, maxWidth: 640 }}
+                  placeholder={'openapi: 3.0.0\ninfo:\n  title: Payments API\n  version: 1.2.0\npaths:\n  /payments: …'}
+                  aria-label="Paste specification" value={inp.text} onChange={(e) => set('text', e.target.value)} />
+                <button type="button" className="btn btn--tertiary btn--sm btn--center mt2" disabled={busy} onClick={inspect}>
+                  {busy ? 'Reading…' : 'Inspect'}
+                </button>
+              </div>
+            )}
+            {method === 'repo' && (
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div className="field" style={{ flex: '1 1 180px', maxWidth: 240, marginBottom: 0 }}>
+                  <label>Repository (owner/name)</label>
+                  <input className="input" placeholder="acme/payments-api" value={inp.repo} onChange={(e) => set('repo', e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: '1 1 200px', maxWidth: 280, marginBottom: 0 }}>
+                  <label>File path</label>
+                  <input className="input" placeholder="openapi/openapi.yaml" value={inp.path} onChange={(e) => set('path', e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') inspect(); }} />
+                </div>
+                <div className="field" style={{ flex: '0 1 110px', marginBottom: 0 }}>
+                  <label>Branch</label>
+                  <input className="input" placeholder="main" value={inp.branch} onChange={(e) => set('branch', e.target.value)} />
+                </div>
+                <button type="button" className="btn btn--tertiary btn--sm btn--center" disabled={busy} onClick={inspect}>
+                  {busy ? 'Reading…' : 'Inspect'}
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {pending && (
+        <div className="pickblock mt4">
+          <div className="pickrow">
+            <span className="provtag">{(pending.summary.specVersion || '').startsWith('2') ? 'Swagger' : 'OpenAPI'}</span>
+            <span className="pickrow-sel">
+              <b>{pending.summary.title}{pending.summary.version ? ' v' + pending.summary.version : ''}</b>
+              <span className="reporow-meta">
+                {pending.summary.specVersion} · {pending.summary.endpoints} endpoints
+                {pending.summary.schemas.length ? ' · ' + pending.summary.schemas.length + ' schemas' : ''}
+                {pending.summary.securitySchemes.length ? ' · auth: ' + pending.summary.securitySchemes.join(', ') : ''}
+              </span>
+            </span>
+          </div>
+          {pending.summary.issues.length > 0 && (
+            <details className="mt2">
+              <summary className="helper" style={{ cursor: 'pointer' }}>
+                ⚠ {pending.summary.issues.length} validation finding{pending.summary.issues.length > 1 ? 's' : ''}
+              </summary>
+              <div className="mt2">
+                {pending.summary.issues.slice(0, 12).map((i, k) => (
+                  <p key={k} className="helper" style={i.level === 'error' ? { color: 'var(--support-error, #da1e28)' } : undefined}>
+                    {i.level === 'error' ? '✕' : '·'} {i.msg}
+                  </p>
+                ))}
+              </div>
+            </details>
+          )}
+          <p className="helper mt3">
+            Choose the endpoints to document — {nChecked} of {pending.summary.operations.length} selected.
+            {' '}<button type="button" className="linkbtn" onClick={() => {
+              const all = {}; pending.summary.operations.forEach((o) => { all[o.key] = true; }); setOpsChecked(all);
+            }}>All</button>
+            {' · '}<button type="button" className="linkbtn" onClick={() => setOpsChecked({})}>None</button>
+            {' · '}<button type="button" className="linkbtn" onClick={() => {
+              const next = {}; pending.summary.operations.forEach((o) => { if (!o.deprecated) next[o.key] = true; }); setOpsChecked(next);
+            }}>All except deprecated</button>
+          </p>
+          <div className="jiraresults mt2" style={{ maxHeight: 300 }}>
+            {Object.entries(groups).map(([tag, ops]) => (
+              <div key={tag}>
+                <label className="jirarow" style={{ background: 'var(--layer-01, #f4f4f4)' }}>
+                  <input type="checkbox"
+                    checked={ops.every((o) => opsChecked[o.key])}
+                    onChange={(e) => setOpsChecked((c) => {
+                      const next = { ...c };
+                      ops.forEach((o) => { next[o.key] = e.target.checked; });
+                      return next;
+                    })} />
+                  <b>{tag}</b>
+                  <span className="reporow-meta">{ops.length} operation{ops.length > 1 ? 's' : ''}</span>
+                </label>
+                {ops.map((o) => (
+                  <label key={o.key} className="jirarow" style={{ paddingLeft: 34 }}>
+                    <input type="checkbox" checked={!!opsChecked[o.key]}
+                      onChange={(e) => setOpsChecked((c) => ({ ...c, [o.key]: e.target.checked }))} />
+                    <b className="mono" style={{ fontSize: 12 }}>{o.method}</b>
+                    <span className="jirarow-sum">{o.path}{o.deprecated ? ' (deprecated)' : ''}</span>
+                    <span className="reporow-meta">{o.summary.slice(0, 46)}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="row mt3" style={{ gap: 12, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={addPending}>
+              Add specification ({nChecked} endpoint{nChecked !== 1 ? 's' : ''})
+            </button>
+            <button type="button" className="linkbtn" onClick={() => { setPending(null); setOpsChecked({}); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Source() {
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
@@ -323,10 +723,14 @@ export default function Source() {
   const isReady = (id) => {
     const c = cfg[id] || {};
     if (KIND[id] === 'picker') return !!c.sel;
-    if (KIND[id] === 'url') return !!c.verified;
-    // Jira is issue-based: selected issues make it ready (a project pick
-    // alone still counts, for whole-project documentation).
+    // OpenAPI/Swagger: at least one inspected specification (legacy
+    // URL-verified state still counts).
+    if (KIND[id] === 'url') return (c.specs || []).length > 0 || !!c.verified;
+    // Item-based sources: selected items make them ready (a project/space
+    // pick alone still counts, for whole-scope documentation).
     if (id === 'jira') return !!c.connected && ((c.issues || []).length > 0 || !!c.sel);
+    if (id === 'notion') return !!c.connected && ((c.items || []).length > 0 || !!c.sel);
+    if (id === 'confluence') return !!c.connected && ((c.items || []).length > 0 || !!c.sel);
     return !!c.connected && (PICK_AFTER[id] ? !!c.sel : true);
   };
 
@@ -418,17 +822,43 @@ export default function Source() {
       const pc = cfg[primary] || {};
       // Per-source generation scope ("KAN-1 — Fix checkout timeout", a page…)
       // travels with the flow so generation can focus on exactly those items.
+      // Every non-repository source resolves to concrete selected items whose
+      // full content is fetched server-side during generation.
       const srcScope = {};
       let jiraIssues = [];
+      let openapiSpecs = [];
+      let notionPages = [];
+      let notionChildren = false;
+      let confluencePages = [];
+      let confluenceChildren = false;
       for (const id of sources) {
         const c = cfg[id] || {};
         if (id === 'jira' && (c.issues || []).length) {
-          // Selected Jira issues ARE the source material — full content is
-          // fetched server-side during generation.
           jiraIssues = c.issues.map((i) => i.key);
           srcScope[id] = {
             scope: jiraIssues.join(', '),
             label: jiraIssues.length + ' Jira issue' + (jiraIssues.length > 1 ? 's' : '') + ': ' + jiraIssues.join(', ')
+          };
+        } else if (id === 'openapi' && (c.specs || []).length) {
+          openapiSpecs = c.specs.map((s) => ({ source: s.source, ops: s.ops === 'all' ? null : s.ops, title: s.title }));
+          const eps = c.specs.reduce((n, s) => n + (s.ops === 'all' ? s.endpoints : s.opsCount), 0);
+          srcScope[id] = {
+            scope: c.specs.map((s) => s.title).join(', '),
+            label: c.specs.length + ' API spec' + (c.specs.length > 1 ? 's' : '') + ' · ' + eps + ' endpoints'
+          };
+        } else if (id === 'notion' && (c.items || []).length) {
+          notionPages = c.items.map((i) => ({ id: i.id, title: i.title, kind: i.kind }));
+          notionChildren = !!c.includeChildren;
+          srcScope[id] = {
+            scope: c.items.map((i) => i.title).join(', '),
+            label: c.items.length + ' Notion item' + (c.items.length > 1 ? 's' : '') + (notionChildren ? ' + child pages' : '')
+          };
+        } else if (id === 'confluence' && (c.items || []).length) {
+          confluencePages = c.items.map((i) => ({ id: i.id, title: i.title }));
+          confluenceChildren = !!c.includeChildren;
+          srcScope[id] = {
+            scope: c.items.map((i) => i.title).join(', '),
+            label: c.items.length + ' Confluence page' + (c.items.length > 1 ? 's' : '') + (confluenceChildren ? ' + child pages' : '')
           };
         } else if (c.scope && c.scopeLabel) srcScope[id] = { scope: c.scope, label: c.scopeLabel };
         else if (c.sel && PICK_AFTER[id]) srcScope[id] = { scope: c.sel, label: PICK_AFTER[id] + ' ' + c.sel };
@@ -442,7 +872,12 @@ export default function Source() {
         // primary repository.
         if (primary !== id && (cfg[id] || {}).sel) extraRepos.push({ provider: id, repo: cfg[id].sel });
       }
-      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null, srcScope, extraRepos, jiraIssues });
+      setFlow({
+        provider: primary || sources[0],
+        repo: pc.sel || pc.url || ((pc.specs || [])[0] ? pc.specs[0].title : null),
+        srcScope, extraRepos, jiraIssues,
+        openapiSpecs, notionPages, notionChildren, confluencePages, confluenceChildren
+      });
       nav('/doctype');
     } catch (e) { toast('error', 'Could not save sources', e.message); }
     finally { setBusy(false); }
@@ -721,27 +1156,7 @@ export default function Source() {
 
                     <div className="mt5">
                       {KIND[id] === 'url' && (
-                        c.verified ? (
-                          <div className="row" style={{ flexWrap: 'wrap' }}>
-                            <IcCheck />
-                            <span className="body01">
-                              {c.info ? c.info.title + (c.info.version ? ' v' + c.info.version : '') + ' · ' + c.info.endpoints + ' endpoints' : 'Spec verified'}
-                            </span>
-                            <button className="linkbtn" onClick={() => setCfg(id, { verified: false, info: null })}>Change</button>
-                          </div>
-                        ) : (
-                          <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
-                            <div className="field" style={{ flex: '1 1 300px', marginBottom: 0 }}>
-                              <label htmlFor={'url-' + id}>Spec URL (JSON or YAML)</label>
-                              <input id={'url-' + id} className="input" placeholder="https://api.acme.dev/openapi.json"
-                                value={c.url || ''} onChange={(e) => setCfg(id, { url: e.target.value })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') validateSpec(id); }} />
-                            </div>
-                            <button className="btn btn--tertiary btn--field" disabled={busy} onClick={() => validateSpec(id)}>
-                              {busy ? 'Validating…' : 'Validate spec'}
-                            </button>
-                          </div>
-                        )
+                        <OpenApiPicker cfg={c} patch={(pp) => setCfg(id, pp)} />
                       )}
 
                       {(KIND[id] === 'tokenurl' || KIND[id] === 'token') && (
@@ -755,33 +1170,39 @@ export default function Source() {
                               </span>
                               <button className="linkbtn" disabled={busy} onClick={() => disconnect(id)}>Change credentials</button>
                             </div>
-                            <div className="field mt5" style={{ maxWidth: 520, marginBottom: 0 }}>
-                              <label htmlFor={'pick-' + id}>{PICK_AFTER[id]}</label>
-                              <select id={'pick-' + id} className="select" value={c.sel || ''} onChange={(e) => setCfg(id, { sel: e.target.value })}>
-                                <option value="" disabled>
-                                  {lists[id] === null || lists[id] === undefined ? 'Loading from ' + s.name + '…'
-                                    : (lists[id] || []).length === 0 ? 'Nothing found — check access, then reload'
-                                    : 'Choose a ' + PICK_AFTER[id].toLowerCase() + '…'}
-                                </option>
-                                {(lists[id] || []).map((r) => (
-                                  <option key={r.name} value={r.name}>
-                                    {[r.name, r.updated ? 'updated ' + r.updated : ''].filter(Boolean).join(' · ')}
+                            {id !== 'notion' && (
+                              <div className="field mt5" style={{ maxWidth: 520, marginBottom: 0 }}>
+                                <label htmlFor={'pick-' + id}>{PICK_AFTER[id]}{id === 'confluence' ? ' (scopes browsing below)' : ''}</label>
+                                <select id={'pick-' + id} className="select" value={c.sel || ''} onChange={(e) => setCfg(id, { sel: e.target.value })}>
+                                  <option value="" disabled>
+                                    {lists[id] === null || lists[id] === undefined ? 'Loading from ' + s.name + '…'
+                                      : (lists[id] || []).length === 0 ? 'Nothing found — check access, then reload'
+                                      : 'Choose a ' + PICK_AFTER[id].toLowerCase() + '…'}
                                   </option>
-                                ))}
-                              </select>
-                              {Array.isArray(lists[id]) && lists[id].length === 0 && (
-                                <p className="helper mt2">
-                                  {id === 'notion'
-                                    ? 'Share at least one page or database with your integration (Page → ⋯ → Connections), then reload.'
-                                    : 'The account may not have access to any ' + PICK_AFTER[id].toLowerCase() + 's yet.'}
-                                  {' '}<button className="linkbtn" onClick={() => reloadList(id)}>Reload list</button>
-                                </p>
-                              )}
-                            </div>
+                                  {(lists[id] || []).map((r) => (
+                                    <option key={r.name} value={r.name}>
+                                      {[r.name, r.updated ? 'updated ' + r.updated : ''].filter(Boolean).join(' · ')}
+                                    </option>
+                                  ))}
+                                </select>
+                                {Array.isArray(lists[id]) && lists[id].length === 0 && (
+                                  <p className="helper mt2">
+                                    The account may not have access to any {PICK_AFTER[id].toLowerCase()}s yet.
+                                    {' '}<button className="linkbtn" onClick={() => reloadList(id)}>Reload list</button>
+                                  </p>
+                                )}
+                              </div>
+                            )}
                             {id === 'jira' && (
                               <JiraIssuePicker cfg={c} patch={(pp) => setCfg(id, pp)} project={c.sel || ''} />
                             )}
-                            {SCOPE[id] && id !== 'jira' && (
+                            {id === 'notion' && (
+                              <NotionPicker cfg={c} patch={(pp) => setCfg(id, pp)} />
+                            )}
+                            {id === 'confluence' && (
+                              <ConfluencePicker cfg={c} patch={(pp) => setCfg(id, pp)} space={c.sel || ''} />
+                            )}
+                            {SCOPE[id] && !['jira', 'confluence', 'notion'].includes(id) && (
                               <div className="field mt5" style={{ maxWidth: 520, marginBottom: 0 }}>
                                 <label htmlFor={'scope-' + id}>{SCOPE[id].label}</label>
                                 <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>

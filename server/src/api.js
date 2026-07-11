@@ -7,8 +7,12 @@ import { listProjects as listGitlab, listGroupProjects as glOrgRepos, listBranch
 import { listRepos as listBitbucket, listWorkspaceRepos as bbOrgRepos, listBranches as bbBranches } from './adapters/bitbucket.js';
 import {
   verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces, verifyJiraIssues, verifyConfluencePage,
-  jiraSearch, jiraSearchJql, validateJiraIssuesDetailed, resolveJiraScope, listJiraVersions, listJiraEpics, fetchJiraIssuesContent
+  jiraSearch, jiraSearchJql, validateJiraIssuesDetailed, resolveJiraScope, listJiraVersions, listJiraEpics, fetchJiraIssuesContent,
+  confluenceSearch, fetchConfluenceContent
 } from './adapters/atlassian.js';
+import { parseSpecText, analyzeSpec, loadSpecText, digestSpec } from './adapters/openapi.js';
+import { notionSearch, fetchNotionContent } from './adapters/notion.js';
+import { fetchRepoFile } from './adapters/repofiles.js';
 import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, renderMarkdownPreview, FRAMEWORK } from './adapters/llm.js';
@@ -366,6 +370,52 @@ apiRouter.get('/jira/versions', async (req, res) => {
   } catch (e) { res.status(e.code || 400).json({ error: e.message }); }
 });
 
+/* ---------------- OpenAPI / Swagger as a first-class source ----------------
+   Inspect a spec from ANY input method — URL, pasted text, or a file inside
+   a connected repository — and return the full analysis: operation tree,
+   tags, schemas, and validation findings. */
+apiRouter.post('/openapi/inspect', async (req, res) => {
+  const b = req.body || {};
+  try {
+    const text = await loadSpecText(
+      { url: b.url, text: b.text, provider: b.provider, repo: b.repo, branch: b.branch, path: b.path },
+      {
+        repoFileFetcher: async (provider, repo, branch, path) => {
+          let token = '';
+          try {
+            const src = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
+            token = await freshToken(src);
+          } catch { /* public repos work unauthenticated */ }
+          return fetchRepoFile(provider, repo, branch, path, token);
+        }
+      });
+    const spec = parseSpecText(text);
+    res.json({ summary: analyzeSpec(spec) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+/* ---------------- Notion as a first-class source ---------------- */
+apiRouter.get('/notion/search', async (req, res) => {
+  const src = await prisma.source.findFirst({ where: { userId: req.uid, provider: 'notion' } });
+  if (!src || !src.token) return res.status(400).json({ error: 'Connect Notion first — an internal integration token' });
+  try {
+    res.json({ items: await notionSearch(src.token, String(req.query.q || '')) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+/* ---------------- Confluence as a first-class source ---------------- */
+apiRouter.get('/confluence/search', async (req, res) => {
+  const src = await prisma.source.findFirst({ where: { userId: req.uid, provider: 'confluence' } });
+  if (!src || !src.token) return res.status(400).json({ error: 'Connect Confluence first — site URL, account email, and API token' });
+  try {
+    res.json({
+      pages: await confluenceSearch(src.detail, src.token, {
+        text: String(req.query.q || ''), space: String(req.query.space || ''), cql: String(req.query.cql || '')
+      })
+    });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // Validate an optional generation scope (Jira issue IDs, a Confluence page,
 // a Notion page/database) against the provider using the stored credentials.
 apiRouter.post('/sources/scope', async (req, res) => {
@@ -599,24 +649,65 @@ async function runPipeline(genId) {
     } catch (e) {
       console.error('effective-config resolution skipped:', e.message);
     }
-    // Jira as a TRUE source: every selected issue becomes a markdown source
-    // document (summary, description, relations, comments) the AI reads
-    // alongside — or instead of — repository files.
+    // NON-REPOSITORY sources become real source material: every selected
+    // Jira issue, OpenAPI spec, Notion page, and Confluence page is fetched
+    // and normalized to markdown the AI reads alongside — or instead of —
+    // repository files. Each connector fails independently; one unreachable
+    // source never blocks the others.
+    const oc0 = j(gen.output, {});
     try {
-      const jkeys = [...new Set((j(gen.output, {}).jiraIssues || []).map((k) => String(k).toUpperCase()))].slice(0, 20);
+      const jkeys = [...new Set((oc0.jiraIssues || []).map((k) => String(k).toUpperCase()))].slice(0, 20);
       if (jkeys.length) {
         const jsrc = await prisma.source.findFirst({ where: { userId: gen.userId, provider: 'jira' } });
         if (jsrc && jsrc.token) {
           const bundles = await fetchJiraIssuesContent(jsrc.detail, jsrc.token, jkeys);
-          if (bundles.length) {
-            scopedFiles = [
-              ...bundles.map((b) => ({ path: 'jira/' + b.key + '.md', content: b.md })),
-              ...scopedFiles
-            ];
-          }
+          scopedFiles = [...bundles.map((b) => ({ path: 'jira/' + b.key + '.md', content: b.md })), ...scopedFiles];
         }
       }
     } catch (e) { console.error('jira grounding skipped:', e.message); }
+    try {
+      const specs = Array.isArray(oc0.openapiSpecs) ? oc0.openapiSpecs.slice(0, 5) : [];
+      for (const s of specs) {
+        try {
+          const text = await loadSpecText(s.source || {}, {
+            repoFileFetcher: async (provider, repo, branch, path) => {
+              let token = '';
+              try {
+                const src = await prisma.source.findFirst({ where: { userId: gen.userId, provider } });
+                token = await freshToken(src);
+              } catch { /* public */ }
+              return fetchRepoFile(provider, repo, branch, path, token);
+            }
+          });
+          const spec = parseSpecText(text);
+          const analysis = analyzeSpec(spec);
+          scopedFiles = [{
+            path: 'openapi/' + (analysis.title || 'spec').replace(/[^\w.-]+/g, '-').toLowerCase() + '.md',
+            content: digestSpec(spec, analysis, Array.isArray(s.ops) ? s.ops : null)
+          }, ...scopedFiles];
+        } catch (e) { console.error('openapi spec skipped:', e.message); }
+      }
+    } catch (e) { console.error('openapi grounding skipped:', e.message); }
+    try {
+      const pages = Array.isArray(oc0.notionPages) ? oc0.notionPages.slice(0, 15) : [];
+      if (pages.length) {
+        const nsrc = await prisma.source.findFirst({ where: { userId: gen.userId, provider: 'notion' } });
+        if (nsrc && nsrc.token) {
+          const bundles = await fetchNotionContent(nsrc.token, pages, { includeChildren: !!oc0.notionChildren });
+          scopedFiles = [...bundles.map((b) => ({ path: 'notion/' + b.title.replace(/[^\w.-]+/g, '-').toLowerCase().slice(0, 60) + '.md', content: b.md })), ...scopedFiles];
+        }
+      }
+    } catch (e) { console.error('notion grounding skipped:', e.message); }
+    try {
+      const pages = Array.isArray(oc0.confluencePages) ? oc0.confluencePages.slice(0, 15) : [];
+      if (pages.length) {
+        const csrc = await prisma.source.findFirst({ where: { userId: gen.userId, provider: 'confluence' } });
+        if (csrc && csrc.token) {
+          const bundles = await fetchConfluenceContent(csrc.detail, csrc.token, pages.map((p) => p.id || p), { includeChildren: !!oc0.confluenceChildren });
+          scopedFiles = [...bundles.map((b) => ({ path: 'confluence/' + b.title.replace(/[^\w.-]+/g, '-').toLowerCase().slice(0, 60) + '.md', content: b.md })), ...scopedFiles];
+        }
+      }
+    } catch (e) { console.error('confluence grounding skipped:', e.message); }
     const baseBrief = j(gen.brief, {});
     const genArgs = {
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,

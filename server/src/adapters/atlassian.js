@@ -280,6 +280,79 @@ export async function verifyConfluencePage(siteUrl, cred, value) {
   return { id: m[1], title: d.title || 'Untitled page' };
 }
 
+/* ================= Confluence as a first-class source =================
+   Users select PAGES — browse a space, search, or run CQL — and generation
+   grounds on the pages' real content (storage format flattened to text). */
+
+const briefPage = (c) => ({
+  id: c.id,
+  title: c.title || 'Untitled',
+  space: (c.space && (c.space.key || c.space.name)) || (c.resultGlobalContainer && c.resultGlobalContainer.title) || '',
+  type: c.type || 'page',
+  updated: (c.version && c.version.when) ? String(c.version.when).slice(0, 10)
+    : (c.lastModified ? String(c.lastModified).slice(0, 10) : '')
+});
+
+// Search pages by text, space, or raw CQL.
+export async function confluenceSearch(siteUrl, cred, { text = '', space = '', cql = '' } = {}) {
+  const site = normalizeSite(siteUrl);
+  let query = String(cql || '').trim();
+  if (!query) {
+    const parts = ['type = page'];
+    if (space) parts.push('space = "' + String(space).split(' ')[0].replace(/"/g, '') + '"');
+    if (String(text).trim()) parts.push('(title ~ "' + String(text).trim().replace(/"/g, '') + '*" OR text ~ "' + String(text).trim().replace(/"/g, '') + '")');
+    query = parts.join(' AND ') + ' order by lastmodified desc';
+  }
+  const d = await get(site + '/wiki/rest/api/content/search?limit=30&expand=space,version&cql=' + encodeURIComponent(query), cred, 'Confluence');
+  return (d.results || []).map(briefPage);
+}
+
+// Confluence storage format (XHTML) → readable text. Best effort, no deps.
+export function storageToText(html) {
+  let s = String(html || '');
+  s = s.replace(/<ac:structured-macro[^>]*ac:name="(code|noformat)"[^>]*>[\s\S]*?<ac:plain-text-body><!\[CDATA\[([\s\S]*?)\]\]><\/ac:plain-text-body>[\s\S]*?<\/ac:structured-macro>/gi,
+    (_, __, code) => '\n```\n' + code + '\n```\n');
+  s = s.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, n, t) => '\n' + '#'.repeat(Number(n)) + ' ' + t.replace(/<[^>]+>/g, '') + '\n');
+  s = s.replace(/<li[^>]*>/gi, '\n- ').replace(/<\/li>/gi, '');
+  s = s.replace(/<tr[^>]*>/gi, '\n| ').replace(/<\/t[dh]>\s*<t[dh][^>]*>/gi, ' | ').replace(/<\/tr>/gi, ' |');
+  s = s.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<\/div>/gi, '\n');
+  s = s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+  s = s.replace(/<[^>]+>/g, '');
+  s = s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return s.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Full page bundles for GENERATION — optionally including child pages.
+export async function fetchConfluenceContent(siteUrl, cred, ids, { includeChildren = false, maxPages = 15 } = {}) {
+  const site = normalizeSite(siteUrl);
+  const queue = ids.slice(0, maxPages).map(String);
+  const seen = new Set();
+  const out = [];
+  while (queue.length && out.length < maxPages) {
+    const id = queue.shift();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    try {
+      const d = await get(site + '/wiki/rest/api/content/' + encodeURIComponent(id) + '?expand=body.storage,space,version,metadata.labels', cred, 'Confluence');
+      const labels = (((d.metadata || {}).labels || {}).results || []).map((l) => l.name);
+      const body = storageToText(d.body && d.body.storage && d.body.storage.value);
+      out.push({
+        id, title: d.title || 'Untitled',
+        md: '# ' + (d.title || 'Untitled') +
+          '\n\n- Space: ' + ((d.space && d.space.key) || '—') +
+          (labels.length ? ' · Labels: ' + labels.join(', ') : '') +
+          (d.version && d.version.when ? ' · Updated: ' + String(d.version.when).slice(0, 10) : '') +
+          '\n\n' + (body || '(empty page)')
+      });
+      if (includeChildren) {
+        const kids = await get(site + '/wiki/rest/api/content/' + encodeURIComponent(id) + '/child/page?limit=25', cred, 'Confluence').catch(() => null);
+        if (kids && kids.results) queue.push(...kids.results.map((k) => String(k.id)));
+      }
+    } catch { /* skip restricted pages; the rest still ground generation */ }
+  }
+  return out;
+}
+
 export async function listConfluenceSpaces(siteUrl, cred) {
   const site = normalizeSite(siteUrl);
   const d = await get(site + '/wiki/rest/api/space?limit=50', cred, 'Confluence');
