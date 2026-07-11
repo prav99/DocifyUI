@@ -107,8 +107,8 @@ function DiffView({ before, after, labels }) {
 /* ---------------- The page ---------------- */
 export default function History() {
   usePageMeta({
-    title: 'Import History — review, compare, approve, publish',
-    description: 'Every generated document with full version history, side-by-side comparison, and an approval workflow before publishing.'
+    title: 'Documents — versions, reviews & approvals',
+    description: 'Every generated document with full version history, inline comparison, and an approval workflow before publishing.'
   });
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState('');
@@ -116,7 +116,7 @@ export default function History() {
   const [approval, setApproval] = useState('');
   const [openId, setOpenId] = useState('');
   const [versions, setVersions] = useState({}); // id -> {current, versions}
-  const [diff, setDiff] = useState(null); // {title, before, after, labels}
+  const [diff, setDiff] = useState(null); // { rowId, title, before, after, labels } — rendered INLINE in the expanded row
   const [busy, setBusy] = useState('');
 
   const load = () => {
@@ -166,7 +166,7 @@ export default function History() {
   return (
     <div className="page" style={{ maxWidth: 1200 }}>
       <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <h1 className="h04">Import History</h1>
+        <h1 className="h04">Documents</h1>
         <HelpLink topic="history" />
       </div>
       <p className="body01 t2 mt3" style={{ maxWidth: 720 }}>
@@ -247,11 +247,15 @@ export default function History() {
                                     <b className="mono" style={{ fontSize: 12 }}>v{v.version}</b>
                                     <span className="helper">{fmtDate(v.createdAt)} · score {v.score}{v.note ? ' · ' + v.note : ''}</span>
                                     <span className="row" style={{ gap: 10, marginLeft: 'auto' }}>
-                                      <button className="linkbtn" onClick={() => setDiff({
-                                        title: r.title + ' — v' + v.version + ' vs current (v' + (vd.versions.length + 1) + ')',
-                                        before: v.content, after: vd.current.content,
-                                        labels: 'left: v' + v.version + ' · right: current'
-                                      })}>Compare with current</button>
+                                      <button className="linkbtn" onClick={() => setDiff(
+                                        diff && diff.rowId === r.id && diff.v === v.version ? null : {
+                                          rowId: r.id, v: v.version,
+                                          title: 'v' + v.version + ' → current (v' + (vd.versions.length + 1) + ')',
+                                          before: v.content, after: vd.current.content,
+                                          labels: 'red = only in v' + v.version + ' · green = only in current'
+                                        })}>
+                                        {diff && diff.rowId === r.id && diff.v === v.version ? 'Hide comparison' : 'Compare with current'}
+                                      </button>
                                       <button className="linkbtn" disabled={!!busy}
                                         onClick={() => download('/history/' + r.id + '/versions/' + v.id + '/download').catch((e) => toast('error', 'Download failed', e.message))}>Download</button>
                                       <button className="linkbtn" disabled={!!busy} onClick={() => restore(r.id, v)}>Restore</button>
@@ -263,6 +267,21 @@ export default function History() {
                                   <span className="helper">current · score {vd.current.score} · {label}</span>
                                 </div>
                               </div>
+                              {diff && diff.rowId === r.id && (
+                                <div className="mt4">
+                                  <div className="row row--between mb2" style={{ flexWrap: 'wrap', gap: 8 }}>
+                                    <p className="label01 t2">COMPARISON — {diff.title}</p>
+                                    <button className="linkbtn" onClick={() => setDiff(null)}>Close</button>
+                                  </div>
+                                  <DiffView before={diff.before} after={diff.after} labels={diff.labels} />
+                                </div>
+                              )}
+                              {vd.versions.length === 0 && (
+                                <p className="helper mt3">
+                                  Only one version so far — comparison unlocks the first time this document is
+                                  regenerated (the outgoing copy is saved automatically).
+                                </p>
+                              )}
                               {r.approvalLog && r.approvalLog.length > 0 && (
                                 <details className="pubrepo mt3">
                                   <summary>Approval history ({r.approvalLog.length})</summary>
@@ -286,20 +305,6 @@ export default function History() {
         </div>
       )}
 
-      {/* Diff viewer */}
-      {diff && (
-        <div className="hubpanel-wrap" role="dialog" aria-label="Version comparison" onClick={(e) => { if (e.target === e.currentTarget) setDiff(null); }}>
-          <div className="hubpanel hubpanel--wide" style={{ maxWidth: 1000 }}>
-            <div className="hubpanel-head">
-              <h3 className="h02">{diff.title}</h3>
-              <button className="mclose" aria-label="Close" onClick={() => setDiff(null)}>✕</button>
-            </div>
-            <div className="hubpanel-body">
-              <DiffView before={diff.before} after={diff.after} labels={diff.labels} />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -222,7 +222,7 @@ export function TopBar() {
         )}
         {user && (
           <a className={path === '/history' ? 'on' : ''} onClick={() => nav('/history')}>
-            History<span className="navnew">●</span>
+            Documents<span className="navnew">●</span>
           </a>
         )}
       </nav>

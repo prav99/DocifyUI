@@ -189,9 +189,9 @@ const TOPICS = {
     ]
   },
   history: {
-    title: 'Import History',
+    title: 'Documents',
     page: '/history',
-    intro: 'The single source of truth for every generated document: full version history, side-by-side comparison, and an approval workflow (Draft → Under review → Approved → Published) that the automation pipeline respects.',
+    intro: 'The single source of truth for every generated document: full version history, inline comparison, and an approval workflow (Draft → Under review → Approved → Published) that the automation pipeline respects.',
     steps: [
       'Every completed generation appears in the table — searchable by title or repository, filterable by provider and status. Click a row to expand it.',
       'Version timeline: each time regeneration changes a document, the outgoing content is snapshotted automatically. Compare any version against the current one in the side-by-side diff (added green, removed red, unchanged collapsed, jump between changes), download it, or restore it — restoring snapshots the current state first, so nothing is ever lost.',

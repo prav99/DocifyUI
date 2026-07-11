@@ -518,8 +518,8 @@ function Wizard({ existing, catalog, onDone }) {
               <Tog on={cfg.requireApproval} label="Require human approval before publishing"
                 sub="Runs that clear the thresholds wait for your approval in the run history"
                 onClick={() => set({ requireApproval: !cfg.requireApproval })} />
-              <Tog on={cfg.approvalGate} label="Route regenerated documents through Import History"
-                sub="Every regeneration lands as “Under review” in the History tab — only versions you approve there count as publishable"
+              <Tog on={cfg.approvalGate} label="Route regenerated documents through the Documents tab"
+                sub="Every regeneration lands as “Under review” under Documents — only versions you approve there count as publishable"
                 onClick={() => set({ approvalGate: !cfg.approvalGate })} />
             </div>
             <p className="helper mt3">Runs below either threshold are marked <b>Gate blocked</b> — content is generated and kept for review, never auto-published.</p>
