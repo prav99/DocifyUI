@@ -187,9 +187,10 @@ export function TopBar() {
   const marketing = ['/pricing', '/docs'];
   return (
     <header className="topbar">
-      {/* Logged-in users belong in their workspace — the logo takes them to
-          the dashboard, never back to the marketing landing page. */}
-      <span className="logo" onClick={() => nav(user ? '/dashboard' : '/')}>
+      {/* Logged-in users belong in their workflow — the logo takes them to
+          the Source step (the post-login home), never back to the marketing
+          landing page. */}
+      <span className="logo" onClick={() => nav(user ? '/source' : '/')}>
         <LogoMark size={22} />
         <span className="logotext">Doc<span className="logogen">Gen</span></span>
       </span>
