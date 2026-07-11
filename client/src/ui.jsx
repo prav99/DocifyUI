@@ -217,7 +217,7 @@ export function TopBar() {
         )}
         {user && (
           <a className={path === '/governance' ? 'on' : ''} onClick={() => nav('/governance')}>
-            Governance
+            Standardize
           </a>
         )}
         {user && (

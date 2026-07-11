@@ -205,9 +205,9 @@ const TOPICS = {
     ]
   },
   governance: {
-    title: 'Documentation Governance',
+    title: 'Standardize',
     page: '/governance',
-    intro: 'A dedicated workspace for correcting documentation you ALREADY have: analyze structure and writing, apply a style guide, review every change, approve, and export — end to end.',
+    intro: 'A dedicated workspace for correcting documentation you ALREADY have: analyze structure and writing, apply a style guide, review every change, approve, and export — end to end. Move between steps freely; your selection, settings, and step survive a page refresh.',
     steps: [
       'Step 1 — Documents: select existing documents, upload a file, paste content, or import from a repository. Multiple documents run through the same governance settings together.',
       'Step 2 — Style & type: pick a style guide (Docify Professional, enterprise classic, Microsoft-, Google-, Apple-, Atlassian-style, or marketing), the target document type (decides the recommended structure), and optional per-run instructions. Your organization profile from Settings applies on top and always wins.',

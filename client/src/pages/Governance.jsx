@@ -44,24 +44,32 @@ const scoreColor = (n) => (n == null ? 'var(--text-secondary)' : n >= 85 ? 'var(
 
 export default function Governance() {
   usePageMeta({
-    title: 'Documentation Governance — correct and standardize existing docs',
+    title: 'Standardize — rebuild existing docs to one clean standard',
     description: 'Analyze existing documentation, fix structure and terminology, apply a style guide, review every change, and export — end to end.'
   });
   const nav = useNavigate();
-  const [step, setStep] = useState(0);
+  // Workspace state survives a refresh: current step, selection, and style
+  // settings persist in this browser session.
+  const saved = (() => { try { return JSON.parse(sessionStorage.getItem('docify_gov') || '{}'); } catch { return {}; } })();
+  const [step, setStep] = useState(saved.step || 0);
 
   // Step 1 — documents
   const [docs, setDocs] = useState(null);
-  const [sel, setSel] = useState({});
+  const [sel, setSel] = useState(saved.sel || {});
   const [addMode, setAddMode] = useState(''); // '' | upload | paste | repo
   const [paste, setPaste] = useState({ name: 'document.md', text: '' });
   const [imp, setImp] = useState({ provider: 'github', repo: '', branch: 'main', path: '' });
   const [addBusy, setAddBusy] = useState(false);
 
   // Step 2 — style & type
-  const [guide, setGuide] = useState('docify');
-  const [docType, setDocType] = useState('userguide');
-  const [notes, setNotes] = useState('');
+  const [guide, setGuide] = useState(saved.guide || 'docify');
+  const [docType, setDocType] = useState(saved.docType || 'userguide');
+  const [notes, setNotes] = useState(saved.notes || '');
+
+  useEffect(() => {
+    try { sessionStorage.setItem('docify_gov', JSON.stringify({ step, sel, guide, docType, notes })); }
+    catch { /* persistence is a convenience */ }
+  }, [step, sel, guide, docType, notes]);
 
   // Step 3 — analysis + correction run
   const [analyses, setAnalyses] = useState({}); // docId -> analysis | {error}
@@ -133,13 +141,15 @@ export default function Governance() {
   /* ---------------- Step 3: analyze, then correct ---------------- */
   useEffect(() => {
     if (step !== 2) return;
+    // Re-run when the documents list finishes loading (restored sessions
+    // land on this step before the list arrives).
     selDocs.forEach((d) => {
       if (analyses[d.id]) return;
       api('/sync/documents/' + d.id + '/analyze', { method: 'POST', body: { docType } })
         .then((a) => setAnalyses((x) => ({ ...x, [d.id]: a })))
         .catch((e) => setAnalyses((x) => ({ ...x, [d.id]: { error: e.message } })));
     });
-  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, docs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function correctAll() {
     const results = [];
@@ -175,6 +185,7 @@ export default function Governance() {
         : 'Documents still rebuilding will appear in Review & export automatically.');
     await loadProposals();
     setStep(3);
+    setRun(null); // free the stepper again
   }
 
   /* ---------------- Step 4: proposals ---------------- */
@@ -204,7 +215,7 @@ export default function Governance() {
   return (
     <div className="page" style={{ maxWidth: 1100 }}>
       <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <h1 className="h04">Documentation Governance</h1>
+        <h1 className="h04">Standardize</h1>
         <HelpLink topic="governance" />
       </div>
       <p className="body01 t2 mt3" style={{ maxWidth: 720 }}>
@@ -216,7 +227,8 @@ export default function Governance() {
       <div className="wizhead mt6">
         {STEPS.map((s, i) => (
           <button key={s} className={'wizstep' + (i === step ? ' on' : i < step ? ' done' : '')}
-            onClick={() => { if (i < step || (i === 1 && selIds.length) || i === 0) setStep(i); }}>
+            onClick={() => { if (!run) setStep(i); }}
+            title={run ? 'Wait for the current correction run to finish' : undefined}>
             <span className="wiznum mono">{i < step ? '✓' : i + 1}</span>{s}
           </button>
         ))}
@@ -363,6 +375,15 @@ export default function Governance() {
       {/* ---------------- Step 3: Analyze & correct ---------------- */}
       {step === 2 && (
         <div className="mt6">
+          {selDocs.length === 0 && (
+            <div className="notconn">
+              <div>
+                <p className="body01"><b>No documents selected yet</b></p>
+                <p className="helper mt2">Pick one or more documents in step 1 — analysis runs on your selection with the style settings from step 2.</p>
+              </div>
+              <button className="btn btn--tertiary btn--sm btn--center" onClick={() => setStep(0)}>Go to step 1</button>
+            </div>
+          )}
           {selDocs.map((d) => {
             const a = analyses[d.id];
             return (
