@@ -140,6 +140,10 @@ model SyncDoc {
   repo      String   @default("") // mapped repository (owner/name)
   branch    String   @default("main")
   content   String   @default("") // canonical extracted text
+  docsProvider String @default("") // set when the doc was imported from a docs repository
+  docsRepo     String @default("") // docs repository (owner/name) — may differ from the code repo
+  docsBranch   String @default("")
+  docsPath     String @default("") // path of the source file inside the docs repository
   sections  String   @default("[]") // parsed outline JSON [{level,title,line,num?}]
   profile   String   @default("{}") // semantic profile JSON: terminology, style, glossary, stats
   status    String   @default("parsing") // parsing | indexing | ready | failed

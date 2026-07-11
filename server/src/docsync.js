@@ -18,6 +18,7 @@
 import { Router } from 'express';
 import { prisma } from './db.js';
 import { evaluateCommit, loadRepoConfig, DEFAULT_CONFIG, SAMPLE_YAML, SAMPLE_INSTRUCTIONS } from './adapters/relevance.js';
+import { fetchRepoFile } from './adapters/repofiles.js';
 import { freshToken } from './auth.js';
 
 export const syncRouter = Router();
@@ -430,6 +431,8 @@ async function runParsePipeline(docId) {
 function serializeDoc(d, { withContent = false } = {}) {
   return {
     id: d.id, name: d.name, format: d.format, repo: d.repo, branch: d.branch,
+    docsProvider: d.docsProvider || '', docsRepo: d.docsRepo || '',
+    docsBranch: d.docsBranch || '', docsPath: d.docsPath || '',
     status: d.status, progress: d.progress, error: d.error, cursor: d.cursor,
     sections: j(d.sections, []), profile: j(d.profile, {}),
     createdAt: d.createdAt, updatedAt: d.updatedAt,
@@ -497,6 +500,54 @@ syncRouter.post('/documents', async (req, res) => {
       format: String(format || 'markdown').slice(0, 30),
       repo: String(repo || '').slice(0, 140),
       branch: String(branch || 'main').slice(0, 80),
+      content: String(content),
+      status: 'parsing', progress: 4
+    }
+  });
+  runParsePipeline(row.id).catch((e) => console.error('parse pipeline', e));
+  res.status(201).json({ document: serializeDoc(row) });
+});
+
+/* Docs that live in a SEPARATE repository from the code: import the baseline
+   straight from the docs repo (owner/name + path + branch), while commits are
+   watched on the code repository. No copy-paste, no export step. */
+syncRouter.post('/documents/import', async (req, res) => {
+  const b = req.body || {};
+  const provider = ['github', 'gitlab', 'bitbucket'].includes(String(b.provider)) ? String(b.provider) : 'github';
+  const docsRepo = String(b.docsRepo || '').trim();
+  const docsBranch = String(b.docsBranch || 'main').trim() || 'main';
+  const docsPath = String(b.docsPath || '').trim().replace(/^\/+/, '');
+  const codeRepo = String(b.codeRepo || '').trim();
+  const codeBranch = String(b.codeBranch || 'main').trim() || 'main';
+  if (!/^[\w.-]+\/[\w.-]+$/.test(docsRepo)) return res.status(400).json({ error: 'Docs repository must be owner/name — e.g. acme/developer-docs' });
+  if (!docsPath) return res.status(400).json({ error: 'Provide the path of the document inside the docs repository — e.g. docs/api-guide.md' });
+  if (!/\.(md|markdown|mdx|txt|text|html|htm|rst|adoc)$/i.test(docsPath)) {
+    return res.status(400).json({ error: 'Supported file types: Markdown, plain text, HTML, reStructuredText, AsciiDoc' });
+  }
+
+  let token = '';
+  try {
+    const src = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
+    if (src && src.token) token = await freshToken(src);
+  } catch { /* public-repo fallback */ }
+  const content = await fetchRepoFile(provider, docsRepo, docsBranch, docsPath, token);
+  if (content == null) {
+    return res.status(400).json({ error: 'Could not read ' + docsPath + ' from ' + docsRepo + '@' + docsBranch + ' — check the repository, branch, and path (private repos need the source connected).' });
+  }
+  if (!String(content).trim()) return res.status(400).json({ error: 'The file is empty — nothing to index.' });
+  if (String(content).length > 1_500_000) return res.status(400).json({ error: 'Document exceeds the 1.5 MB text limit — split it or trim exports' });
+
+  const ext = (docsPath.split('.').pop() || '').toLowerCase();
+  const format = ['html', 'htm'].includes(ext) ? 'html' : ['txt', 'text'].includes(ext) ? 'text' : 'markdown';
+  const row = await prisma.syncDoc.create({
+    data: {
+      userId: req.uid,
+      name: docsPath.split('/').pop().slice(0, 140),
+      format,
+      repo: (codeRepo || docsRepo).slice(0, 140),
+      branch: codeBranch.slice(0, 80),
+      docsProvider: provider, docsRepo: docsRepo.slice(0, 140),
+      docsBranch: docsBranch.slice(0, 80), docsPath: docsPath.slice(0, 300),
       content: String(content),
       status: 'parsing', progress: 4
     }

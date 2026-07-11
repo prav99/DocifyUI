@@ -160,13 +160,33 @@ function htmlToText(html) {
   return s.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/* ---------- Upload panel ---------- */
+/* ---------- Upload panel: upload a file OR import from a docs repository ---------- */
 function UploadPanel({ onUploaded }) {
+  const [mode, setMode] = useState('upload'); // upload | import
   const [repo, setRepo] = useState('acme/payments-api');
   const [branch, setBranch] = useState('main');
+  // Import mode: docs live in a separate repository from the code.
+  const [docsProvider, setDocsProvider] = useState('github');
+  const [docsRepo, setDocsRepo] = useState('');
+  const [docsBranch, setDocsBranch] = useState('main');
+  const [docsPath, setDocsPath] = useState('docs/');
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
   const fileRef = useRef(null);
+
+  async function importFromRepo() {
+    setBusy(true);
+    try {
+      const d = await api('/sync/documents/import', {
+        method: 'POST',
+        body: { provider: docsProvider, docsRepo, docsBranch, docsPath, codeRepo: repo, codeBranch: branch }
+      });
+      toast('success', 'Imported from ' + docsRepo, docsPath + ' is being parsed and indexed…');
+      onUploaded(d.document);
+    } catch (e) {
+      toast('error', 'Import failed', e.message);
+    } finally { setBusy(false); }
+  }
 
   const send = useCallback(async (name, format, content) => {
     setBusy(true);
@@ -205,42 +225,89 @@ function UploadPanel({ onUploaded }) {
 
   return (
     <div className="tile tile--white" style={{ padding: 24 }}>
-      <h3 className="h02">Upload existing documentation</h3>
+      <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <h3 className="h02">Add existing documentation</h3>
+        <div className="seg" role="tablist" aria-label="How to add your documentation">
+          <button role="tab" aria-selected={mode === 'upload'} className={mode === 'upload' ? 'on' : ''}
+            onClick={() => setMode('upload')}>Upload a file</button>
+          <button role="tab" aria-selected={mode === 'import'} className={mode === 'import' ? 'on' : ''}
+            onClick={() => setMode('import')}>Import from a docs repo</button>
+        </div>
+      </div>
       <p className="body01 t2 mt3" style={{ maxWidth: 640 }}>
-        Your document becomes the project baseline. The engine parses its headings, hierarchy, terminology and
-        style — then places every future repository change into the right section automatically.
+        {mode === 'upload'
+          ? 'Your document becomes the project baseline. The engine parses its headings, hierarchy, terminology and style — then places every future repository change into the right section automatically.'
+          : 'Docs in a separate repository from the code? Point Docify at the docs repo and file — the baseline imports directly, while commits are watched on your code repository. No copy-paste.'}
       </p>
+      {mode === 'import' && (
+        <div className="grid2 mt5">
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label htmlFor="sync-docsrepo">Docs repository</label>
+            <input id="sync-docsrepo" className="input" value={docsRepo} onChange={(e) => setDocsRepo(e.target.value)} placeholder="acme/developer-docs" />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label htmlFor="sync-docspath">File path in the docs repo</label>
+            <input id="sync-docspath" className="input mono" style={{ fontSize: 13 }} value={docsPath} onChange={(e) => setDocsPath(e.target.value)} placeholder="docs/api-guide.md" />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label htmlFor="sync-docsprovider">Docs host</label>
+            <select id="sync-docsprovider" className="select" value={docsProvider} onChange={(e) => setDocsProvider(e.target.value)}>
+              <option value="github">GitHub</option>
+              <option value="gitlab">GitLab</option>
+              <option value="bitbucket">Bitbucket</option>
+            </select>
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label htmlFor="sync-docsbranch">Docs branch</label>
+            <input id="sync-docsbranch" className="input" value={docsBranch} onChange={(e) => setDocsBranch(e.target.value)} placeholder="main" />
+          </div>
+        </div>
+      )}
       <div className="grid2 mt5">
         <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="sync-repo">Mapped repository</label>
+          <label htmlFor="sync-repo">{mode === 'import' ? 'Code repository to watch' : 'Mapped repository'}</label>
           <input id="sync-repo" className="input" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repository" />
         </div>
         <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="sync-branch">Branch</label>
+          <label htmlFor="sync-branch">{mode === 'import' ? 'Code branch' : 'Branch'}</label>
           <input id="sync-branch" className="input" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" />
         </div>
       </div>
-      <div
-        className={'sync-drop mt5' + (over ? ' over' : '')}
-        onClick={() => fileRef.current && fileRef.current.click()}
-        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); handleFile(e.dataTransfer.files && e.dataTransfer.files[0]); }}
-        role="button" tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current && fileRef.current.click(); } }}
-        aria-label="Upload a documentation file"
-      >
-        <input ref={fileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text,.html,.htm,.rst,.adoc" onChange={(e) => { handleFile(e.target.files && e.target.files[0]); e.target.value = ''; }} />
-        <p className="body01"><b>Drag a file here</b> or click to browse</p>
-        <p className="helper mt2">Markdown · plain text · HTML (Confluence / Notion export) — PDF &amp; Word extraction coming next</p>
-      </div>
-      <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-        <button className="btn btn--tertiary btn--field" disabled={busy}
-          onClick={() => send('payments-developer-guide.md', 'markdown', SAMPLE_DOC)}>
-          Try with a sample document
-        </button>
-        <span className="helper">1,000+ page documents are supported — only the outline is indexed for placement.</span>
-      </div>
+      {mode === 'upload' ? (
+        <>
+          <div
+            className={'sync-drop mt5' + (over ? ' over' : '')}
+            onClick={() => fileRef.current && fileRef.current.click()}
+            onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+            onDragLeave={() => setOver(false)}
+            onDrop={(e) => { e.preventDefault(); setOver(false); handleFile(e.dataTransfer.files && e.dataTransfer.files[0]); }}
+            role="button" tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current && fileRef.current.click(); } }}
+            aria-label="Upload a documentation file"
+          >
+            <input ref={fileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text,.html,.htm,.rst,.adoc" onChange={(e) => { handleFile(e.target.files && e.target.files[0]); e.target.value = ''; }} />
+            <p className="body01"><b>Drag a file here</b> or click to browse</p>
+            <p className="helper mt2">Markdown · plain text · HTML (Confluence / Notion export) — PDF &amp; Word extraction coming next</p>
+          </div>
+          <div className="row mt5" style={{ flexWrap: 'wrap' }}>
+            <button className="btn btn--tertiary btn--field" disabled={busy}
+              onClick={() => send('payments-developer-guide.md', 'markdown', SAMPLE_DOC)}>
+              Try with a sample document
+            </button>
+            <span className="helper">1,000+ page documents are supported — only the outline is indexed for placement.</span>
+          </div>
+        </>
+      ) : (
+        <div className="row mt5" style={{ flexWrap: 'wrap' }}>
+          <button className="btn btn--primary btn--field" disabled={busy || !docsRepo.trim() || !docsPath.trim()}
+            onClick={importFromRepo}>
+            {busy ? 'Importing…' : 'Import document'}
+          </button>
+          <span className="helper">
+            Private docs repos: connect the source first so Docify has read access. Re-import any time — versions are kept.
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -291,7 +358,9 @@ function DocCard({ doc, onChanged, onSynced }) {
         <div>
           <p className="h01 mono" style={{ fontWeight: 600 }}>{doc.name}</p>
           <p className="helper mt2">
-            {doc.repo ? doc.repo + ' · ' + doc.branch : 'No repository mapped'} · uploaded {fmtDate(doc.createdAt)}
+            {doc.docsRepo
+              ? <>docs: <span className="mono">{doc.docsRepo}/{doc.docsPath}</span> @ {doc.docsBranch} · watches code: {doc.repo} @ {doc.branch}</>
+              : <>{doc.repo ? doc.repo + ' · ' + doc.branch : 'No repository mapped'}</>} · added {fmtDate(doc.createdAt)}
           </p>
         </div>
         {doc.status === 'ready' && <span className="tag tag--green">Indexed</span>}
