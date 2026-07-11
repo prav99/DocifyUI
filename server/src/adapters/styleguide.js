@@ -330,19 +330,58 @@ export function autofixText(md, policy) {
   return { text: out, fixes };
 }
 
-/* -------------------- Doc sync: match the surrounding style --------------------
-   Sample the section a change is spliced into and conform the new lines to
-   its conventions — list markers, heading case, bold-lead pattern — plus the
-   terminology safe-fixes. Deterministic, so inserts stop reading like a
-   different author. */
-export function matchSurroundingStyle(newLines, surroundingLines, policy) {
+/* -------------------- Doc sync: match the document's style --------------------
+   Real documents edited by many people over years are internally
+   INCONSISTENT — so matching only the local neighborhood risks conforming
+   to the wrong author. The resolution model:
+
+     1. Compute the DOCUMENT-DOMINANT convention (whole-doc majority) for
+        each style signal — list marker, heading case, bold-lead bullets.
+     2. Use the dominant convention when it has a clear majority (>60%),
+        so every touched section converges the document toward its own
+        prevailing style.
+     3. Only when the document is genuinely split does the LOCAL
+        neighborhood break the tie — never the other way around.
+
+   Untouched sections are never rewritten; convergence happens only where
+   the pipeline already writes. */
+function styleStats(text) {
+  const bulletsDash = (text.match(/^\s*-\s+/gm) || []).length;
+  const bulletsStar = (text.match(/^\s*\*\s+/gm) || []).length;
+  const boldLeadCount = (text.match(/^\s*[-*]\s+\*\*[^*]+\*\*/gm) || []).length;
+  const heads = [...text.matchAll(/^#{1,6}\s+(.+)$/gm)].map((m) => m[1]);
+  const titleCaseHeads = heads.filter((h) => /^[A-Z]/.test(h) && h.split(' ').filter((w) => w.length > 3).every((w) => /^[A-Z]/.test(w))).length;
+  return { bulletsDash, bulletsStar, boldLeadCount, headCount: heads.length, titleCaseHeads };
+}
+
+// Majority pick with a confidence gate: returns the dominant value only when
+// it truly dominates; null means "split — let the local neighbor decide".
+function dominant(a, b, aVal, bVal, threshold = 0.6) {
+  const total = a + b;
+  if (total < 3) return null; // not enough signal to claim a document style
+  if (a / total >= threshold) return aVal;
+  if (b / total >= threshold) return bVal;
+  return null;
+}
+
+export function matchSurroundingStyle(newLines, surroundingLines, policy, documentLines) {
   const around = (surroundingLines || []).join('\n');
-  const bulletsDash = (around.match(/^\s*-\s+/gm) || []).length;
-  const bulletsStar = (around.match(/^\s*\*\s+/gm) || []).length;
-  const marker = bulletsStar > bulletsDash ? '*' : '-';
-  const boldLead = (around.match(/^\s*[-*]\s+\*\*[^*]+\*\*/gm) || []).length >= 2;
-  const heads = [...around.matchAll(/^#{1,6}\s+(.+)$/gm)].map((m) => m[1]);
-  const titleCase = heads.length >= 2 && heads.every((h) => /^[A-Z]/.test(h) && h.split(' ').filter((w) => w.length > 3).every((w) => /^[A-Z]/.test(w)));
+  const local = styleStats(around);
+  const doc = documentLines && documentLines.length ? styleStats(documentLines.join('\n')) : null;
+
+  // Document-dominant first; local neighborhood only breaks ties.
+  const docMarker = doc ? dominant(doc.bulletsDash, doc.bulletsStar, '-', '*') : null;
+  const marker = docMarker || (local.bulletsStar > local.bulletsDash ? '*' : '-');
+  const docBold = doc && doc.bulletsDash + doc.bulletsStar >= 5
+    ? doc.boldLeadCount / (doc.bulletsDash + doc.bulletsStar) >= 0.4
+    : null;
+  const boldLead = docBold !== null ? docBold : local.boldLeadCount >= 2;
+  const docTitle = doc && doc.headCount >= 4
+    ? (doc.titleCaseHeads / doc.headCount >= 0.6 ? true : doc.titleCaseHeads / doc.headCount <= 0.4 ? false : null)
+    : null;
+  const titleCase = docTitle !== null
+    ? docTitle
+    : local.headCount >= 2 && local.titleCaseHeads === local.headCount;
 
   let out = (newLines || []).map((line) => {
     let l = line;

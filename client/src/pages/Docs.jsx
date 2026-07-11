@@ -212,9 +212,12 @@ const SUPPORTING = [
       { p: 'Every finished document runs through a deterministic writing audit. The Quality page’s Style tab shows consistency scores — Voice, Terminology, Structure, Formatting, and an overall Writing consistency number — plus concrete findings: “Preferred term: sign in · Detected: log in · 4 occurrences · Replace”. Unambiguous violations (e-mail → email, utilize → use) are corrected automatically before you ever see the document; everything else stays a finding for you to decide.' },
       { ul: ['Structure findings flag missing mandatory sections and skipped heading levels', 'Voice findings flag passive-voice density and over-long sentences', 'Safe auto-corrections never touch code blocks'] }
     ]},
-    { slug: 'doc-sync-style-matching', name: 'Doc sync style matching', sum: 'Updates spliced into your document dress like their neighbours.', body: [
-      { p: 'When Doc sync updates a section of YOUR existing document, the new content is conformed to the conventions of the section it lands in: the surrounding text is sampled for its list markers (- versus *), heading capitalization, and bold-lead bullet patterns, and the insert is adjusted to match before you review it.' },
-      { p: 'The review queue’s reasoning panel notes exactly this — so “one paragraph suddenly reads like a different person wrote it” is the failure mode the pipeline is built to avoid, and the diff you approve shows the already-conformed text.' }
+    { slug: 'doc-sync-style-matching', name: 'Doc sync style matching', sum: 'Updates follow your document’s dominant style — and converge inconsistent docs toward it.', body: [
+      { p: 'When Doc sync updates a section of YOUR existing document, the new content is conformed to your document’s conventions — list markers (- versus *), heading capitalization, bold-lead bullet patterns — before you review it.' },
+      { h: 'What about documents that are already inconsistent?' },
+      { p: 'A document edited by five people over two years rarely has one style. Doc sync computes each convention as a WHOLE-DOCUMENT majority: if 70% of your bullets use dashes, new content uses dashes — even when the specific section being touched happens to use asterisks. The local neighborhood only breaks the tie when the document is genuinely split (no convention reaches a clear majority).' },
+      { p: 'The effect over time: every update nudges an inconsistent document toward its own prevailing style, one touched section at a time. Untouched sections are never rewritten — convergence happens only where the pipeline already writes, so nothing changes without appearing in your review queue.' },
+      { p: 'The reasoning panel on each proposal states exactly which conventions were applied, and the diff you approve shows the already-conformed text.' }
     ]}
   ]},
   { t: 'Automation & CI', items: [

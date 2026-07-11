@@ -300,12 +300,14 @@ export function buildUpdate(doc, commit) {
     .filter((t) => t.length > 3 && best.title.toLowerCase().includes(t)))].slice(0, 6);
   const topics = SECTION_SIGNAL.filter(([, re]) => re.test(best.title) && re.test(signal)).map(([n]) => n);
 
-  // STYLE MATCHING: the new lines are conformed to the conventions of the
-  // section they are spliced into — list markers, heading case, bold-lead
-  // bullets, and safe terminology — so the insert reads like the same author
-  // wrote it, not like a bot dropped in templated phrasing.
+  // STYLE MATCHING: the new lines are conformed to the DOCUMENT'S dominant
+  // conventions (whole-doc majority for list markers, heading case, bold-lead
+  // bullets); the local neighborhood only breaks ties when the document is
+  // genuinely split. In a doc edited by five people over two years, every
+  // update converges the document toward its own prevailing style instead of
+  // imitating whichever author happens to own the neighboring section.
   const surrounding = lines.slice(Math.max(0, range.start - 1), Math.min(lines.length, range.end));
-  const styledBody = matchSurroundingStyle(commit.body, surrounding, null);
+  const styledBody = matchSurroundingStyle(commit.body, surrounding, null, lines);
 
   const snippet = styledBody.join('\n');
   let diff;
@@ -356,7 +358,7 @@ export function buildUpdate(doc, commit) {
       + (topics.length ? 'Shared concepts: ' + topics.join(', ') + '. ' : '')
       + (matched.length ? 'Overlapping terms: ' + matched.join(', ') + '.' : 'Match driven by concept-level similarity rather than exact term overlap.'),
     signals: { terms: matched, concepts: topics, filesConsidered: commit.files.length },
-    style: 'The insert was conformed to this section’s conventions — list markers, heading case, and bold-lead patterns were sampled from the surrounding text so the update reads like the same author.',
+    style: 'The insert was conformed to the document’s DOMINANT conventions — list markers, heading case, and bold-lead patterns computed as a whole-document majority, with the local section breaking ties when the document is split. Updates converge an inconsistent document toward its prevailing style.',
     candidates
   };
 
