@@ -183,11 +183,21 @@ async function bootstrapUser(user) {
   }
 }
 
+// Admin flag mirrors the server-side ADMIN_EMAILS gate in admin.js — the
+// client uses it only to show/hide the Founder metrics menu item; the data
+// endpoint enforces the same list independently.
+function isAdminEmail(email) {
+  const configured = String(process.env.ADMIN_EMAILS || 'praveen.jha004@gmail.com')
+    .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return configured.includes(String(email || '').toLowerCase());
+}
+
 function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, oauthProvider: u.oauthProvider,
     emailVerified: !!u.emailVerified,
-    plan: u.plan, billingCycle: u.billingCycle, seats: u.seats
+    plan: u.plan, billingCycle: u.billingCycle, seats: u.seats,
+    isAdmin: isAdminEmail(u.email)
   };
 }
 

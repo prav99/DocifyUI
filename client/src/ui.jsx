@@ -248,7 +248,8 @@ function UserMenu({ user }) {
           <button role="menuitem" onClick={() => go('/dashboard')}>Dashboard</button>
           <button role="menuitem" onClick={() => go('/automation')}>Automation</button>
           <button role="menuitem" onClick={() => go('/sync')}>Doc sync</button>
-          <button role="menuitem" onClick={() => go('/founder')}>Founder metrics</button>
+          <button role="menuitem" onClick={() => go('/repos')}>Repositories</button>
+          {user.isAdmin && <button role="menuitem" onClick={() => go('/founder')}>Founder metrics</button>}
           <button role="menuitem" onClick={() => go('/settings')}>Team &amp; settings</button>
           <div className="umenu-div" />
           <button role="menuitem" className="umenu-out" onClick={signOut}>Log out</button>

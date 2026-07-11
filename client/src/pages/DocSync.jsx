@@ -671,19 +671,32 @@ function Timeline({ onOpenQueue }) {
       </div>
     );
   }
+  // Demo-feed commits carry fictional authors (Meera Krishnan, Daniel Osei,
+  // Sofia Marques). Label them clearly so nobody mistakes sample history for
+  // another person's real work.
+  const DEMO_AUTHORS = ['Meera Krishnan', 'Daniel Osei', 'Sofia Marques'];
+  const hasDemo = tl.some((c) => DEMO_AUTHORS.includes(c.author));
   return (
     <div className="ctl">
+      {hasDemo && (
+        <div className="syncnote" role="note" style={{ marginBottom: 16 }}>
+          <strong>Sample repository history.</strong>&nbsp;Commits marked <span className="tag tag--gray">sample</span> come
+          from Docify&rsquo;s built-in demo feed — the authors are fictional. Connect a webhook (Automation page)
+          and your real commits replace them.
+        </div>
+      )}
       {tl.map((c) => {
         const allDone = c.updates.every((u) => u.status !== 'pending');
+        const isDemo = DEMO_AUTHORS.includes(c.author);
         return (
           <div key={c.commit + c.at} className={'ctlitem' + (allDone ? ' ctlitem--done' : '')}>
             <div className="ctlcard">
               <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
-                <p className="body01"><b>{c.message}</b></p>
+                <p className="body01"><b>{c.message}</b>{isDemo && <span className="tag tag--gray" style={{ marginLeft: 8 }}>sample</span>}</p>
                 <span className="helper">{fmtDate(c.at)}</span>
               </div>
               <p className="helper mt2">
-                <span className="mono">{c.commit}</span> · {c.author} · {c.branch}
+                <span className="mono">{c.commit}</span> · {c.author}{isDemo ? ' (fictional)' : ''} · {c.branch}
                 {c.adds || c.dels ? <span> · <span style={{ color: 'var(--support-success)' }}>+{c.adds}</span> <span style={{ color: 'var(--support-error)' }}>−{c.dels}</span></span> : null}
               </p>
               <div className="ctlfiles">{c.files.map((f) => <span key={f}>{f}</span>)}</div>

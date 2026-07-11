@@ -338,6 +338,7 @@ export default function Repos() {
       toast('success', label, selIds.length + ' repositor' + (selIds.length === 1 ? 'y' : 'ies') + ' updated');
       setSelected({});
       loadRepos();
+      loadRuleSets(); // usage counts change with assignments
     } catch (e) { toast('error', 'Bulk action failed', e.message); }
   };
 
@@ -363,6 +364,7 @@ export default function Repos() {
     try {
       await api('/hub/repositories', { method: 'PATCH', body: { ids: [r.id], ruleSetId } });
       loadRepos();
+      loadRuleSets(); // usage counts change with assignments
     } catch (e) { toast('error', 'Assignment failed', e.message); }
   };
 
