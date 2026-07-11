@@ -1099,6 +1099,25 @@ async function runPipeline(genId) {
   }
 }
 
+/* ---------------- Crash/deploy recovery ----------------
+   A deploy restarts the process and kills in-flight pipelines, leaving
+   generations frozen at "running" forever. On boot, every orphaned run is
+   resumed automatically — the kept-aiDocs guard inside runPipeline ensures a
+   resume can only improve a row, never degrade grounded content. */
+setTimeout(async () => {
+  try {
+    const stuck = await prisma.generation.findMany({
+      where: { status: { in: ['queued', 'running'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    });
+    if (stuck.length) {
+      console.log('recovery: resuming ' + stuck.length + ' interrupted generation(s)');
+      stuck.forEach((g, i) => setTimeout(() => runPipeline(g.id).catch((e) => console.error('recovery run failed:', e.message)), i * 4000));
+    }
+  } catch (e) { console.error('recovery scan skipped:', e.message); }
+}, 8000).unref?.();
+
 apiRouter.post('/generations', async (req, res) => {
   const { repo, branch = 'main', track, docTypes, format, formats, instructions = '', files = [], provider = 'github', skillName = '', skill = '', brief = null, output = null } = req.body || {};
   if (String(skill).length > 60000) return res.status(400).json({ error: 'SKILL.md is too large (60 KB max)' });
