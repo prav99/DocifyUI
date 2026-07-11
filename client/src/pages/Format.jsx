@@ -97,7 +97,12 @@ export default function Format() {
         instructions, files: flow.files, provider: flow.provider || 'github',
         skillName: flow.skillName || '', skill: flow.skillContent || '',
         brief: { audience: flow.briefAudience || '', emphasis: flow.briefEmphasis || '', tone: flow.briefTone || '' },
-        output: { ...OUT_DEFAULTS, ...(flow.outputCfg || {}) }
+        output: {
+          ...OUT_DEFAULTS, ...(flow.outputCfg || {}),
+          // Jira as a source: the pipeline fetches these issues' full content
+          // (description, comments, links) as source material.
+          ...((flow.jiraIssues || []).length ? { jiraIssues: flow.jiraIssues } : {})
+        }
       };
       const d = await api('/generations', { method: 'POST', body });
       // Every additional repository selected at the Source step gets its own

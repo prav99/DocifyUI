@@ -5,7 +5,10 @@ import { SOURCES, DOCTYPES, FORMATS, PLANS, CI_YAML, docTypeName, formatDef } fr
 import { listRepos, listOrgRepos as ghOrgRepos, listBranches as ghBranches } from './adapters/github.js';
 import { listProjects as listGitlab, listGroupProjects as glOrgRepos, listBranches as glBranches } from './adapters/gitlab.js';
 import { listRepos as listBitbucket, listWorkspaceRepos as bbOrgRepos, listBranches as bbBranches } from './adapters/bitbucket.js';
-import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces, verifyJiraIssues, verifyConfluencePage } from './adapters/atlassian.js';
+import {
+  verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces, verifyJiraIssues, verifyConfluencePage,
+  jiraSearch, jiraSearchJql, validateJiraIssuesDetailed, resolveJiraScope, listJiraVersions, listJiraEpics, fetchJiraIssuesContent
+} from './adapters/atlassian.js';
 import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, renderMarkdownPreview, FRAMEWORK } from './adapters/llm.js';
@@ -145,6 +148,34 @@ function normalizeGitEvent(b = {}) {
   return null;
 }
 
+// Jira Cloud webhook payloads → a normalized pipeline event. Jira cannot sign
+// requests, so these authenticate with ?token=<secret> (already supported).
+function normalizeJiraEvent(b = {}) {
+  const we = String(b.webhookEvent || '');
+  if (!we.startsWith('jira:') && we !== 'comment_created') return null;
+  const issue = b.issue || {};
+  const f = issue.fields || {};
+  const key = issue.key || '';
+  if (!key) return null;
+  let kind = we === 'jira:issue_created' ? 'created'
+    : we === 'comment_created' ? 'comment'
+    : we === 'jira:issue_updated' ? 'updated' : '';
+  if (!kind) return null;
+  // A status transition into a done-category state is its own trigger.
+  if (kind === 'updated') {
+    const items = (b.changelog && b.changelog.items) || [];
+    const st = items.find((i) => String(i.field).toLowerCase() === 'status');
+    if (st && /done|closed|resolved/i.test(String(st.toString || ''))) kind = 'statusDone';
+  }
+  return {
+    jiraKind: kind,
+    issue: key,
+    summary: f.summary || '',
+    status: (f.status && f.status.name) || '',
+    type: (f.issuetype && f.issuetype.name) || ''
+  };
+}
+
 async function verifyHookSecret(req, secret) {
   const crypto = await import('node:crypto');
   const sig = req.get('X-Hub-Signature-256');
@@ -166,9 +197,25 @@ apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
       return res.status(401).json({ error: 'Signature verification failed' });
     }
     if (profile.status !== 'active') return res.json({ ok: true, action: 'ignored', reason: 'Profile is paused' });
+    const cfg = profCfg(profile);
+    // Jira issue events run the SAME pipeline as merges — the issue key rides
+    // in the message so traceability, placement, and run history all show it.
+    const jev = normalizeJiraEvent(req.body);
+    if (jev) {
+      const triggers = (cfg.jira && cfg.jira.triggers) || {};
+      if (!cfg.jira || !cfg.jira.enabled) return res.json({ ok: true, action: 'ignored', reason: 'Jira is not enabled for this profile' });
+      if (!triggers[jev.jiraKind]) return res.json({ ok: true, action: 'ignored', reason: 'Jira event "' + jev.jiraKind + '" is not enabled for this profile' });
+      const ev = {
+        kind: 'push', branch: cfg.branch, commit: '',
+        message: '[' + jev.issue + '] ' + (jev.summary || 'Jira ' + jev.jiraKind) +
+          ' (Jira ' + jev.jiraKind + (jev.status ? ' · ' + jev.status : '') + ')',
+        repo: cfg.repo, files: [], trigger: 'jira'
+      };
+      profileRun(profile, ev).catch((e) => console.error('jira profile run', e));
+      return res.json({ ok: true, action: 'regenerating', profile: profile.name, trigger: 'jira:' + jev.jiraKind, issue: jev.issue });
+    }
     const ev = normalizeGitEvent(req.body);
     if (!ev || !ev.branch) return res.json({ ok: true, action: 'ignored', reason: 'No branch in payload (event type not handled)' });
-    const cfg = profCfg(profile);
     if (!branchMatches(cfg.branch, ev.branch)) {
       return res.json({ ok: true, action: 'ignored', reason: 'Branch ' + ev.branch + ' does not match watched ' + cfg.branch });
     }
@@ -262,6 +309,61 @@ apiRouter.post('/sources', async (req, res) => {
     : await prisma.source.create({ data });
   invalidateCatalogue(req.uid);
   res.json({ source: row, info });
+});
+
+/* ---------------- Jira as a first-class source (issues, not repos) ----------------
+   Selected issues are the source material. Every route resolves through the
+   user's own Jira connection — multi-tenant by construction. */
+async function jiraSrc(uid) {
+  const src = await prisma.source.findFirst({ where: { userId: uid, provider: 'jira' } });
+  if (!src || !src.token) { const e = new Error('Connect Jira first — site URL, account email, and API token'); e.code = 400; throw e; }
+  return src;
+}
+
+// Per-key validation with clear success / invalid / inaccessible / duplicate states.
+apiRouter.post('/jira/validate', async (req, res) => {
+  try {
+    const src = await jiraSrc(req.uid);
+    const b = req.body || {};
+    const keys = Array.isArray(b.keys) ? b.keys : String(b.keys || '').split(/[\s,;]+/);
+    const results = await validateJiraIssuesDetailed(src.detail, src.token, keys);
+    res.json({ results });
+  } catch (e) { res.status(e.code || 400).json({ error: e.message }); }
+});
+
+// Search by key, text, or full JQL (issue key input is detected automatically).
+apiRouter.get('/jira/search', async (req, res) => {
+  try {
+    const src = await jiraSrc(req.uid);
+    const issues = req.query.jql
+      ? await jiraSearchJql(src.detail, src.token, String(req.query.jql), 50)
+      : await jiraSearch(src.detail, src.token, { text: String(req.query.q || ''), project: String(req.query.project || '').split(' ')[0] });
+    res.json({ issues });
+  } catch (e) { res.status(e.code || 400).json({ error: e.message }); }
+});
+
+// Scope modes (epic | sprint | release | project | jql) → concrete issues.
+apiRouter.post('/jira/resolve', async (req, res) => {
+  try {
+    const src = await jiraSrc(req.uid);
+    const { mode, value = '', project = '' } = req.body || {};
+    const out = await resolveJiraScope(src.detail, src.token, { mode, value, project: String(project).split(' ')[0] });
+    res.json(out);
+  } catch (e) { res.status(e.code || 400).json({ error: e.message }); }
+});
+
+apiRouter.get('/jira/epics', async (req, res) => {
+  try {
+    const src = await jiraSrc(req.uid);
+    res.json({ epics: await listJiraEpics(src.detail, src.token, String(req.query.project || '').split(' ')[0]) });
+  } catch (e) { res.status(e.code || 400).json({ error: e.message }); }
+});
+
+apiRouter.get('/jira/versions', async (req, res) => {
+  try {
+    const src = await jiraSrc(req.uid);
+    res.json({ versions: await listJiraVersions(src.detail, src.token, String(req.query.project || '')) });
+  } catch (e) { res.status(e.code || 400).json({ error: e.message }); }
 });
 
 // Validate an optional generation scope (Jira issue IDs, a Confluence page,
@@ -475,7 +577,11 @@ async function runPipeline(genId) {
       const src = await prisma.source.findFirst({ where: { userId: gen.userId, provider: gen.provider } });
       if (src && src.token) srcToken = await freshToken(src);
     } catch { /* public-repo fallback */ }
-    const repoFiles = await fetchRepoFiles(gen.provider, gen.repo, gen.branch, srcToken);
+    // Jira-only generations have no repository — an empty file set is valid
+    // as long as Jira issue bundles (below) provide the source material.
+    let repoFiles = [];
+    try { repoFiles = await fetchRepoFiles(gen.provider, gen.repo, gen.branch, srcToken); }
+    catch (e) { console.error('repo fetch skipped (' + gen.repo + '):', e.message); }
     // Unified rules engine: the same rule sets + docify.yaml that govern
     // automation and Doc sync also scope NORMAL generation — files outside the
     // configured scan scope never reach the AI, and rule-set instructions /
@@ -493,6 +599,24 @@ async function runPipeline(genId) {
     } catch (e) {
       console.error('effective-config resolution skipped:', e.message);
     }
+    // Jira as a TRUE source: every selected issue becomes a markdown source
+    // document (summary, description, relations, comments) the AI reads
+    // alongside — or instead of — repository files.
+    try {
+      const jkeys = [...new Set((j(gen.output, {}).jiraIssues || []).map((k) => String(k).toUpperCase()))].slice(0, 20);
+      if (jkeys.length) {
+        const jsrc = await prisma.source.findFirst({ where: { userId: gen.userId, provider: 'jira' } });
+        if (jsrc && jsrc.token) {
+          const bundles = await fetchJiraIssuesContent(jsrc.detail, jsrc.token, jkeys);
+          if (bundles.length) {
+            scopedFiles = [
+              ...bundles.map((b) => ({ path: 'jira/' + b.key + '.md', content: b.md })),
+              ...scopedFiles
+            ];
+          }
+        }
+      }
+    } catch (e) { console.error('jira grounding skipped:', e.message); }
     const baseBrief = j(gen.brief, {});
     const genArgs = {
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
@@ -929,8 +1053,13 @@ const PROFILE_DEFAULTS = {
   publishTo: 'workspace', notifyEmail: '',                          // step 6
   notifyOn: { success: true, blocked: true, failure: true },
   // Traceability: link each merge to a Jira issue so the change can be placed
-  // and audited. { enabled, site, projectKey, requireIssue }.
-  jira: { enabled: false, site: '', projectKey: '', requireIssue: false },
+  // and audited — plus Jira EVENT triggers: point a Jira webhook at this
+  // profile's endpoint (?token=<secret>) and enabled issue events run the
+  // pipeline directly, no merge required.
+  jira: {
+    enabled: false, site: '', projectKey: '', requireIssue: false,
+    triggers: { created: false, updated: false, statusDone: true, comment: false }
+  },
   // The developer's existing documentation — the placement target. Parsed into
   // { name, format, sections:[{level,title,line}], lines, pagesEst } on upload.
   sourceDoc: null,
@@ -945,7 +1074,10 @@ function profCfg(p) {
     ...PROFILE_DEFAULTS, ...c,
     events: { ...PROFILE_DEFAULTS.events, ...(c.events || {}) },
     notifyOn: { ...PROFILE_DEFAULTS.notifyOn, ...(c.notifyOn || {}) },
-    jira: { ...PROFILE_DEFAULTS.jira, ...(c.jira || {}) },
+    jira: {
+      ...PROFILE_DEFAULTS.jira, ...(c.jira || {}),
+      triggers: { ...PROFILE_DEFAULTS.jira.triggers, ...((c.jira || {}).triggers || {}) }
+    },
     docTypes: Array.isArray(c.docTypes) && c.docTypes.length ? c.docTypes : PROFILE_DEFAULTS.docTypes
   };
 }
@@ -1215,7 +1347,9 @@ async function profileRun(profile, event) {
   // never documented. Uses the SAME unified rules engine as generation and
   // Doc sync (rule set → docify.yaml → thresholds). Manual "Run now" clicks
   // without merge metadata bypass the gate: there is nothing to classify.
-  if ((event.message || (event.files || []).length) && event.trigger !== 'manual') {
+  // Jira-triggered runs skip the merge-relevance gate: the user's enabled
+  // Jira triggers ARE the intent filter, and there is no diff to classify.
+  if ((event.message || (event.files || []).length) && event.trigger !== 'manual' && event.trigger !== 'jira') {
     try {
       const eff = await resolveEffectiveConfig(uid, cfg.provider, cfg.repo, event.branch || cfg.branch,
         { ruleSetId: String(cfg.ruleSetId || '') });

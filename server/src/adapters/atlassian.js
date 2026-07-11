@@ -80,6 +80,196 @@ export async function verifyJiraIssues(siteUrl, cred, value) {
   return out;
 }
 
+/* ================= Jira as a first-class documentation source =================
+   Not a repository: users select ISSUES (directly, or via epic / sprint /
+   release / project / JQL), and those issues become the source material for
+   generation. Jira Cloud REST v3; Data Center can slot in later by swapping
+   the base path. */
+
+const ISSUE_RE = /^[A-Z][A-Z0-9_]*-\d+$/;
+const ISSUE_FIELDS = 'summary,issuetype,status,priority,assignee,labels,updated';
+
+// Atlassian Document Format → readable plain text (best effort, never throws).
+export function adfToText(node) {
+  if (!node) return '';
+  if (typeof node === 'string') return node;
+  const kids = Array.isArray(node.content) ? node.content.map(adfToText).join('') : '';
+  switch (node.type) {
+    case 'text': return node.text || '';
+    case 'hardBreak': return '\n';
+    case 'paragraph': return kids + '\n';
+    case 'heading': return '\n' + kids + '\n';
+    case 'bulletList': case 'orderedList': return kids;
+    case 'listItem': return '- ' + kids.replace(/\n+$/, '') + '\n';
+    case 'codeBlock': return '\n```\n' + kids + '\n```\n';
+    case 'blockquote': return '> ' + kids;
+    case 'mention': return (node.attrs && node.attrs.text) || '';
+    case 'inlineCard': return (node.attrs && node.attrs.url) || '';
+    default: return kids;
+  }
+}
+
+const briefIssue = (i) => ({
+  key: i.key,
+  summary: (i.fields && i.fields.summary) || '',
+  type: (i.fields && i.fields.issuetype && i.fields.issuetype.name) || '',
+  status: (i.fields && i.fields.status && i.fields.status.name) || '',
+  priority: (i.fields && i.fields.priority && i.fields.priority.name) || '',
+  assignee: (i.fields && i.fields.assignee && i.fields.assignee.displayName) || '',
+  labels: (i.fields && i.fields.labels) || [],
+  updated: (i.fields && i.fields.updated) ? String(i.fields.updated).slice(0, 10) : ''
+});
+
+// Run a JQL query. Uses the current /search/jql endpoint with a fallback to
+// the classic /search for older deployments.
+export async function jiraSearchJql(siteUrl, cred, jql, max = 50) {
+  const site = normalizeSite(siteUrl);
+  const q = 'jql=' + encodeURIComponent(jql) + '&maxResults=' + Math.min(Number(max) || 50, 100) + '&fields=' + ISSUE_FIELDS;
+  let r;
+  try {
+    r = await fetch(site + '/rest/api/3/search/jql?' + q, { headers: { Authorization: basic(cred), Accept: 'application/json' } });
+    if (r.status === 404 || r.status === 410) {
+      r = await fetch(site + '/rest/api/3/search?' + q, { headers: { Authorization: basic(cred), Accept: 'application/json' } });
+    }
+  } catch { throw new Error('Could not reach ' + site); }
+  if (r.status === 400) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error('Jira rejected the query: ' + ((d.errorMessages || [])[0] || 'invalid JQL'));
+  }
+  if (r.status === 401) throw new Error('Jira authentication failed — reconnect your account');
+  if (!r.ok) throw new Error('Jira search failed (' + r.status + ')');
+  const d = await r.json();
+  return (d.issues || []).map(briefIssue);
+}
+
+// Text or key search scoped to an optional project. "DOC-1" style input is
+// looked up as a key; anything else becomes a text match.
+export async function jiraSearch(siteUrl, cred, { text = '', project = '' } = {}) {
+  const parts = [];
+  const t = String(text).trim();
+  if (project) parts.push('project = "' + project.replace(/"/g, '') + '"');
+  if (ISSUE_RE.test(t.toUpperCase())) parts.push('key = ' + t.toUpperCase());
+  else if (t) parts.push('text ~ "' + t.replace(/"/g, '') + '"');
+  const jql = (parts.length ? parts.join(' AND ') + ' ' : '') + 'order by updated desc';
+  return jiraSearchJql(siteUrl, cred, jql, 25);
+}
+
+// Per-key validation that NEVER throws per key: [{key, ok, summary, …, reason}].
+export async function validateJiraIssuesDetailed(siteUrl, cred, keys) {
+  const site = normalizeSite(siteUrl);
+  const list = [...new Set(keys.map((k) => String(k).trim().toUpperCase()).filter(Boolean))].slice(0, 50);
+  const out = [];
+  for (const key of list) {
+    if (!ISSUE_RE.test(key)) { out.push({ key, ok: false, reason: 'Not an issue key — expected PROJECT-NUMBER (e.g. DOC-101)' }); continue; }
+    try {
+      const r = await fetch(site + '/rest/api/3/issue/' + key + '?fields=' + ISSUE_FIELDS,
+        { headers: { Authorization: basic(cred), Accept: 'application/json' } });
+      if (r.status === 404) { out.push({ key, ok: false, reason: 'Not found, or no permission to view it' }); continue; }
+      if (r.status === 401) { out.push({ key, ok: false, reason: 'Authentication failed — reconnect Jira' }); continue; }
+      if (!r.ok) { out.push({ key, ok: false, reason: 'Lookup failed (' + r.status + ')' }); continue; }
+      out.push({ ok: true, ...briefIssue(await r.json()) });
+    } catch { out.push({ key, ok: false, reason: 'Could not reach ' + site }); }
+  }
+  return out;
+}
+
+// Selection modes → concrete issues. Every mode is JQL under the hood, so new
+// modes are one line each.
+export async function resolveJiraScope(siteUrl, cred, { mode, value = '', project = '' } = {}) {
+  const v = String(value).trim();
+  const proj = project ? 'project = "' + project.replace(/"/g, '') + '"' : '';
+  const and = (a, b) => [a, b].filter(Boolean).join(' AND ');
+  let jql;
+  if (mode === 'epic') {
+    if (!ISSUE_RE.test(v.toUpperCase())) throw new Error('Enter the epic’s issue key (e.g. DOC-100)');
+    jql = 'parent = ' + v.toUpperCase() + ' order by rank';
+  } else if (mode === 'sprint') {
+    jql = and(proj, v ? 'sprint = "' + v.replace(/"/g, '') + '"' : 'sprint in openSprints()') + ' order by rank';
+  } else if (mode === 'release') {
+    if (!v) throw new Error('Pick or enter a release / fix version');
+    jql = and(proj, 'fixVersion = "' + v.replace(/"/g, '') + '"') + ' order by updated desc';
+  } else if (mode === 'project') {
+    if (!proj) throw new Error('Pick a project first');
+    jql = proj + ' order by updated desc';
+  } else if (mode === 'jql') {
+    if (!v) throw new Error('Enter a JQL query');
+    jql = v;
+  } else {
+    throw new Error('Unknown selection mode: ' + mode);
+  }
+  let issues;
+  try {
+    issues = await jiraSearchJql(siteUrl, cred, jql, 50);
+  } catch (e) {
+    // Team-managed vs company-managed epics differ; fall back once.
+    if (mode === 'epic') issues = await jiraSearchJql(siteUrl, cred, '"Epic Link" = ' + v.toUpperCase() + ' order by rank', 50);
+    else throw e;
+  }
+  return { jql, issues };
+}
+
+export async function listJiraVersions(siteUrl, cred, projectKey) {
+  const site = normalizeSite(siteUrl);
+  const key = String(projectKey || '').split(' ')[0];
+  if (!key) return [];
+  const d = await get(site + '/rest/api/3/project/' + encodeURIComponent(key) + '/versions', cred, 'Jira');
+  return (Array.isArray(d) ? d : []).map((x) => ({ name: x.name, released: !!x.released }));
+}
+
+export async function listJiraEpics(siteUrl, cred, project) {
+  const jql = (project ? 'project = "' + String(project).replace(/"/g, '') + '" AND ' : '') + 'issuetype = Epic order by updated desc';
+  return jiraSearchJql(siteUrl, cred, jql, 25);
+}
+
+// Full issue bundles for GENERATION: everything the account may read becomes
+// a markdown source document (summary, description, relationships, comments).
+export async function fetchJiraIssuesContent(siteUrl, cred, keys, { maxIssues = 20, maxComments = 10 } = {}) {
+  const site = normalizeSite(siteUrl);
+  const out = [];
+  for (const key of keys.slice(0, maxIssues)) {
+    try {
+      const r = await fetch(site + '/rest/api/3/issue/' + encodeURIComponent(key) +
+        '?fields=summary,description,issuetype,status,priority,assignee,reporter,labels,components,fixVersions,parent,issuelinks,created,updated&expand=renderedFields',
+        { headers: { Authorization: basic(cred), Accept: 'application/json' } });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const f = d.fields || {};
+      const lines = [
+        '# ' + d.key + ' — ' + (f.summary || ''),
+        '',
+        '- Type: ' + ((f.issuetype && f.issuetype.name) || '—') + ' · Status: ' + ((f.status && f.status.name) || '—') + ' · Priority: ' + ((f.priority && f.priority.name) || '—'),
+        '- Assignee: ' + ((f.assignee && f.assignee.displayName) || 'Unassigned') + ' · Reporter: ' + ((f.reporter && f.reporter.displayName) || '—'),
+        f.labels && f.labels.length ? '- Labels: ' + f.labels.join(', ') : null,
+        f.components && f.components.length ? '- Components: ' + f.components.map((c) => c.name).join(', ') : null,
+        f.fixVersions && f.fixVersions.length ? '- Fix versions: ' + f.fixVersions.map((v) => v.name).join(', ') : null,
+        f.parent ? '- Parent: ' + f.parent.key + ' — ' + ((f.parent.fields && f.parent.fields.summary) || '') : null,
+        '- Created: ' + String(f.created || '').slice(0, 10) + ' · Updated: ' + String(f.updated || '').slice(0, 10),
+        '',
+        '## Description',
+        adfToText(f.description).trim() || '(no description)'
+      ];
+      const links = (f.issuelinks || []).map((l) => {
+        const other = l.outwardIssue || l.inwardIssue;
+        const rel = l.outwardIssue ? (l.type && l.type.outward) : (l.type && l.type.inward);
+        return other ? '- ' + (rel || 'relates to') + ' ' + other.key + ' — ' + ((other.fields && other.fields.summary) || '') : '';
+      }).filter(Boolean);
+      if (links.length) lines.push('', '## Linked issues', ...links);
+      try {
+        const cr = await fetch(site + '/rest/api/3/issue/' + encodeURIComponent(key) + '/comment?maxResults=' + maxComments + '&orderBy=-created',
+          { headers: { Authorization: basic(cred), Accept: 'application/json' } });
+        if (cr.ok) {
+          const cd = await cr.json();
+          const comments = (cd.comments || []).map((c) =>
+            '- ' + ((c.author && c.author.displayName) || 'Someone') + ' (' + String(c.created || '').slice(0, 10) + '): ' + adfToText(c.body).trim());
+          if (comments.length) lines.push('', '## Recent comments', ...comments);
+        }
+      } catch { /* comments are optional */ }
+      out.push({ key: d.key, summary: f.summary || '', md: lines.filter((l) => l !== null && l !== undefined).join('\n') });
+    } catch { /* skip unreachable issues; the rest still ground generation */ }
+  }
+  return out;
+}
+
 // Page URL ("…/pages/123456/Title") or bare numeric ID → { id, title }.
 export async function verifyConfluencePage(siteUrl, cred, value) {
   const site = normalizeSite(siteUrl);

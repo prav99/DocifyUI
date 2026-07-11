@@ -27,6 +27,183 @@ const SCOPE = {
   notion: { label: 'Focus on a specific page (optional)', ph: 'Paste a page or database link' }
 };
 
+/* ================= Jira issue picker =================
+   Jira is NOT a repository: the user selects ISSUES — directly, via search,
+   or whole epics / sprints / releases / JQL — and those issues become the
+   source material for generation. */
+const JIRA_MODES = [
+  ['issues', 'Issue keys'], ['search', 'Search'], ['epic', 'Epic'],
+  ['sprint', 'Sprint'], ['release', 'Release'], ['jql', 'JQL']
+];
+
+function JiraIssuePicker({ cfg, patch, project }) {
+  const issues = cfg.issues || [];
+  const [mode, setMode] = useState('issues');
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState(null); // found issues awaiting selection
+  const [checked, setChecked] = useState({});
+  const [invalid, setInvalid] = useState([]); // [{key, reason}]
+  const [epics, setEpics] = useState(null);
+  const [versions, setVersions] = useState(null);
+
+  // Epic and release choices load lazily per mode.
+  useEffect(() => {
+    if (mode === 'epic' && epics === null) {
+      api('/jira/epics?project=' + encodeURIComponent(project || '')).then((d) => setEpics(d.epics)).catch(() => setEpics([]));
+    }
+    if (mode === 'release' && versions === null) {
+      api('/jira/versions?project=' + encodeURIComponent(project || '')).then((d) => setVersions(d.versions)).catch(() => setVersions([]));
+    }
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addIssues = (list) => {
+    const have = new Set(issues.map((i) => i.key));
+    const fresh = list.filter((i) => !have.has(i.key));
+    if (fresh.length) patch({ issues: [...issues, ...fresh.map((i) => ({ key: i.key, summary: i.summary || '' }))] });
+    const dup = list.length - fresh.length;
+    if (dup) toast('info', dup + ' duplicate' + (dup > 1 ? 's' : '') + ' skipped', 'Already in your selection.');
+    setResults(null); setChecked({}); setInput('');
+  };
+
+  async function addKeys() {
+    const keys = input.split(/[\s,;]+/).filter(Boolean);
+    if (!keys.length) return;
+    setBusy(true); setInvalid([]);
+    try {
+      const d = await api('/jira/validate', { method: 'POST', body: { keys } });
+      const ok = d.results.filter((r) => r.ok);
+      const bad = d.results.filter((r) => !r.ok);
+      if (ok.length) addIssues(ok);
+      setInvalid(bad);
+    } catch (e) { toast('error', 'Validation failed', e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function run() {
+    setBusy(true); setInvalid([]); setResults(null); setChecked({});
+    try {
+      const d = mode === 'search'
+        ? await api('/jira/search?q=' + encodeURIComponent(input) + '&project=' + encodeURIComponent(project || ''))
+        : await api('/jira/resolve', { method: 'POST', body: { mode, value: input, project: project || '' } });
+      setResults(d.issues || []);
+    } catch (e) { toast('error', 'Could not fetch issues', e.message); }
+    finally { setBusy(false); }
+  }
+
+  const go = () => (mode === 'issues' ? addKeys() : run());
+  const nChecked = Object.values(checked).filter(Boolean).length;
+
+  return (
+    <div className="field mt5" style={{ maxWidth: 680, marginBottom: 0 }}>
+      <label>Source issues</label>
+      <p className="helper">
+        Selected issues become the source material for generation — summaries, descriptions,
+        acceptance criteria, comments, and linked issues are all read.
+      </p>
+
+      <div className="row mt3" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {JIRA_MODES.map(([id, l]) => (
+          <button key={id} type="button" className={'chip' + (mode === id ? ' on' : '')}
+            onClick={() => { setMode(id); setResults(null); setInvalid([]); setInput(''); }}>{l}</button>
+        ))}
+      </div>
+
+      <div className="row mt3" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {mode === 'epic' && (
+          epics === null ? <span className="helper">Loading epics…</span> : epics.length ? (
+            <select className="select" style={{ flex: '1 1 240px', maxWidth: 360 }} value={input}
+              onChange={(e) => setInput(e.target.value)} aria-label="Choose an epic">
+              <option value="" disabled>Choose an epic…</option>
+              {epics.map((ep) => <option key={ep.key} value={ep.key}>{ep.key} — {ep.summary}</option>)}
+            </select>
+          ) : (
+            <input className="input" style={{ flex: '1 1 220px', maxWidth: 320 }}
+              placeholder="Epic key — e.g. DOC-100" value={input}
+              onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} />
+          )
+        )}
+        {mode === 'release' && (
+          versions === null ? <span className="helper">Loading releases…</span> : versions.length ? (
+            <select className="select" style={{ flex: '1 1 240px', maxWidth: 360 }} value={input}
+              onChange={(e) => setInput(e.target.value)} aria-label="Choose a release">
+              <option value="" disabled>Choose a release / fix version…</option>
+              {versions.map((v) => <option key={v.name} value={v.name}>{v.name}{v.released ? ' (released)' : ''}</option>)}
+            </select>
+          ) : (
+            <input className="input" style={{ flex: '1 1 220px', maxWidth: 320 }}
+              placeholder="Fix version — e.g. 2.4.0" value={input}
+              onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} />
+          )
+        )}
+        {(mode === 'issues' || mode === 'search' || mode === 'sprint' || mode === 'jql') && (
+          <input className="input" style={{ flex: '1 1 280px', maxWidth: 420 }}
+            placeholder={mode === 'issues' ? 'DOC-101, DOC-102 — paste keys, comma or line separated'
+              : mode === 'search' ? 'Search by key, title, label, assignee…'
+              : mode === 'sprint' ? 'Sprint name — leave empty for the active sprint'
+              : 'JQL — e.g. project = DOC AND status = Done AND updated >= -14d'}
+            aria-label={'Jira ' + mode + ' input'} value={input}
+            onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} />
+        )}
+        <button type="button" className="btn btn--tertiary btn--sm btn--center" disabled={busy} onClick={go}>
+          {busy ? 'Working…' : mode === 'issues' ? 'Validate & add' : mode === 'search' ? 'Search' : mode === 'jql' ? 'Run query' : 'Fetch issues'}
+        </button>
+      </div>
+
+      {invalid.length > 0 && (
+        <div className="mt2">
+          {invalid.map((r) => (
+            <p key={r.key} className="helper" style={{ color: 'var(--support-error, #da1e28)' }}>✕ {r.key} — {r.reason}</p>
+          ))}
+        </div>
+      )}
+
+      {results && (results.length === 0 ? (
+        <p className="helper mt3">No issues matched. Try another {mode === 'jql' ? 'query' : mode}.</p>
+      ) : (
+        <div className="jiraresults mt3">
+          {results.map((r) => (
+            <label key={r.key} className="jirarow">
+              <input type="checkbox" checked={!!checked[r.key]}
+                onChange={(e) => setChecked((c) => ({ ...c, [r.key]: e.target.checked }))} />
+              <b className="mono">{r.key}</b>
+              <span className="jirarow-sum">{r.summary}</span>
+              <span className="reporow-meta">{[r.type, r.status].filter(Boolean).join(' · ')}</span>
+            </label>
+          ))}
+          <div className="row" style={{ gap: 12, padding: '10px 14px', flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--tertiary btn--sm btn--center" disabled={!nChecked}
+              onClick={() => addIssues(results.filter((r) => checked[r.key]))}>
+              Add selected ({nChecked})
+            </button>
+            <button type="button" className="linkbtn" onClick={() => addIssues(results)}>Add all {results.length}</button>
+            <button type="button" className="linkbtn" onClick={() => { setResults(null); setChecked({}); }}>Cancel</button>
+          </div>
+        </div>
+      ))}
+
+      {issues.length > 0 && (
+        <div className="mt4">
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {issues.map((i) => (
+              <span key={i.key} className="iskey" title={i.summary}>
+                <b>{i.key}</b>
+                {i.summary ? <span className="iskey-sum">{i.summary.length > 34 ? i.summary.slice(0, 34) + '…' : i.summary}</span> : null}
+                <button type="button" aria-label={'Remove ' + i.key}
+                  onClick={() => patch({ issues: issues.filter((x) => x.key !== i.key) })}>✕</button>
+              </span>
+            ))}
+          </div>
+          <p className="helper mt2">
+            {issues.length} issue{issues.length > 1 ? 's' : ''} selected as source material.
+            {' '}<button type="button" className="linkbtn" onClick={() => patch({ issues: [] })}>Clear all</button>
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Source() {
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
@@ -147,6 +324,9 @@ export default function Source() {
     const c = cfg[id] || {};
     if (KIND[id] === 'picker') return !!c.sel;
     if (KIND[id] === 'url') return !!c.verified;
+    // Jira is issue-based: selected issues make it ready (a project pick
+    // alone still counts, for whole-project documentation).
+    if (id === 'jira') return !!c.connected && ((c.issues || []).length > 0 || !!c.sel);
     return !!c.connected && (PICK_AFTER[id] ? !!c.sel : true);
   };
 
@@ -239,9 +419,18 @@ export default function Source() {
       // Per-source generation scope ("KAN-1 — Fix checkout timeout", a page…)
       // travels with the flow so generation can focus on exactly those items.
       const srcScope = {};
+      let jiraIssues = [];
       for (const id of sources) {
         const c = cfg[id] || {};
-        if (c.scope && c.scopeLabel) srcScope[id] = { scope: c.scope, label: c.scopeLabel };
+        if (id === 'jira' && (c.issues || []).length) {
+          // Selected Jira issues ARE the source material — full content is
+          // fetched server-side during generation.
+          jiraIssues = c.issues.map((i) => i.key);
+          srcScope[id] = {
+            scope: jiraIssues.join(', '),
+            label: jiraIssues.length + ' Jira issue' + (jiraIssues.length > 1 ? 's' : '') + ': ' + jiraIssues.join(', ')
+          };
+        } else if (c.scope && c.scopeLabel) srcScope[id] = { scope: c.scope, label: c.scopeLabel };
         else if (c.sel && PICK_AFTER[id]) srcScope[id] = { scope: c.sel, label: PICK_AFTER[id] + ' ' + c.sel };
       }
       // Additional repositories (beyond the primary per host) travel with the
@@ -253,7 +442,7 @@ export default function Source() {
         // primary repository.
         if (primary !== id && (cfg[id] || {}).sel) extraRepos.push({ provider: id, repo: cfg[id].sel });
       }
-      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null, srcScope, extraRepos });
+      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null, srcScope, extraRepos, jiraIssues });
       nav('/doctype');
     } catch (e) { toast('error', 'Could not save sources', e.message); }
     finally { setBusy(false); }
@@ -589,7 +778,10 @@ export default function Source() {
                                 </p>
                               )}
                             </div>
-                            {SCOPE[id] && (
+                            {id === 'jira' && (
+                              <JiraIssuePicker cfg={c} patch={(pp) => setCfg(id, pp)} project={c.sel || ''} />
+                            )}
+                            {SCOPE[id] && id !== 'jira' && (
                               <div className="field mt5" style={{ maxWidth: 520, marginBottom: 0 }}>
                                 <label htmlFor={'scope-' + id}>{SCOPE[id].label}</label>
                                 <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>

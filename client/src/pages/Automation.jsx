@@ -382,6 +382,21 @@ function Wizard({ existing, catalog, onDone }) {
                       sub="They are held for review instead of documented"
                       onClick={() => set({ jira: { ...cfg.jira, requireIssue: !cfg.jira.requireIssue } })} />
                   </div>
+                  <p className="label01 t2 mt5 mb3">JIRA EVENT TRIGGERS</p>
+                  <p className="helper mb3">
+                    Run this pipeline directly from Jira — no merge needed. Point a Jira webhook at this
+                    profile&apos;s endpoint (shown after creation; append <span className="mono">?token=…</span>)
+                    and pick which issue events trigger a documentation run.
+                  </p>
+                  <div className="stack">
+                    {[['statusDone', 'Issue moves to Done / Closed / Resolved', 'The most common trigger — document completed work'],
+                      ['created', 'Issue is created', 'Draft documentation as soon as work is planned'],
+                      ['updated', 'Issue is updated', 'Any field change re-runs the pipeline'],
+                      ['comment', 'Comment is added', 'New discussion updates the affected sections']].map(([k, label, sub]) => (
+                      <Tog key={k} on={!!(cfg.jira.triggers || {})[k]} label={label} sub={sub}
+                        onClick={() => set({ jira: { ...cfg.jira, triggers: { ...(cfg.jira.triggers || {}), [k]: !(cfg.jira.triggers || {})[k] } } })} />
+                    ))}
+                  </div>
                 </>
               )}
             </Adv>
