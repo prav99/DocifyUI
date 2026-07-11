@@ -152,6 +152,11 @@ const SUPPORTING = [
     ]}
   ]},
   { t: 'Automation & CI', items: [
+    { slug: 'relevance-filtering', name: 'Relevance filtering & docify.yaml', sum: 'Why refactors, test changes, and dependency bumps never pollute your docs — and how to tune it.', body: [
+      { p: 'Not every merge deserves customer documentation. Docify runs every change through a relevance funnel: deterministic rules first (commit types like chore/refactor/test, dependency-only diffs, test-only changes, excluded paths), then surface detection (did the change touch a public API, CLI, configuration, error messages, webhooks, or UI?), then an AI impact score from 0–100. Changes at or above the documentation threshold are queued; borderline ones are flagged "low confidence" for review; internal-only ones are skipped — and every skip is logged in Doc sync’s Filtered out tab with the exact reason and a one-click "Document anyway" override.' },
+      { p: 'Control it from your repository with two optional files. docify.yaml holds machine-enforceable rules: scan.include/exclude path globs, rules.ignore_commit_types, ignore_dependency_updates, document_only surfaces, always_document_paths, and the thresholds (auto_document, discard_below). A .docifyignore file with gitignore syntax works too. Both are versioned with your code and picked up automatically on the next sync — no Docify settings to change. Starter files are one click away under Doc sync → Relevance rules.' },
+      { p: '.docify/instructions.md is the judgment layer — free-form Markdown the AI reads before scoring, the same pattern as CLAUDE.md or .cursorrules. Use it for what rules can’t express: "never document the labs/ directory", "our customers are backend developers", "say workspace, never tenant". Every reviewer decision on filtered changes also feeds back into the classifier, so the engine converges on your team’s definition of customer-facing.' }
+    ]},
     { slug: 'ci-pipeline-setup', name: 'CI pipeline setup', sum: 'A ready-made workflow: regenerate on merge, upload the report, gate on quality.', body: [
       { p: 'The Automation page provides a copy-paste workflow that runs on pushes to main: it regenerates your configured documents, uploads the quality report as an artifact, and enforces a quality gate (default 85) so regressions fail the build.' }
     ]},

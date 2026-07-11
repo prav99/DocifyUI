@@ -258,8 +258,15 @@ function DocCard({ doc, onChanged, onSynced }) {
     setBusy(true);
     try {
       const d = await api('/sync/documents/' + doc.id + '/sync', { method: 'POST', body: { batch: 2 } });
+      const nSkip = (d.filtered || []).length;
       if (d.created > 0) {
-        toast('success', d.created + ' AI update' + (d.created > 1 ? 's' : '') + ' queued', 'Open the review queue to compare and approve.');
+        toast('success', d.created + ' AI update' + (d.created > 1 ? 's' : '') + ' queued'
+          + (nSkip ? ' · ' + nSkip + ' filtered out' : ''),
+        nSkip ? 'Internal-only changes were skipped — see the Filtered out tab for the reasons.'
+          : 'Open the review queue to compare and approve.');
+        onSynced();
+      } else if (nSkip > 0) {
+        toast('info', nSkip + ' change' + (nSkip > 1 ? 's' : '') + ' filtered out', 'The relevance engine classified them as internal — see the Filtered out tab.');
         onSynced();
       } else {
         toast('info', 'Up to date', d.message || 'No new commits on ' + (doc.repo || 'the repository') + '.');
@@ -379,8 +386,13 @@ function SimulateModal({ open, onClose, doc, onCreated }) {
   async function run() {
     setBusy(true);
     try {
-      await api('/sync/documents/' + doc.id + '/simulate', { method: 'POST', body: { message, files } });
-      toast('success', 'Update queued for review', 'The engine placed the change — check the review queue.');
+      const d = await api('/sync/documents/' + doc.id + '/simulate', { method: 'POST', body: { message, files } });
+      if (d.filtered) {
+        toast('info', 'Classified as internal — filtered out',
+          (d.decision && d.decision.rationale) || 'See the Filtered out tab; you can still document it from there.');
+      } else {
+        toast('success', 'Update queued for review', 'The engine placed the change — check the review queue.');
+      }
       onCreated();
     } catch (e) { toast('error', 'Simulation failed', e.message); }
     finally { setBusy(false); }
@@ -483,7 +495,13 @@ function ReviewQueue({ pending, onDecided, refresh }) {
               <span className="mono">{u.commit}</span>
               <span>→ {u.anchor.anchorPath || u.anchor.title}</span>
             </span>
-            <span className="qmeta"><KindTag kind={u.kind} /><ConfMeter n={u.confidence} /></span>
+            <span className="qmeta">
+              <KindTag kind={u.kind} />
+              {u.reasoning && u.reasoning.relevance && u.reasoning.relevance.verdict === 'review' && (
+                <span className="tag tag--amber">Low confidence</span>
+              )}
+              <ConfMeter n={u.confidence} />
+            </span>
           </button>
         ))}
       </div>
@@ -510,6 +528,15 @@ function ReviewQueue({ pending, onDecided, refresh }) {
             <div className="rrow"><span className="rlabel">Confidence</span><ConfMeter n={sel.confidence} wide /></div>
             <div className="rrow"><span className="rlabel">Why here</span><span className="body01">{r.why}</span></div>
             <div className="rrow"><span className="rlabel">How it matched</span><span className="body01 t2">{r.semantic}</span></div>
+            {r.relevance && (
+              <div className="rrow"><span className="rlabel">Customer impact</span>
+                <span className="body01">
+                  <b>{r.relevance.score}/100</b>
+                  {r.relevance.verdict === 'review' && <span className="tag tag--amber" style={{ marginLeft: 8 }}>Low confidence — review carefully</span>}
+                  {r.relevance.verdict === 'override' && <span className="tag tag--blue" style={{ marginLeft: 8 }}>Reviewer override</span>}
+                  <span className="t2" style={{ display: 'block', marginTop: 4 }}>{r.relevance.rationale}</span>
+                </span></div>
+            )}
             {r.candidates && r.candidates.length > 1 && (
               <div>
                 <p className="label01 t2 mb3">RANKED CANDIDATE SECTIONS</p>
@@ -716,6 +743,171 @@ function Versions({ docs }) {
   );
 }
 
+/* ---------- Filtered out: the relevance engine's audit trail ---------- */
+function FilteredOut({ onDocumented }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState('');
+
+  const load = useCallback(() => {
+    setError('');
+    api('/sync/relevance/decisions?verdict=skip')
+      .then((d) => setRows(d.decisions))
+      .catch((e) => { setError(e.message); setRows([]); });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function documentAnyway(d) {
+    setBusyId(d.id);
+    try {
+      await api('/sync/relevance/decisions/' + d.id + '/override', { method: 'POST' });
+      toast('success', 'Queued for review', 'The change was placed into the document — approve it in the review queue.');
+      load();
+      onDocumented();
+    } catch (e) { toast('error', 'Could not document this change', e.message); }
+    finally { setBusyId(''); }
+  }
+
+  if (rows === null) return <div className="sync-empty"><p className="body01 t2">Loading filtered changes…</p></div>;
+  if (error) {
+    return (
+      <div className="sync-empty">
+        <p className="h03">Could not load the audit trail</p>
+        <p className="body01 t2 mt3">{error}</p>
+        <button className="btn btn--tertiary btn--sm btn--center mt5" onClick={load}>Retry</button>
+      </div>
+    );
+  }
+  if (!rows.length) {
+    return (
+      <div className="sync-empty">
+        <p className="h03">Nothing filtered out yet</p>
+        <p className="body01 t2 mt3" style={{ maxWidth: 560, margin: '8px auto 0' }}>
+          When a commit is internal-only — dependency bumps, refactors, test changes — the relevance
+          engine skips it instead of polluting your documentation, and logs the decision here with the
+          reason. You can always override and document a skipped change.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="stack">
+      <p className="helper" style={{ maxWidth: 720 }}>
+        These merges were classified as internal, so no documentation was generated. Every decision shows
+        its reason — click <b>Document anyway</b> to overrule the engine (your correction also teaches it).
+      </p>
+      {rows.map((d) => (
+        <div key={d.id} className="syncdoc syncdoc--ready" style={{ borderLeftColor: '#8d8d8d' }}>
+          <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <p className="h01" style={{ fontWeight: 600 }}>{d.message}</p>
+              <p className="helper mt2">
+                <span className="mono">{d.sha}</span>{d.author ? ' · ' + d.author : ''} · {fmtDate(d.createdAt)}
+                {d.repo ? ' · ' + d.repo : ''}
+              </p>
+            </div>
+            <span className="tag tag--gray">Skipped · {d.stage === 'rules' ? 'rule' : d.stage}</span>
+          </div>
+          {d.files.length > 0 && <div className="ctlfiles">{d.files.slice(0, 6).map((f) => <span key={f}>{f}</span>)}</div>}
+          <p className="body01 t2">
+            <b style={{ color: 'var(--text-primary)' }}>Why:</b> {d.rationale}
+            {d.eliminatedBy && <span className="mono" style={{ marginLeft: 8, fontSize: 12 }}>({d.eliminatedBy})</span>}
+          </p>
+          <div className="row">
+            <button className="btn btn--tertiary btn--sm btn--center" disabled={busyId === d.id || !d.docId}
+              onClick={() => documentAnyway(d)}>
+              {busyId === d.id ? 'Placing…' : 'Document anyway'}
+            </button>
+            {d.score > 0 && <span className="helper">impact score {d.score}/100</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- Relevance rules: effective configuration + starter files ---------- */
+function RelevanceRules({ docs }) {
+  const [open, setOpen] = useState(false);
+  const [cfg, setCfg] = useState(null);
+  const [error, setError] = useState('');
+  const repo = (docs.find((d) => d.repo && d.repo.includes('/')) || {}).repo || '';
+
+  useEffect(() => {
+    if (!open || cfg) return;
+    api('/sync/relevance/config' + (repo ? '?repo=' + encodeURIComponent(repo) : ''))
+      .then(setCfg)
+      .catch((e) => setError(e.message));
+  }, [open, cfg, repo]);
+
+  const copy = (text, label) => {
+    navigator.clipboard.writeText(text)
+      .then(() => toast('success', label + ' copied', 'Paste it into your repository root and merge.'))
+      .catch(() => toast('error', 'Copy failed', 'Select and copy the text manually.'));
+  };
+
+  const c = cfg && cfg.config;
+  return (
+    <div className="acc mt2">
+      <div className={'acc-item' + (open ? ' open' : '')}>
+        <button type="button" className="acc-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          <span>Relevance rules
+            <span className="helper" style={{ fontWeight: 400, marginLeft: 12 }}>
+              what gets documented, what gets filtered — configured from your repository
+            </span>
+          </span>
+          <span className="acc-chev">▾</span>
+        </button>
+        {open && (
+          <div className="acc-body">
+            {error && <p className="body01" style={{ color: 'var(--support-error)' }}>{error}</p>}
+            {!cfg && !error && <p className="body01 t2">Loading effective configuration…</p>}
+            {c && (
+              <>
+                <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  <span className={'tag ' + (cfg.sources.yaml ? 'tag--green' : 'tag--gray')}>
+                    docify.yaml {cfg.sources.yaml ? 'found' : 'not found — using defaults'}
+                  </span>
+                  <span className={'tag ' + (cfg.sources.ignoreFile ? 'tag--green' : 'tag--gray')}>
+                    .docifyignore {cfg.sources.ignoreFile ? 'found' : '—'}
+                  </span>
+                  <span className={'tag ' + (cfg.hasInstructions ? 'tag--green' : 'tag--gray')}>
+                    .docify/instructions.md {cfg.hasInstructions ? 'found' : '—'}
+                  </span>
+                </div>
+                {cfg.errors.length > 0 && (
+                  <p className="body01 mt3" style={{ color: 'var(--support-error)' }}>
+                    Configuration issues: {cfg.errors.join(' · ')}
+                  </p>
+                )}
+                <p className="body01 t2 mt5">
+                  <b style={{ color: 'var(--text-primary)' }}>Active rules:</b>{' '}
+                  ignores commit types <span className="mono">{c.rules.ignore_commit_types.join(', ')}</span>
+                  {c.rules.ignore_dependency_updates ? ' · skips dependency updates' : ''}
+                  {' · documents at impact ≥ ' + c.thresholds.auto_document}
+                  {' · discards below ' + c.thresholds.discard_below}
+                  {c.rules.document_only && c.rules.document_only.length ? ' · only surfaces: ' + c.rules.document_only.join(', ') : ''}
+                </p>
+                <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  <button className="btn btn--tertiary btn--sm btn--center" onClick={() => copy(cfg.samples.yaml, 'docify.yaml starter')}>
+                    Copy docify.yaml starter
+                  </button>
+                  <button className="btn btn--ghost btn--sm btn--center" onClick={() => copy(cfg.samples.instructions, '.docify/instructions.md starter')}>
+                    Copy instructions.md starter
+                  </button>
+                </div>
+                <p className="helper mt3">
+                  Commit either file to {repo || 'your repository'} and the engine picks it up on the next sync — no Docify settings to change.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ================================ Page ================================ */
 export default function DocSync() {
   usePageMeta({
@@ -750,7 +942,13 @@ export default function DocSync() {
             toast('success', 'Document indexed', doc.sections.length + ' sections mapped — checking the repository for recent commits…');
             try {
               const s = await api('/sync/documents/' + doc.id + '/sync', { method: 'POST', body: { batch: 2 } });
-              if (s.created > 0) toast('info', s.created + ' updates queued for review', 'The AI placed each change — approve them in the review queue.');
+              if (s.created > 0) {
+                toast('info', s.created + ' updates queued for review'
+                  + ((s.filtered || []).length ? ' · ' + s.filtered.length + ' filtered out' : ''),
+                'The AI placed each change — approve them in the review queue.');
+              } else if ((s.filtered || []).length) {
+                toast('info', s.filtered.length + ' changes filtered out', 'Internal-only commits were skipped — see the Filtered out tab.');
+              }
             } catch { /* manual sync still available */ }
             refreshAll();
           }
@@ -766,6 +964,7 @@ export default function DocSync() {
   const tabs = [
     ['documents', 'Documents' + (docs.length ? ' (' + docs.length + ')' : '')],
     ['queue', 'Review queue' + (pending.length ? ' (' + pending.length + ')' : '')],
+    ['filtered', 'Filtered out' + (o.filteredOut ? ' (' + o.filteredOut + ')' : '')],
     ['timeline', 'Commit timeline'],
     ['versions', 'Version history']
   ];
@@ -816,10 +1015,12 @@ export default function DocSync() {
             ) : docs.map((d) => (
               <DocCard key={d.id} doc={d} onChanged={refreshAll} onSynced={() => { loadPending(); loadOverview(); }} />
             ))}
+            <RelevanceRules docs={docs} />
           </div>
         )}
 
         {tab === 'queue' && <ReviewQueue pending={pending} onDecided={refreshAll} refresh={loadPending} />}
+        {tab === 'filtered' && <FilteredOut onDocumented={refreshAll} />}
         {tab === 'timeline' && <Timeline onOpenQueue={() => setTab('queue')} />}
         {tab === 'versions' && <Versions docs={docs} />}
       </div>

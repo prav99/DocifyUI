@@ -186,6 +186,28 @@ model SyncUpdate {
   createdAt     DateTime  @default(now())
 }
 
+model RelevanceDecision {
+  id         String   @id @default(cuid())
+  userId     String
+  docId      String   @default("")
+  provider   String   @default("github")
+  repo       String   @default("")
+  sha        String   @default("")
+  message    String   @default("")
+  author     String   @default("")
+  files      String   @default("[]") // changed files JSON
+  payload    String   @default("{}") // full commit JSON (for one-click override)
+  verdict    String   @default("skip") // document | review | skip
+  score      Int      @default(0)
+  category   String   @default("")
+  rationale  String   @default("")
+  stage      String   @default("") // rules | heuristic | ai
+  eliminatedBy String @default("")
+  surfaces   String   @default("[]")
+  overridden Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
 model Waitlist {
   id        String   @id @default(cuid())
   email     String

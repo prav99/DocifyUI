@@ -89,6 +89,17 @@ async function readFile(provider, repo, branch, path, token) {
   return text.slice(0, MAX_BYTES_PER_FILE);
 }
 
+// Fetch ONE raw text file from a repository (used for docify.yaml,
+// .docifyignore, .docify/instructions.md). Returns null when absent/unreadable.
+export async function fetchRepoFile(provider, repo, branch = 'main', path = '', token = '') {
+  try {
+    if (!repo || !repo.includes('/') || !path) return null;
+    return await readFile(provider, repo, branch, path, token);
+  } catch {
+    return null;
+  }
+}
+
 // Returns [{ path, content }] — capped, code-first, README always included.
 // Never throws: on any failure it returns [] so callers can fall back.
 export async function fetchRepoFiles(provider, repo, branch = 'main', token = '') {

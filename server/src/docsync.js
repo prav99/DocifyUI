@@ -17,6 +17,8 @@
    Mounted behind requireAuth in api.js: all routes are per-user. */
 import { Router } from 'express';
 import { prisma } from './db.js';
+import { evaluateCommit, loadRepoConfig, DEFAULT_CONFIG, SAMPLE_YAML, SAMPLE_INSTRUCTIONS } from './adapters/relevance.js';
+import { freshToken } from './auth.js';
 
 export const syncRouter = Router();
 
@@ -151,6 +153,11 @@ export const COMMIT_FEED = [
     ]
   },
   {
+    sha: 'a3f9c02', author: 'Sofia Marques', message: 'chore(deps): bump lodash from 4.17.20 to 4.17.21',
+    files: ['package.json', 'package-lock.json'], adds: 14, dels: 14, mode: 'append',
+    body: ['Dependency maintenance: lodash upgraded to 4.17.21. No behavior change for API consumers.']
+  },
+  {
     sha: '4b81d3e', author: 'Daniel Osei', message: 'feat(api): add POST /v1/refunds for partial and full refunds',
     files: ['src/routes/refunds.js', 'src/models/refund.js', 'test/refunds.test.js'], adds: 412, dels: 8, mode: 'insert',
     body: [
@@ -176,6 +183,11 @@ export const COMMIT_FEED = [
       '`Retry-After` header. Sustained limits can be raised per workspace from the',
       'billing console; enterprise plans support dedicated throughput pools.'
     ]
+  },
+  {
+    sha: 'd81e4b7', author: 'Meera Krishnan', message: 'refactor(core): extract retry logic into lib/retry.js helper',
+    files: ['src/lib/retry.js', 'src/core/http.js', 'test/retry.test.js'], adds: 88, dels: 74, mode: 'append',
+    body: ['Internal restructuring of retry handling. Behavior is unchanged; no user-visible effect.']
   },
   {
     sha: 'e5a77c2', author: 'Meera Krishnan', message: 'feat(errors): standardize error envelope with machine-readable code field',
@@ -206,6 +218,11 @@ export const COMMIT_FEED = [
       'Rotate endpoint secrets from **Settings → Webhooks**; both secrets stay valid',
       'for 24 hours during rotation.'
     ]
+  },
+  {
+    sha: '7c20e9a', author: 'Daniel Osei', message: 'test(webhooks): add signature verification integration tests',
+    files: ['test/webhooks/verify.int.test.js', 'test/fixtures/payloads.json'], adds: 132, dels: 0, mode: 'append',
+    body: ['Adds integration coverage for webhook signature verification. Test-only change.']
   },
   {
     sha: 'a09e6d1', author: 'Sofia Marques', message: 'fix(api): cursor-based pagination for GET /v1/charges',
@@ -447,12 +464,14 @@ syncRouter.get('/overview', async (req, res) => {
   const approved = updates.filter((u) => u.status === 'approved');
   const decided = updates.filter((u) => u.status !== 'pending');
   const lastSync = updates.length ? updates.map((u) => u.createdAt).sort().pop() : null;
+  const filteredOut = await prisma.relevanceDecision.count({ where: { userId: req.uid, verdict: 'skip', overridden: false } }).catch(() => 0);
   res.json({
     docs: docs.length, ready: docs.filter((d) => d.status === 'ready').length,
     pending: pending.length, approved: approved.length,
     rejected: updates.filter((u) => u.status === 'rejected').length,
     avgConfidence: updates.length ? Math.round(updates.reduce((a, u) => a + u.confidence, 0) / updates.length) : 0,
     placementAccuracy: decided.length ? Math.round(100 * approved.length / decided.length) : null,
+    filteredOut,
     lastSync
   });
 });
@@ -515,7 +534,45 @@ syncRouter.delete('/documents/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Pull the next unseen commits from the mapped repository and queue AI updates.
+/* ---------------- Relevance context (config + instructions per repo) -------
+   Loaded once per request; real repos read docify.yaml / .docifyignore /
+   .docify/instructions.md from the repository, everything else uses defaults.
+   Never throws — filtering must degrade gracefully, not block syncing. */
+async function relevanceContext(userId, repo, branch, provider = 'github') {
+  try {
+    if (repo && repo.includes('/')) {
+      let token = '';
+      try {
+        const src = await prisma.source.findFirst({ where: { userId, provider } });
+        if (src && src.token) token = await freshToken(src);
+      } catch { /* unauthenticated public fetch */ }
+      return await loadRepoConfig(provider, repo, branch || 'main', token);
+    }
+  } catch (e) {
+    console.error('relevanceContext:', e.message);
+  }
+  return { config: DEFAULT_CONFIG, instructions: '', sources: { yaml: false, ignoreFile: false, instructions: false }, errors: [] };
+}
+
+// Evaluate one commit and persist the decision. Returns the decision row.
+async function recordDecision(userId, doc, commit, decision) {
+  return prisma.relevanceDecision.create({
+    data: {
+      userId, docId: doc ? doc.id : '',
+      provider: 'github', repo: (doc && doc.repo) || '',
+      sha: String(commit.sha || ''), message: String(commit.message || '').slice(0, 300),
+      author: String(commit.author || ''), files: JSON.stringify(commit.files || []),
+      payload: JSON.stringify(commit).slice(0, 20000),
+      verdict: decision.verdict, score: decision.score,
+      category: decision.category, rationale: String(decision.rationale || '').slice(0, 500),
+      stage: decision.stage, eliminatedBy: decision.eliminatedBy || '',
+      surfaces: JSON.stringify(decision.surfaces || [])
+    }
+  }).catch((e) => { console.error('recordDecision:', e.message); return null; });
+}
+
+// Pull the next unseen commits from the mapped repository, filter them through
+// the relevance engine, and queue AI updates only for customer-facing changes.
 syncRouter.post('/documents/:id/sync', async (req, res) => {
   const row = await ownDoc(req, res);
   if (!row) return;
@@ -523,15 +580,30 @@ syncRouter.post('/documents/:id/sync', async (req, res) => {
   const batch = Math.min(3, Math.max(1, Number(req.body && req.body.batch) || 2));
   const next = COMMIT_FEED.slice(row.cursor, row.cursor + batch);
   if (!next.length) return res.json({ created: 0, done: true, message: 'Documentation is up to date with the repository — no new commits.' });
+  const ctx = await relevanceContext(req.uid, row.repo, row.branch);
   const created = [];
+  const filtered = [];
   for (const commit of next) {
+    const decision = await evaluateCommit(commit, ctx);
+    await recordDecision(req.uid, row, commit, decision);
+    if (decision.verdict === 'skip') {
+      filtered.push({ sha: commit.sha, message: commit.message, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy });
+      continue;
+    }
     const built = buildUpdate(row, commit);
     if (!built) continue;
+    // Borderline relevance travels with the update so the review queue can flag it.
+    const reasoning = j(built.reasoning, {});
+    reasoning.relevance = { verdict: decision.verdict, score: decision.score, rationale: decision.rationale, engine: decision.engine };
+    built.reasoning = JSON.stringify(reasoning);
     const u = await prisma.syncUpdate.create({ data: { userId: req.uid, docId: row.id, ...built } });
     created.push(serializeUpdate(u, row.name));
   }
   await prisma.syncDoc.update({ where: { id: row.id }, data: { cursor: row.cursor + next.length } });
-  res.json({ created: created.length, updates: created, remaining: Math.max(0, COMMIT_FEED.length - row.cursor - next.length) });
+  res.json({
+    created: created.length, updates: created, filtered,
+    remaining: Math.max(0, COMMIT_FEED.length - row.cursor - next.length)
+  });
 });
 
 // Simulate a custom commit (what the webhook would deliver) against a document.
@@ -554,10 +626,80 @@ syncRouter.post('/documents/:id/simulate', async (req, res) => {
       'This documents only the changed portion of the repository — the rest of the document is untouched.'
     ]
   };
+  // Simulated merges run through the same relevance gate as real ones.
+  const ctx = await relevanceContext(req.uid, row.repo, row.branch);
+  const decision = await evaluateCommit(commit, ctx);
+  await recordDecision(req.uid, row, commit, decision);
+  if (decision.verdict === 'skip') {
+    return res.status(200).json({
+      filtered: true,
+      decision: { score: decision.score, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy },
+      message: 'The relevance engine classified this change as internal — it was logged in Filtered out instead of the review queue.'
+    });
+  }
   const built = buildUpdate(row, commit);
   if (!built) return res.status(400).json({ error: 'The document has no sections to place into' });
+  const reasoning = j(built.reasoning, {});
+  reasoning.relevance = { verdict: decision.verdict, score: decision.score, rationale: decision.rationale, engine: decision.engine };
+  built.reasoning = JSON.stringify(reasoning);
   const u = await prisma.syncUpdate.create({ data: { userId: req.uid, docId: row.id, ...built } });
   res.status(201).json({ update: serializeUpdate(u, row.name) });
+});
+
+/* ---------------- Relevance: decisions audit + overrides + config ---------- */
+
+// The "Filtered out" audit trail (and full decision history).
+syncRouter.get('/relevance/decisions', async (req, res) => {
+  const where = { userId: req.uid };
+  if (req.query.verdict && ['document', 'review', 'skip'].includes(String(req.query.verdict))) {
+    where.verdict = String(req.query.verdict);
+  }
+  const rows = await prisma.relevanceDecision.findMany({ where, orderBy: { createdAt: 'desc' }, take: 100 });
+  res.json({
+    decisions: rows.map((d) => ({
+      id: d.id, docId: d.docId, repo: d.repo, sha: d.sha, message: d.message, author: d.author,
+      files: j(d.files, []), verdict: d.verdict, score: d.score, category: d.category,
+      rationale: d.rationale, stage: d.stage, eliminatedBy: d.eliminatedBy,
+      surfaces: j(d.surfaces, []), overridden: d.overridden, createdAt: d.createdAt
+    }))
+  });
+});
+
+// "Document this anyway" — human override creates the update the engine skipped
+// and records the correction (future few-shot signal for the classifier).
+syncRouter.post('/relevance/decisions/:id/override', async (req, res) => {
+  const d = await prisma.relevanceDecision.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  if (!d) return res.status(404).json({ error: 'Decision not found' });
+  if (d.overridden) return res.status(400).json({ error: 'Already documented' });
+  const doc = d.docId ? await prisma.syncDoc.findFirst({ where: { id: d.docId, userId: req.uid } }) : null;
+  if (!doc) return res.status(400).json({ error: 'The document this change belonged to no longer exists' });
+  const commit = j(d.payload, null);
+  if (!commit || !commit.sha) return res.status(400).json({ error: 'Original change payload unavailable' });
+  if (!Array.isArray(commit.body) || !commit.body.length) {
+    commit.body = ['Documented by reviewer override: ' + titleFromMessage(commit.message) + '.'];
+  }
+  const built = buildUpdate(doc, commit);
+  if (!built) return res.status(400).json({ error: 'The document has no sections to place into' });
+  const reasoning = j(built.reasoning, {});
+  reasoning.relevance = { verdict: 'override', score: d.score, rationale: 'Reviewer overrode the filter: ' + d.rationale, engine: d.stage };
+  built.reasoning = JSON.stringify(reasoning);
+  const u = await prisma.syncUpdate.create({ data: { userId: req.uid, docId: doc.id, ...built } });
+  await prisma.relevanceDecision.update({ where: { id: d.id }, data: { overridden: true, verdict: 'document' } });
+  res.status(201).json({ update: serializeUpdate(u, doc.name) });
+});
+
+// Effective relevance configuration for a repository (defaults + repo files).
+syncRouter.get('/relevance/config', async (req, res) => {
+  const repo = String(req.query.repo || '');
+  const branch = String(req.query.branch || 'main');
+  const provider = ['github', 'gitlab', 'bitbucket'].includes(String(req.query.provider)) ? String(req.query.provider) : 'github';
+  const ctx = await relevanceContext(req.uid, repo, branch, provider);
+  res.json({
+    repo, provider,
+    config: ctx.config, sources: ctx.sources, errors: ctx.errors,
+    hasInstructions: Boolean(ctx.instructions),
+    samples: { yaml: SAMPLE_YAML, instructions: SAMPLE_INSTRUCTIONS }
+  });
 });
 
 syncRouter.get('/updates', async (req, res) => {
