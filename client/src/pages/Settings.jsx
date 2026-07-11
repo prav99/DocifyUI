@@ -54,7 +54,9 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="row">
-                  <span className="tag tag--green">Connected</span>
+                  {s.connected
+                    ? <span className="tag tag--green">Connected</span>
+                    : <span className="tag tag--gray">No credentials on file</span>}
                 </div>
               </div>
             ))}

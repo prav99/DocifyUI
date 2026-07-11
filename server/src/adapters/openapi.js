@@ -2,11 +2,24 @@
 // definition. Accepts JSON and YAML (OpenAPI 3.x and Swagger 2.0), and is
 // forgiving about what the user pastes (missing scheme, trailing spaces).
 
+// SSRF guard: user-supplied URLs are fetched SERVER-side, so private and
+// loopback destinations must be rejected outright.
+export function assertPublicHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  const priv =
+    h === 'localhost' || h === '0.0.0.0' || h === '::1' || h.endsWith('.local') || h.endsWith('.internal') ||
+    /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^fd[0-9a-f]{2}:/i.test(h) || /^fe80:/i.test(h);
+  if (priv) throw new Error('URLs pointing to private or internal networks are not allowed');
+}
+
 export function normalizeSpecUrl(raw) {
   let s = String(raw || '').trim();
   if (!s) throw new Error('Enter the URL of your OpenAPI / Swagger spec');
   if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
-  try { new URL(s); } catch { throw new Error('That does not look like a valid URL'); }
+  let u;
+  try { u = new URL(s); } catch { throw new Error('That does not look like a valid URL'); }
+  assertPublicHost(u.hostname);
   return s;
 }
 

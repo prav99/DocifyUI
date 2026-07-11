@@ -373,7 +373,11 @@ hubRouter.get('/effective-config', async (req, res) => {
    from: the OAuth account of each provider, every connected organisation /
    group / workspace, and individually added hub repositories. */
 
+// GitHub orgs and Bitbucket workspaces are flat slugs; GitLab groups may be
+// NESTED subgroups ("parent/child/grandchild").
 const ORG_RE = /^[\w.-]+$/;
+const GITLAB_GROUP_RE = /^[\w.-]+(\/[\w.-]+)*$/;
+const validOrgSlug = (provider, org) => (provider === 'gitlab' ? GITLAB_GROUP_RE : ORG_RE).test(org);
 const accountList = (p, token) => (p === 'gitlab' ? glList(token) : p === 'bitbucket' ? bbList(token) : ghList(token));
 const orgList = (p, token, org) => (p === 'gitlab' ? glOrg(token, org) : p === 'bitbucket' ? bbOrg(token, org) : ghOrg(token, org));
 
@@ -391,7 +395,13 @@ hubRouter.post('/orgs', async (req, res) => {
   const provider = String((req.body || {}).provider || 'github');
   const org = String((req.body || {}).org || '').trim();
   if (!PROVIDERS.includes(provider)) return res.status(400).json({ error: 'Unknown provider' });
-  if (!ORG_RE.test(org)) return res.status(400).json({ error: 'Enter an organisation, group, or workspace name (letters, digits, dots, dashes)' });
+  if (!validOrgSlug(provider, org)) {
+    return res.status(400).json({
+      error: provider === 'gitlab'
+        ? 'Enter a group path — nested subgroups work too (e.g. gitlab-org or my-group/backend)'
+        : 'Enter an organisation or workspace name (letters, digits, dots, dashes)'
+    });
+  }
   const dup = await prisma.orgConnection.findFirst({ where: { userId: req.uid, provider, org } });
   if (dup) return res.status(400).json({ error: org + ' is already connected for ' + provider });
   // Validate against the provider before saving — never store a dead connection.

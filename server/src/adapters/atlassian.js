@@ -7,6 +7,10 @@ const basic = (cred) => 'Basic ' + Buffer.from(cred).toString('base64');
 // Accept anything a user might paste — "yourteam.atlassian.net", a full page
 // URL like "https://yourteam.atlassian.net/jira/projects", with or without a
 // trailing slash — and normalize it to the site origin.
+// SSRF guard shared with the OpenAPI connector: site URLs are fetched
+// SERVER-side, so private and loopback destinations are rejected.
+import { assertPublicHost } from './openapi.js';
+
 export function normalizeSite(raw) {
   let s = String(raw || '').trim();
   if (!s) throw new Error('Enter your Atlassian site URL (e.g. https://yourteam.atlassian.net)');
@@ -14,6 +18,7 @@ export function normalizeSite(raw) {
   let u;
   try { u = new URL(s); } catch { throw new Error('That does not look like a valid URL — expected something like https://yourteam.atlassian.net'); }
   if (!u.hostname.includes('.')) throw new Error('That does not look like a valid site host — expected something like yourteam.atlassian.net');
+  assertPublicHost(u.hostname);
   return u.origin; // strip any path/query the user pasted along
 }
 

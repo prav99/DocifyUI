@@ -47,7 +47,9 @@ function JiraIssuePicker({ cfg, patch, project }) {
   const [epics, setEpics] = useState(null);
   const [versions, setVersions] = useState(null);
 
-  // Epic and release choices load lazily per mode.
+  // Epic and release choices load lazily per mode — and reload when the
+  // project changes, so one project's epics never leak into another's list.
+  useEffect(() => { setEpics(null); setVersions(null); }, [project]);
   useEffect(() => {
     if (mode === 'epic' && epics === null) {
       api('/jira/epics?project=' + encodeURIComponent(project || '')).then((d) => setEpics(d.epics)).catch(() => setEpics([]));
@@ -55,7 +57,7 @@ function JiraIssuePicker({ cfg, patch, project }) {
     if (mode === 'release' && versions === null) {
       api('/jira/versions?project=' + encodeURIComponent(project || '')).then((d) => setVersions(d.versions)).catch(() => setVersions([]));
     }
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, epics, versions, project]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addIssues = (list) => {
     const have = new Set(issues.map((i) => i.key));
@@ -388,7 +390,7 @@ function ConfluencePicker({ cfg, patch, space }) {
 function OpenApiPicker({ cfg, patch }) {
   const specs = cfg.specs || [];
   const [method, setMethod] = useState('url'); // url | paste | repo
-  const [inp, setInp] = useState({ url: '', text: '', repo: '', path: '', branch: 'main' });
+  const [inp, setInp] = useState({ url: '', text: '', provider: 'github', repo: '', path: '', branch: 'main' });
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(null); // { summary, source } awaiting endpoint choice
   const [opsChecked, setOpsChecked] = useState({});
@@ -399,7 +401,7 @@ function OpenApiPicker({ cfg, patch }) {
   async function inspect() {
     const source = method === 'url' ? { url: inp.url.trim() }
       : method === 'paste' ? { text: inp.text }
-      : { provider: 'github', repo: inp.repo.trim(), branch: inp.branch.trim() || 'main', path: inp.path.trim().replace(/^\//, '') };
+      : { provider: inp.provider, repo: inp.repo.trim(), branch: inp.branch.trim() || 'main', path: inp.path.trim().replace(/^\//, '') };
     if (method === 'repo' && (!source.repo || !source.path)) {
       return toast('error', 'Repository and file path are required', 'e.g. acme/payments-api and openapi/openapi.yaml');
     }
@@ -432,7 +434,7 @@ function OpenApiPicker({ cfg, patch }) {
       }]
     });
     setPending(null); setOpsChecked({});
-    setInp({ url: '', text: '', repo: '', path: '', branch: 'main' });
+    setInp({ url: '', text: '', provider: 'github', repo: '', path: '', branch: 'main' });
   }
 
   // Group pending operations by tag for the tree view.
@@ -507,6 +509,14 @@ function OpenApiPicker({ cfg, patch }) {
             )}
             {method === 'repo' && (
               <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div className="field" style={{ flex: '0 1 130px', marginBottom: 0 }}>
+                  <label>Host</label>
+                  <select className="select" value={inp.provider} onChange={(e) => set('provider', e.target.value)} aria-label="Code host">
+                    <option value="github">GitHub</option>
+                    <option value="gitlab">GitLab</option>
+                    <option value="bitbucket">Bitbucket</option>
+                  </select>
+                </div>
                 <div className="field" style={{ flex: '1 1 180px', maxWidth: 240, marginBottom: 0 }}>
                   <label>Repository (owner/name)</label>
                   <input className="input" placeholder="acme/payments-api" value={inp.repo} onChange={(e) => set('repo', e.target.value)} />
@@ -839,6 +849,11 @@ export default function Source() {
             scope: jiraIssues.join(', '),
             label: jiraIssues.length + ' Jira issue' + (jiraIssues.length > 1 ? 's' : '') + ': ' + jiraIssues.join(', ')
           };
+        } else if (id === 'openapi' && !(c.specs || []).length && c.verified && c.url) {
+          // Legacy state (URL validated before multi-spec shipped): bridge it
+          // into the grounding path so those generations use real spec content.
+          openapiSpecs = [{ source: { url: c.url }, ops: null, title: (c.info && c.info.title) || 'API specification' }];
+          srcScope[id] = { scope: c.url, label: (c.info && c.info.title) || 'API specification' };
         } else if (id === 'openapi' && (c.specs || []).length) {
           openapiSpecs = c.specs.map((s) => ({ source: s.source, ops: s.ops === 'all' ? null : s.ops, title: s.title }));
           const eps = c.specs.reduce((n, s) => n + (s.ops === 'all' ? s.endpoints : s.opsCount), 0);

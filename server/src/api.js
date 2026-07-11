@@ -266,9 +266,16 @@ apiRouter.use('/hub', hubRouter);
 apiRouter.use('/admin', adminRouter);
 
 /* Sources */
+// SECURITY: credentials never leave the server. API responses carry only
+// non-secret connection metadata — no token, no refreshToken.
+const publicSource = (s) => ({
+  id: s.id, provider: s.provider, detail: s.detail,
+  connected: !!s.token, createdAt: s.createdAt
+});
+
 apiRouter.get('/sources', async (req, res) => {
   const rows = await prisma.source.findMany({ where: { userId: req.uid }, orderBy: { createdAt: 'asc' } });
-  res.json({ sources: rows });
+  res.json({ sources: rows.map(publicSource) });
 });
 
 apiRouter.post('/sources', async (req, res) => {
@@ -312,7 +319,7 @@ apiRouter.post('/sources', async (req, res) => {
     ? await prisma.source.update({ where: { id: existing.id }, data })
     : await prisma.source.create({ data });
   invalidateCatalogue(req.uid);
-  res.json({ source: row, info });
+  res.json({ source: publicSource(row), info });
 });
 
 /* ---------------- Jira as a first-class source (issues, not repos) ----------------
