@@ -2,9 +2,9 @@ import { Router } from 'express';
 import { prisma } from './db.js';
 import { requireAuth, freshToken } from './auth.js';
 import { SOURCES, DOCTYPES, FORMATS, PLANS, CI_YAML, docTypeName, formatDef } from './catalog.js';
-import { listRepos, listBranches as ghBranches } from './adapters/github.js';
-import { listProjects as listGitlab, listBranches as glBranches } from './adapters/gitlab.js';
-import { listRepos as listBitbucket, listBranches as bbBranches } from './adapters/bitbucket.js';
+import { listRepos, listOrgRepos as ghOrgRepos, listBranches as ghBranches } from './adapters/github.js';
+import { listProjects as listGitlab, listGroupProjects as glOrgRepos, listBranches as glBranches } from './adapters/gitlab.js';
+import { listRepos as listBitbucket, listWorkspaceRepos as bbOrgRepos, listBranches as bbBranches } from './adapters/bitbucket.js';
 import { verifyJira, listJiraProjects, verifyConfluence, listConfluenceSpaces, verifyJiraIssues, verifyConfluencePage } from './adapters/atlassian.js';
 import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
@@ -320,6 +320,18 @@ apiRouter.get('/repos', async (req, res) => {
   const isHost = ['github', 'gitlab', 'bitbucket'].includes(provider);
   try {
     if (isHost) {
+      // Browse any organisation / group / workspace by name — public data,
+      // so this works even without a connection (a member token additionally
+      // surfaces org-private repositories the account can access).
+      const org = String(req.query.org || '').trim();
+      if (org) {
+        let token = '';
+        try { token = await freshToken(src); } catch { token = ''; }
+        const repos = provider === 'gitlab' ? await glOrgRepos(token, org)
+          : provider === 'bitbucket' ? await bbOrgRepos(token, org)
+          : await ghOrgRepos(token, org);
+        return res.json({ repos, org });
+      }
       // A code host only ever lists repositories the connected account can
       // truly access. No valid token → connected:false and an EMPTY list;
       // the UI shows a "connect" state instead of stale or sample data.

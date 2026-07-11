@@ -40,7 +40,8 @@ export default function Source() {
   const [hosts, setHosts] = useState({}); // per code host: { loading, connected, repos, reason }
   const [oauthAvail, setOauthAvail] = useState({}); // which hosts have real OAuth configured
   const [adding, setAdding] = useState({}); // per host: '' | 'list' | 'name' — the add-another chooser
-  const [otherVal, setOtherVal] = useState({}); // per host: owner/name draft
+  const [otherVal, setOtherVal] = useState({}); // per host: org or owner/name draft
+  const [orgRepos, setOrgRepos] = useState({}); // per host: { org, loading, repos } from a browse
 
   const sources = flow.sources || [];
   const cfg = flow.srcCfg || {};
@@ -373,12 +374,30 @@ export default function Source() {
                   setAdding((a) => ({ ...a, [p]: '' }));
                   setOtherVal((o) => ({ ...o, [p]: '' }));
                 };
-                const addByName = (p) => {
+                // One smart input: "vercel" browses that organisation's
+                // repositories; "expressjs/express" adds the repo directly.
+                const submitOther = async (p) => {
                   const v = (otherVal[p] || '').trim();
-                  if (!/^[\w.-]+\/[\w.-]+$/.test(v)) {
-                    return toast('error', 'Use the owner/name format', 'For example expressjs/express — any public repository works.');
+                  if (!v) return;
+                  if (v.includes('/')) {
+                    if (!/^[\w.-]+\/[\w.-]+$/.test(v)) {
+                      return toast('error', 'Use the owner/name format', 'For example expressjs/express — any public repository works.');
+                    }
+                    addRepo(p, v, { custom: true });
+                    setOrgRepos((o) => ({ ...o, [p]: undefined }));
+                    return;
                   }
-                  addRepo(p, v, { custom: true });
+                  setOrgRepos((o) => ({ ...o, [p]: { org: v, loading: true, repos: [] } }));
+                  try {
+                    const d = await api('/repos?provider=' + p + '&org=' + encodeURIComponent(v));
+                    if (!(d.repos || []).length) {
+                      toast('info', 'No repositories found', '“' + v + '” has no visible repositories on ' + byId(p).name + '.');
+                    }
+                    setOrgRepos((o) => ({ ...o, [p]: { org: v, loading: false, repos: d.repos || [] } }));
+                  } catch (e) {
+                    setOrgRepos((o) => ({ ...o, [p]: undefined }));
+                    toast('error', 'Could not browse “' + v + '”', e.message);
+                  }
                 };
                 return (
                   <div className="srccard" style={{ borderLeftColor: readyCount === hostIds.length ? 'var(--support-success)' : 'var(--support-warning)' }}>
@@ -473,16 +492,45 @@ export default function Source() {
                           ))}
                         </select>
                       );
+                      const browse = orgRepos[p];
+                      const browseChoices = browse && !browse.loading
+                        ? browse.repos.filter((r) => !picked.includes(r.name)) : [];
                       const nameInput = (
-                        <div className="row mt3" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                          <input className="input" style={{ flex: '1 1 220px', maxWidth: 320 }}
-                            placeholder="owner/name — e.g. expressjs/express" autoFocus
-                            aria-label={byId(p).name + ' repository by owner/name'}
-                            value={otherVal[p] || ''}
-                            onChange={(e) => setOtherVal((o) => ({ ...o, [p]: e.target.value }))}
-                            onKeyDown={(e) => { if (e.key === 'Enter') addByName(p); }} />
-                          <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => addByName(p)}>Add</button>
-                          <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: '' }))}>Cancel</button>
+                        <div className="mt3">
+                          <div className="row" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                            <input className="input" style={{ flex: '1 1 240px', maxWidth: 340 }}
+                              placeholder="Organisation to browse, or owner/name to add" autoFocus
+                              aria-label={byId(p).name + ' organisation or repository'}
+                              value={otherVal[p] || ''}
+                              onChange={(e) => setOtherVal((o) => ({ ...o, [p]: e.target.value }))}
+                              onKeyDown={(e) => { if (e.key === 'Enter') submitOther(p); }} />
+                            <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => submitOther(p)}>
+                              {(otherVal[p] || '').includes('/') ? 'Add' : 'Browse'}
+                            </button>
+                            <button type="button" className="linkbtn"
+                              onClick={() => { setAdding((a) => ({ ...a, [p]: '' })); setOrgRepos((o) => ({ ...o, [p]: undefined })); }}>
+                              Cancel
+                            </button>
+                          </div>
+                          <p className="helper mt2">e.g. “vercel” lists that organisation’s repositories · “expressjs/express” adds it directly</p>
+                          {browse && (browse.loading ? (
+                            <p className="helper mt2">Loading {browse.org}…</p>
+                          ) : browseChoices.length > 0 ? (
+                            <div className="row mt2" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                              <select className="select" style={{ flex: '1 1 260px', maxWidth: 440 }} value=""
+                                aria-label={'Choose a repository from ' + browse.org}
+                                onChange={(e) => { addRepo(p, e.target.value, { custom: true }); setOrgRepos((o) => ({ ...o, [p]: undefined })); }}>
+                                <option value="" disabled>Choose from {browse.org}…</option>
+                                {browseChoices.map((r) => (
+                                  <option key={r.name} value={r.name}>
+                                    {[r.name, r.branch, r.private !== undefined ? (r.private ? 'Private' : 'Public') : ''].filter(Boolean).join(' · ')}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : browse.repos.length > 0 ? (
+                            <p className="helper mt2">Every visible repository in {browse.org} is already selected.</p>
+                          ) : null)}
                         </div>
                       );
                       return (
