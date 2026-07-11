@@ -189,9 +189,13 @@ function Wizard({ existing, catalog, onDone }) {
   }
   function removeWzDoc() { setSrcPending(null); setSrcName(''); setSrcInfo(null); setSrcRemove(true); }
 
+  // Pure consumer of the unified catalogue — connections are configured only
+  // on the Repository Connections page.
   useEffect(() => {
     setRepos(null);
-    api('/repos?provider=' + cfg.provider).then((d) => setRepos(d.repos || [])).catch(() => setRepos([]));
+    api('/hub/catalogue')
+      .then((d) => setRepos((d.repos || []).filter((r) => r.provider === cfg.provider)))
+      .catch(() => setRepos([]));
   }, [cfg.provider]);
 
   // Reusable documentation rule sets (repository hub) — pipeline override.
@@ -249,8 +253,8 @@ function Wizard({ existing, catalog, onDone }) {
       <div className="tile tile--white" style={{ padding: 24 }}>
         {step === 0 && (
           <>
-            <h2 className="h02 mb2">Step 1 · Connect repository</h2>
-            <p className="helper mb5">The repository this pipeline watches. Documents it produces are mapped to this repo.</p>
+            <h2 className="h02 mb2">Step 1 · Choose repository</h2>
+            <p className="helper mb5">The repository this pipeline watches, from your unified catalogue. Documents it produces are mapped to this repo.</p>
             <p className="label01 t2 mb3">CODE HOST</p>
             <div className="row">
               {['github', 'gitlab', 'bitbucket'].map((p) => (
@@ -260,13 +264,27 @@ function Wizard({ existing, catalog, onDone }) {
             </div>
             <div className="field mt5">
               <label htmlFor="wzrepo">Repository</label>
-              {repos === null ? <p className="helper">Loading repositories…</p> : (
-                <select id="wzrepo" className="select" value={repos.some((r) => r.name === cfg.repo) ? cfg.repo : ''}
-                  onChange={(e) => set({ repo: e.target.value })}>
-                  <option value="">Select a repository…</option>
-                  {repos.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
-                </select>
-              )}
+              {repos === null ? <p className="helper">Loading your catalogue…</p>
+                : repos.length === 0 ? (
+                  <p className="helper">
+                    No repositories available for this host. Connect accounts, organisations, or
+                    repositories from the Repository Connections page — your wizard progress is saved.
+                  </p>
+                ) : (
+                  <select id="wzrepo" className="select" value={repos.some((r) => r.name === cfg.repo) ? cfg.repo : ''}
+                    onChange={(e) => set({ repo: e.target.value })}>
+                    <option value="">Select a repository…</option>
+                    {[...new Set(repos.map((r) => r.org || r.name.split('/')[0]))].sort().map((org) => (
+                      <optgroup key={org} label={org}>
+                        {repos.filter((r) => (r.org || r.name.split('/')[0]) === org).map((r) => (
+                          <option key={r.name} value={r.name}>
+                            {[r.name, r.ruleSetName || ''].filter(Boolean).join(' · ')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                )}
             </div>
             <div className="field">
               <label htmlFor="wzrepocustom">Or any public repository (owner/name)</label>
@@ -275,7 +293,9 @@ function Wizard({ existing, catalog, onDone }) {
                 onChange={(e) => set({ repo: e.target.value.trim() })} />
               <p className="helper">Public repositories work without connecting an account — documentation is generated from their real source files.</p>
             </div>
-            <RepoHubCta style={{ marginBottom: 16 }} />
+            <RepoHubCta label={repos && repos.length === 0 ? 'No repositories available.' : 'Need a different repository?'}
+              action={repos && repos.length === 0 ? 'Go to Repository Connections' : 'Open Repository Connections'}
+              style={{ marginBottom: 16 }} />
             <div className="field" style={{ marginBottom: 0 }}>
               <label htmlFor="wzrules">Documentation rule set</label>
               {ruleSets === null ? <p className="helper">Loading rule sets…</p> : (

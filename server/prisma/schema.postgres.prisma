@@ -226,6 +226,24 @@ model RuleSet {
   updatedAt    DateTime @updatedAt
 }
 
+// A connected organisation / GitLab group / Bitbucket workspace. Repositories
+// from every OrgConnection are aggregated into the unified catalogue that all
+// workflow pages consume — connections are managed ONLY on the hub page.
+model OrgConnection {
+  id        String    @id @default(cuid())
+  userId    String
+  provider  String    @default("github") // github | gitlab | bitbucket
+  org       String    // organisation / group / workspace slug
+  status    String    @default("connected") // connected | error
+  statusMsg String    @default("")
+  repoCount Int       @default(0)
+  lastSync  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([userId, provider, org])
+}
+
 model RelevanceDecision {
   id         String   @id @default(cuid())
   userId     String

@@ -36,12 +36,9 @@ export default function Source() {
   const [waitlistFor, setWaitlistFor] = useState(null);
   const [wlEmail, setWlEmail] = useState(user ? user.email : '');
   const [busy, setBusy] = useState(false);
-  const [hubRepos, setHubRepos] = useState(null); // Repository hub: connect once, use everywhere
-  const [hosts, setHosts] = useState({}); // per code host: { loading, connected, repos, reason }
-  const [oauthAvail, setOauthAvail] = useState({}); // which hosts have real OAuth configured
+  const [cat, setCat] = useState(null); // the unified catalogue: providers + aggregated repos
   const [adding, setAdding] = useState({}); // per host: '' | 'list' | 'name' — the add-another chooser
-  const [otherVal, setOtherVal] = useState({}); // per host: org or owner/name draft
-  const [orgRepos, setOrgRepos] = useState({}); // per host: { org, loading, repos } from a browse
+  const [otherVal, setOtherVal] = useState({}); // per host: owner/name draft
 
   const sources = flow.sources || [];
   const cfg = flow.srcCfg || {};
@@ -49,17 +46,20 @@ export default function Source() {
     setFlow((f) => ({ srcCfg: { ...(f.srcCfg || {}), [id]: { ...((f.srcCfg || {})[id] || {}), ...patch } } }));
 
   useEffect(() => { getCatalog().then(setCatalog); }, []);
-  useEffect(() => { api('/auth/providers').then(setOauthAvail).catch(() => {}); }, []);
+  // ONE source of truth: the unified catalogue built from everything the user
+  // configured on the Repository Connections page (accounts, organisations,
+  // groups, workspaces, individually added repositories). This page never
+  // configures connections — it only consumes.
   useEffect(() => {
-    api('/hub/repositories?per=100&enabled=true')
-      .then((d) => setHubRepos(d.repositories))
-      .catch(() => setHubRepos([]));
+    api('/hub/catalogue')
+      .then(setCat)
+      .catch(() => setCat({ providers: {}, orgs: [], repos: [] }));
   }, []);
 
-  // Returning from the Repository hub with a fresh connection? Auto-select it
-  // so the user lands exactly where they left off — repo already chosen.
+  // Returning from Repository Connections with fresh repos? Auto-select the
+  // first one so the user lands exactly where they left off — repo chosen.
   useEffect(() => {
-    if (!hubRepos) return;
+    if (!cat) return;
     try {
       const stash = JSON.parse(sessionStorage.getItem('docify_new_repos') || 'null');
       if (!Array.isArray(stash) || !stash.length) return;
@@ -75,7 +75,7 @@ export default function Source() {
         toast('success', first.repo + ' connected and selected', 'Your workflow continues right where you left off.');
       }
     } catch { /* convenience only */ }
-  }, [hubRepos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The provider chosen at sign-in is already authorized — pre-select it once,
   // so the user lands here with only the repository dropdown left to fill.
@@ -90,40 +90,24 @@ export default function Source() {
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Code hosts: load connection status + the real repository list together.
-  // The server answers connected:false with an EMPTY list when no valid OAuth
-  // token is on file — unconnected providers never show repositories.
+  // Trust guard: a selection is only valid while it is still in the catalogue.
+  // If a provider was disconnected, an organisation removed, or permission
+  // lost, the stale selection is cleared (explicit public picks stay).
   useEffect(() => {
-    sources
-      .filter((p) => KIND[p] === 'picker' && hosts[p] === undefined)
-      .forEach((p) => {
-        setHosts((h) => ({ ...h, [p]: { loading: true, connected: false, repos: [] } }));
-        api('/repos?provider=' + p)
-          .then((d) => setHosts((h) => ({ ...h, [p]: { loading: false, connected: d.connected !== false, repos: d.repos || [], reason: d.reason || '' } })))
-          .catch((e) => setHosts((h) => ({ ...h, [p]: { loading: false, connected: false, repos: [], reason: e.message } })));
-      });
-  }, [sources, hosts]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Trust guard: a selection is only valid while the account can still access
-  // it. If the provider is disconnected, the token expired, or permission was
-  // removed, clear the stale selection (hub-verified and public picks stay).
-  useEffect(() => {
+    if (!cat) return;
     sources.filter((p) => KIND[p] === 'picker').forEach((p) => {
-      const st = hosts[p];
       const c = cfg[p] || {};
-      if (!st || st.loading) return;
-      const ok = (name, custom, fromHub) =>
-        custom || fromHub || (st.connected && (st.repos || []).some((r) => r.name === name));
+      const ok = (name, custom) => custom || cat.repos.some((r) => r.provider === p && r.name === name);
       const patch = {};
-      if (c.sel && !ok(c.sel, c.custom, c.fromHub)) {
+      if (c.sel && !ok(c.sel, c.custom)) {
         patch.sel = '';
-        toast('info', 'Selection cleared', c.sel + ' is no longer accessible from your ' + p + ' account.');
+        toast('info', 'Selection cleared', c.sel + ' is no longer available in your repository catalogue.');
       }
-      const extra = (c.extra || []).filter((e) => ok(e.repo, e.custom, e.fromHub));
+      const extra = (c.extra || []).filter((e) => ok(e.repo, e.custom));
       if (extra.length !== (c.extra || []).length) patch.extra = extra;
       if (Object.keys(patch).length) setCfg(p, patch);
     });
-  }, [hosts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Token sources (Jira, Confluence, Notion): load pick-lists once connected.
   useEffect(() => {
@@ -143,19 +127,8 @@ export default function Source() {
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
   const byId = (id) => catalog.sources.find((x) => x.id === id);
-
-  // Hand the browser to the provider's consent screen; the flow (selections,
-  // progress) is already persisted in sessionStorage, and /oauth/complete
-  // returns the user straight back here with the new connection live.
-  function connectHost(p) {
-    const name = byId(p) ? byId(p).name : p;
-    if (!oauthAvail[p]) {
-      return toast('error', name + ' connection isn’t available yet',
-        name + ' OAuth is not configured on the server. You can still document any public repository below.');
-    }
-    try { sessionStorage.setItem('authDest', '/source'); } catch { /* best effort */ }
-    window.location.href = '/api/auth/oauth/' + p;
-  }
+  // All connection management lives on ONE page. Workflows only link to it.
+  const goConnections = () => nav('/repos?return=' + encodeURIComponent('/source'));
 
   function toggle(s) {
     if (!s.avail) {
@@ -337,29 +310,14 @@ export default function Source() {
             <p className="helper mt2 mb5">Each source needs one detail. The first code source becomes the primary input for generation.</p>
             <div className="stack">
               {hostIds.length > 0 && (() => {
-                // ONE panel for every code host: connection chips, an honest
-                // repository list (connected accounts only), compact selection.
+                // ONE panel for every code host — a pure CONSUMER of the
+                // unified catalogue. Connecting accounts, organisations,
+                // groups, and workspaces happens only on Repository Connections.
                 const readyCount = hostIds.filter((p) => !!(cfg[p] || {}).sel).length;
-                const loadingHosts = hostIds.filter((p) => !hosts[p] || hosts[p].loading);
-                const settled = hostIds.filter((p) => hosts[p] && !hosts[p].loading);
-                const unconnected = settled.filter((p) => !hosts[p].connected);
-                const hubByProv = {};
-                (hubRepos || []).forEach((r) => { (hubByProv[r.provider] = hubByProv[r.provider] || []).push(r); });
-                // Options per host: the account's real list + hub-verified
-                // entries. Under an unconnected provider only PUBLIC hub
-                // entries qualify — those need no account to read.
-                const optionsFor = (p) => {
-                  const st = hosts[p];
-                  const out = ((st && st.connected && st.repos) || []).map((r) =>
-                    ({ name: r.name, branch: r.branch, priv: r.private, updated: r.updated, hub: false }));
-                  (hubByProv[p] || []).forEach((r) => {
-                    if (!(st && st.connected) && r.visibility !== 'public') return;
-                    if (!out.some((x) => x.name === r.repo)) {
-                      out.push({ name: r.repo, branch: r.branch, hub: true, ruleSetName: r.ruleSetName });
-                    }
-                  });
-                  return out;
-                };
+                const loading = !cat;
+                const provs = (cat && cat.providers) || {};
+                const optionsFor = (p) => (cat ? cat.repos.filter((r) => r.provider === p) : []);
+                const anyRepos = hostIds.some((p) => optionsFor(p).length > 0);
                 // First pick per host becomes the primary; every further pick is
                 // an EXTRA repository that gets its own generation with the
                 // same settings when the user hits Generate.
@@ -374,82 +332,68 @@ export default function Source() {
                   setAdding((a) => ({ ...a, [p]: '' }));
                   setOtherVal((o) => ({ ...o, [p]: '' }));
                 };
-                // One smart input: "vercel" browses that organisation's
-                // repositories; "expressjs/express" adds the repo directly.
-                const submitOther = async (p) => {
+                // Lightweight escape hatch — selecting a public repository is
+                // repo SELECTION, not connection management, so it may stay.
+                const addByName = (p) => {
                   const v = (otherVal[p] || '').trim();
-                  if (!v) return;
-                  if (v.includes('/')) {
-                    if (!/^[\w.-]+\/[\w.-]+$/.test(v)) {
-                      return toast('error', 'Use the owner/name format', 'For example expressjs/express — any public repository works.');
-                    }
-                    addRepo(p, v, { custom: true });
-                    setOrgRepos((o) => ({ ...o, [p]: undefined }));
-                    return;
+                  if (!/^[\w.-]+\/[\w.-]+$/.test(v)) {
+                    return toast('error', 'Use the owner/name format', 'For example expressjs/express — any public repository works.');
                   }
-                  setOrgRepos((o) => ({ ...o, [p]: { org: v, loading: true, repos: [] } }));
-                  try {
-                    const d = await api('/repos?provider=' + p + '&org=' + encodeURIComponent(v));
-                    if (!(d.repos || []).length) {
-                      toast('info', 'No repositories found', '“' + v + '” has no visible repositories on ' + byId(p).name + '.');
-                    }
-                    setOrgRepos((o) => ({ ...o, [p]: { org: v, loading: false, repos: d.repos || [] } }));
-                  } catch (e) {
-                    setOrgRepos((o) => ({ ...o, [p]: undefined }));
-                    toast('error', 'Could not browse “' + v + '”', e.message);
-                  }
+                  addRepo(p, v, { custom: true });
                 };
                 return (
                   <div className="srccard" style={{ borderLeftColor: readyCount === hostIds.length ? 'var(--support-success)' : 'var(--support-warning)' }}>
                     <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
                       <div>
                         <p className="h01">Select repositories</p>
-                        <p className="helper mt2">Only repositories your connected accounts can access are listed.</p>
+                        <p className="helper mt2">Your unified catalogue — everything configured in Repository Connections.</p>
                       </div>
                       {readyCount === hostIds.length ? <span className="tag tag--green">Ready ✓</span> : <span className="tag tag--amber">Needs setup</span>}
                     </div>
 
                     <div className="connrow mt5">
                       {hostIds.map((p) => {
-                        const st = hosts[p] || {};
-                        const on = !!st.connected;
+                        const pv = provs[p] || {};
+                        const n = optionsFor(p).length;
                         return (
-                          <span key={p} className={'connchip' + (on ? ' connchip--on' : '')}>
+                          <span key={p} className={'connchip' + (pv.connected || n ? ' connchip--on' : '')}>
                             <span className="conndot" aria-hidden="true" />
-                            {byId(p).name} · {!hosts[p] || st.loading ? 'Checking…' : on ? 'Connected' : 'Not connected'}
+                            {byId(p).name} · {loading ? 'Loading…'
+                              : pv.connected ? 'Connected' + (pv.account ? ' as ' + pv.account : '') + ' · ' + n + ' repos'
+                              : n ? n + ' repos' : 'Not connected'}
                           </span>
                         );
                       })}
-                      <button type="button" className="linkbtn" style={{ marginLeft: 'auto' }}
-                        onClick={() => nav('/repos?return=' + encodeURIComponent('/source'))}>
-                        Manage repositories
+                      <button type="button" className="linkbtn" style={{ marginLeft: 'auto' }} onClick={goConnections}>
+                        Repository Connections
                       </button>
                     </div>
 
-                    {unconnected.map((p) => (
-                      <div key={p} className="notconn mt4">
+                    {loading ? (
+                      <p className="helper mt5">Loading your repository catalogue…</p>
+                    ) : !anyRepos ? (
+                      <div className="notconn mt5">
                         <div>
-                          <p className="body01"><b>{byId(p).name} is not connected</b></p>
-                          <p className="helper mt2">{hosts[p].reason || 'Connect ' + byId(p).name + ' to browse and select repositories.'}</p>
+                          <p className="body01"><b>No repositories available</b></p>
+                          <p className="helper mt2">
+                            Connect GitHub, GitLab, or Bitbucket repositories from the Repository Connections
+                            page before continuing. Your progress here is saved.
+                          </p>
                         </div>
-                        <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => connectHost(p)}>
-                          {hosts[p].reason ? 'Reconnect' : 'Connect'} {byId(p).name}
+                        <button type="button" className="btn btn--primary btn--sm btn--center" onClick={goConnections}>
+                          Go to Repository Connections
                         </button>
                       </div>
-                    ))}
+                    ) : null}
 
-                    {loadingHosts.map((p) => (
-                      <p key={p} className="helper mt4">Checking {byId(p).name}…</p>
-                    ))}
-
-                    {settled.map((p) => {
+                    {!loading && hostIds.map((p) => {
                       const c = cfg[p] || {};
-                      const st = hosts[p];
                       const opts = optionsFor(p);
                       const mode = adding[p] || '';
-                      if (!st.connected && !opts.length && !c.sel && !mode) {
-                        // Fully unconnected host: the connect block above is the
-                        // state; offer only the compact public-repo escape hatch.
+                      if (!opts.length && !c.sel && !mode) {
+                        // Nothing in the catalogue for this host: the empty
+                        // state above guides to Connections; keep only the
+                        // compact public-repo escape hatch.
                         return (
                           <p key={p} className="helper mt3">
                             <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: 'name' }))}>
@@ -460,17 +404,17 @@ export default function Source() {
                       }
                       const picked = [c.sel, ...(c.extra || []).map((e) => e.repo)].filter(Boolean);
                       const remaining = opts.filter((r) => !picked.includes(r.name));
-                      // Organisation groups keep long lists navigable and make
-                      // picking from another org a one-scroll job.
+                      // Organisation groups keep long lists navigable — every
+                      // connected org/group/workspace appears as its own group.
                       const orgs = {};
                       remaining.forEach((r) => {
-                        const org = r.name.split('/')[0] || 'other';
+                        const org = r.org || r.name.split('/')[0] || 'other';
                         (orgs[org] = orgs[org] || []).push(r);
                       });
                       const metaFor = (name, custom) => {
                         const i = opts.find((r) => r.name === name);
                         return i
-                          ? [i.branch, i.priv !== undefined ? (i.priv ? 'Private' : 'Public') : '', i.hub && i.ruleSetName ? i.ruleSetName : ''].filter(Boolean).join(' · ')
+                          ? [i.branch, i.private == null ? '' : (i.private ? 'Private' : 'Public'), i.ruleSetName || ''].filter(Boolean).join(' · ')
                           : custom ? 'Public repository' : '';
                       };
                       const chooser = (
@@ -478,59 +422,30 @@ export default function Source() {
                           aria-label={'Choose a ' + byId(p).name + ' repository'}
                           onChange={(e) => {
                             const r = opts.find((x) => x.name === e.target.value);
-                            addRepo(p, e.target.value, { hub: !!(r && r.hub) });
+                            addRepo(p, e.target.value, { hub: !!(r && r.source === 'hub') });
                           }}>
                           <option value="" disabled>Choose a repository…</option>
                           {Object.keys(orgs).sort().map((org) => (
                             <optgroup key={org} label={org}>
                               {orgs[org].map((r) => (
                                 <option key={r.name} value={r.name}>
-                                  {[r.name, r.branch, r.hub && r.ruleSetName ? r.ruleSetName : ''].filter(Boolean).join(' · ')}
+                                  {[r.name, r.branch, r.ruleSetName || ''].filter(Boolean).join(' · ')}
                                 </option>
                               ))}
                             </optgroup>
                           ))}
                         </select>
                       );
-                      const browse = orgRepos[p];
-                      const browseChoices = browse && !browse.loading
-                        ? browse.repos.filter((r) => !picked.includes(r.name)) : [];
                       const nameInput = (
-                        <div className="mt3">
-                          <div className="row" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                            <input className="input" style={{ flex: '1 1 240px', maxWidth: 340 }}
-                              placeholder="Organisation to browse, or owner/name to add" autoFocus
-                              aria-label={byId(p).name + ' organisation or repository'}
-                              value={otherVal[p] || ''}
-                              onChange={(e) => setOtherVal((o) => ({ ...o, [p]: e.target.value }))}
-                              onKeyDown={(e) => { if (e.key === 'Enter') submitOther(p); }} />
-                            <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => submitOther(p)}>
-                              {(otherVal[p] || '').includes('/') ? 'Add' : 'Browse'}
-                            </button>
-                            <button type="button" className="linkbtn"
-                              onClick={() => { setAdding((a) => ({ ...a, [p]: '' })); setOrgRepos((o) => ({ ...o, [p]: undefined })); }}>
-                              Cancel
-                            </button>
-                          </div>
-                          <p className="helper mt2">e.g. “vercel” lists that organisation’s repositories · “expressjs/express” adds it directly</p>
-                          {browse && (browse.loading ? (
-                            <p className="helper mt2">Loading {browse.org}…</p>
-                          ) : browseChoices.length > 0 ? (
-                            <div className="row mt2" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                              <select className="select" style={{ flex: '1 1 260px', maxWidth: 440 }} value=""
-                                aria-label={'Choose a repository from ' + browse.org}
-                                onChange={(e) => { addRepo(p, e.target.value, { custom: true }); setOrgRepos((o) => ({ ...o, [p]: undefined })); }}>
-                                <option value="" disabled>Choose from {browse.org}…</option>
-                                {browseChoices.map((r) => (
-                                  <option key={r.name} value={r.name}>
-                                    {[r.name, r.branch, r.private !== undefined ? (r.private ? 'Private' : 'Public') : ''].filter(Boolean).join(' · ')}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : browse.repos.length > 0 ? (
-                            <p className="helper mt2">Every visible repository in {browse.org} is already selected.</p>
-                          ) : null)}
+                        <div className="row mt3" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                          <input className="input" style={{ flex: '1 1 220px', maxWidth: 320 }}
+                            placeholder="owner/name — e.g. expressjs/express" autoFocus
+                            aria-label={byId(p).name + ' public repository by owner/name'}
+                            value={otherVal[p] || ''}
+                            onChange={(e) => setOtherVal((o) => ({ ...o, [p]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addByName(p); }} />
+                          <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => addByName(p)}>Add</button>
+                          <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: '' }))}>Cancel</button>
                         </div>
                       );
                       return (
@@ -548,11 +463,7 @@ export default function Source() {
                                   onClick={() => setCfg(p, { sel: '', custom: false, fromHub: false, extra: [] })}>Change</button>
                               </>
                             ) : opts.length ? chooser : (
-                              <span className="helper">
-                                {st.connected
-                                  ? 'No repositories found — check your permissions or connect another account.'
-                                  : 'Not connected — add a public repository below, or connect above.'}
-                              </span>
+                              <span className="helper">No {byId(p).name} repositories in your catalogue yet.</span>
                             )}
                           </div>
                           {(c.extra || []).map((e) => (
@@ -573,9 +484,9 @@ export default function Source() {
                           {mode === 'name' ? nameInput
                             : mode === 'list' ? (
                               <div className="row mt3" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-                                {remaining.length ? chooser : <span className="helper">All listed repositories are selected.</span>}
+                                {remaining.length ? chooser : <span className="helper">Every catalogue repository is selected.</span>}
                                 <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: 'name' }))}>
-                                  Another organisation or public repository
+                                  Use a public repository (owner/name)
                                 </button>
                                 <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: '' }))}>Cancel</button>
                               </div>
@@ -583,9 +494,7 @@ export default function Source() {
                               <p className="mt2">
                                 <button type="button" className="linkbtn" style={{ fontSize: 12.5 }}
                                   onClick={() => setAdding((a) => ({ ...a, [p]: c.sel ? 'list' : 'name' }))}>
-                                  {c.sel
-                                    ? '＋ Add another repository'
-                                    : '＋ Repository from another organisation or any public repository'}
+                                  {c.sel ? '＋ Add another repository' : '＋ Use a public repository instead'}
                                 </button>
                               </p>
                             )}
@@ -593,7 +502,7 @@ export default function Source() {
                       );
                     })}
 
-                    <RepoHubCta label="Can’t find the repository you need?" action="Connect or manage repositories" style={{ marginTop: 16 }} />
+                    <RepoHubCta label="Can’t find the repository you need?" action="Open Repository Connections" style={{ marginTop: 16 }} />
                   </div>
                 );
               })()}

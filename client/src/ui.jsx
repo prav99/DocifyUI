@@ -7,7 +7,7 @@ import { useAuth, toast } from './store.jsx';
    "Add or manage repositories" carries a ?return= parameter so the hub can
    send the user straight back. Workflow state lives in React context, so
    nothing is lost while they hop over and connect a repo. */
-export function RepoHubCta({ label = 'Need a different repository?', action = 'Add or manage repositories', style }) {
+export function RepoHubCta({ label = 'Need a different repository?', action = 'Open Repository Connections', style }) {
   const nav = useNavigate();
   const loc = useLocation();
   return (

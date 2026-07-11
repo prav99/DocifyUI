@@ -284,16 +284,154 @@ function RuleSetPanel({ open, ruleSet, onClose, onSaved }) {
   );
 }
 
+/* ---------------- Connections tab: the single source of truth ---------------- */
+// Every provider connection — OAuth accounts, organisations, GitLab groups,
+// Bitbucket workspaces — is configured HERE and only here. Workflow pages
+// consume the resulting unified catalogue and never show connection UI.
+const ORG_NOUN = { github: 'organisation', gitlab: 'group', bitbucket: 'workspace' };
+const PROVIDER_NAME = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
+
+function ConnectionsTab({ returnTo }) {
+  const [conns, setConns] = useState(null);
+  const [oauthAvail, setOauthAvail] = useState({});
+  const [orgs, setOrgs] = useState([]);
+  const [draft, setDraft] = useState({}); // provider -> org name being typed
+  const [busy, setBusy] = useState('');
+
+  const load = useCallback(() => {
+    api('/connections').then((d) => setConns(d.connections)).catch(() => setConns({}));
+    api('/hub/orgs').then((d) => setOrgs(d.orgs)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { api('/auth/providers').then(setOauthAvail).catch(() => {}); }, []);
+
+  const oauth = (p) => {
+    if (!oauthAvail[p]) {
+      return toast('error', PROVIDER_NAME[p] + ' sign-in isn’t configured yet',
+        'You can still connect ' + ORG_NOUN[p] + 's and public repositories below.');
+    }
+    try { sessionStorage.setItem('authDest', '/repos' + (returnTo ? '?return=' + encodeURIComponent(returnTo) : '')); } catch { /* best effort */ }
+    window.location.href = '/api/auth/oauth/' + p;
+  };
+
+  const disconnect = async (p) => {
+    setBusy(p);
+    try {
+      await api('/sources/' + p, { method: 'DELETE' });
+      toast('info', PROVIDER_NAME[p] + ' account disconnected', 'Organisation connections and hub repositories are kept.');
+      load();
+    } catch (e) { toast('error', 'Could not disconnect', e.message); }
+    finally { setBusy(''); }
+  };
+
+  const addOrg = async (p) => {
+    const org = (draft[p] || '').trim();
+    if (!org) return;
+    setBusy(p + ':add');
+    try {
+      const d = await api('/hub/orgs', { method: 'POST', body: { provider: p, org } });
+      toast('success', org + ' connected', d.repos + ' repositor' + (d.repos === 1 ? 'y' : 'ies') + ' now available in every workflow.');
+      setDraft((x) => ({ ...x, [p]: '' }));
+      load();
+    } catch (e) { toast('error', 'Could not connect ' + org, e.message); }
+    finally { setBusy(''); }
+  };
+
+  const syncOrg = async (o) => {
+    setBusy(o.id);
+    try { await api('/hub/orgs/' + o.id + '/sync', { method: 'POST' }); load(); }
+    catch (e) { toast('error', 'Sync failed', e.message); }
+    finally { setBusy(''); }
+  };
+
+  const removeOrg = async (o) => {
+    setBusy(o.id);
+    try {
+      await api('/hub/orgs/' + o.id, { method: 'DELETE' });
+      toast('info', o.org + ' disconnected', 'Its repositories no longer appear in the catalogue.');
+      load();
+    } catch (e) { toast('error', 'Remove failed', e.message); }
+    finally { setBusy(''); }
+  };
+
+  if (!conns) return <p className="body01 t2 mt6">Loading connections…</p>;
+
+  return (
+    <div className="conngrid mt6">
+      {['github', 'gitlab', 'bitbucket'].map((p) => {
+        const c = conns[p] || {};
+        const myOrgs = orgs.filter((o) => o.provider === p);
+        return (
+          <div key={p} className="conncard">
+            <div className="row row--between" style={{ flexWrap: 'wrap', gap: 10 }}>
+              <div className="row" style={{ gap: 10 }}>
+                <span className={'provtag prov--' + p}>{PROVIDER_NAME[p]}</span>
+                <span className={'connchip' + (c.connected ? ' connchip--on' : '')} style={{ border: 'none', padding: 0, background: 'none' }}>
+                  <span className="conndot" aria-hidden="true" />
+                  {c.connected ? 'Connected' + (c.account ? ' as ' + c.account : '') : c.expired ? 'Session expired' : 'No account connected'}
+                </span>
+              </div>
+              <span className="row" style={{ gap: 12 }}>
+                {c.connected
+                  ? <button className="linkbtn" disabled={busy === p} onClick={() => disconnect(p)}>Disconnect</button>
+                  : null}
+                <button className="btn btn--tertiary btn--sm btn--center" onClick={() => oauth(p)}>
+                  {c.connected ? 'Reauthenticate' : c.expired ? 'Reconnect account' : 'Connect account'}
+                </button>
+              </span>
+            </div>
+            <p className="helper mt3">
+              The account grants access to its own and member repositories. Add {ORG_NOUN[p]}s below to
+              aggregate more repositories — public ones need no account.
+            </p>
+
+            {myOrgs.length > 0 && (
+              <ul className="orglist mt4">
+                {myOrgs.map((o) => (
+                  <li key={o.id} className="orgrow">
+                    <span className="orgrow-name"><b>{o.org}</b></span>
+                    <span className="reporow-meta">
+                      {o.status === 'error' ? '⚠ ' + (o.statusMsg || 'unreachable') : o.repoCount + ' repositories'}
+                      {o.lastSync ? ' · synced ' + fmtDate(o.lastSync) : ''}
+                    </span>
+                    <span className="row" style={{ gap: 10, marginLeft: 'auto' }}>
+                      <button className="linkbtn" disabled={busy === o.id} onClick={() => syncOrg(o)}>{busy === o.id ? 'Syncing…' : 'Sync'}</button>
+                      <button className="linkbtn" disabled={busy === o.id} onClick={() => removeOrg(o)}>Remove</button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="row mt4" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input className="input" style={{ flex: '1 1 200px', maxWidth: 280 }}
+                placeholder={'Add a ' + ORG_NOUN[p] + ' — e.g. ' + (p === 'github' ? 'vercel' : p === 'gitlab' ? 'gitlab-org' : 'atlassian')}
+                aria-label={'Connect a ' + PROVIDER_NAME[p] + ' ' + ORG_NOUN[p]}
+                value={draft[p] || ''}
+                onChange={(e) => setDraft((x) => ({ ...x, [p]: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter') addOrg(p); }} />
+              <button className="btn btn--tertiary btn--sm btn--center" disabled={busy === p + ':add'} onClick={() => addOrg(p)}>
+                {busy === p + ':add' ? 'Validating…' : 'Connect ' + ORG_NOUN[p]}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ================================ Page ================================ */
 export default function Repos() {
   usePageMeta({
-    title: 'Repositories — connect once, use everywhere',
-    description: 'Central repository management: GitHub, GitLab, and Bitbucket repositories with reusable documentation rule sets applied across generation, automation, and Doc sync.'
+    title: 'Repository connections — connect once, use everywhere',
+    description: 'The central integration hub: GitHub, GitLab, and Bitbucket accounts, organisations, groups, and workspaces — one unified repository catalogue with reusable documentation rule sets for every workflow.'
   });
   const nav = useNavigate();
   const loc = useLocation();
   const returnTo = new URLSearchParams(loc.search).get('return') || '';
-  const [tab, setTab] = useState('repos');
+  // Workflow visitors come here to CONNECT something — land them on that tab.
+  const [tab, setTab] = useState(returnTo ? 'conn' : 'repos');
 
   // Stash newly connected repos so the originating workflow can auto-select them.
   const stashNew = (repos) => {
@@ -399,25 +537,30 @@ export default function Repos() {
       )}
       <div className="row row--between" style={{ flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h1 className="h04">Repositories</h1>
+          <h1 className="h04">Repository connections</h1>
           <p className="body01 t2 mt3" style={{ maxWidth: 680 }}>
-            Connect once, use everywhere. Every repository here is available to normal generation,
-            automation pipelines, and Doc sync — governed by the same reusable rule sets.
+            The single place to connect accounts, organisations, groups, and workspaces. Everything
+            connected here flows into one catalogue used by generation, automation, and Doc sync.
           </p>
         </div>
         <button className="btn btn--primary btn--field" onClick={() => setAddOpen(true)}>
-          Connect repositories<span className="ico">+</span>
+          Add repositories<span className="ico">+</span>
         </button>
       </div>
 
       <div className="tabs mt6" role="tablist">
+        <button className={tab === 'conn' ? 'on' : ''} role="tab" aria-selected={tab === 'conn'} onClick={() => setTab('conn')}>
+          Connections
+        </button>
         <button className={tab === 'repos' ? 'on' : ''} role="tab" aria-selected={tab === 'repos'} onClick={() => setTab('repos')}>
-          Repositories{total ? ' (' + total + ')' : ''}
+          Managed repositories{total ? ' (' + total + ')' : ''}
         </button>
         <button className={tab === 'rules' ? 'on' : ''} role="tab" aria-selected={tab === 'rules'} onClick={() => setTab('rules')}>
           Rule sets{ruleSets.length ? ' (' + ruleSets.length + ')' : ''}
         </button>
       </div>
+
+      {tab === 'conn' && <ConnectionsTab returnTo={returnTo} />}
 
       {tab === 'repos' && (
         <>

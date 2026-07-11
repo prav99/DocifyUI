@@ -11,6 +11,9 @@ import { Router } from 'express';
 import { prisma } from './db.js';
 import { freshToken } from './auth.js';
 import { DEFAULT_CONFIG, mergeConfig, validateConfig, loadRepoConfig } from './adapters/relevance.js';
+import { listRepos as ghList, listOrgRepos as ghOrg } from './adapters/github.js';
+import { listProjects as glList, listGroupProjects as glOrg } from './adapters/gitlab.js';
+import { listRepos as bbList, listWorkspaceRepos as bbOrg } from './adapters/bitbucket.js';
 
 export const hubRouter = Router();
 
@@ -237,6 +240,7 @@ hubRouter.post('/repositories', async (req, res) => {
     });
     added.push(serializeRepo(row));
   }
+  catCache.delete(req.uid);
   res.status(201).json({ added: added.length, skipped, repositories: added });
 });
 
@@ -251,6 +255,7 @@ hubRouter.patch('/repositories', async (req, res) => {
   if (typeof b.branch === 'string' && b.branch.trim()) data.branch = b.branch.trim().slice(0, 80);
   if (!Object.keys(data).length) return res.status(400).json({ error: 'Nothing to update' });
   const out = await prisma.repository.updateMany({ where: { id: { in: ids }, userId: req.uid }, data });
+  catCache.delete(req.uid);
   res.json({ updated: out.count });
 });
 
@@ -258,6 +263,7 @@ hubRouter.delete('/repositories', async (req, res) => {
   const ids = Array.isArray((req.body || {}).ids) ? req.body.ids.map(String) : [];
   if (!ids.length) return res.status(400).json({ error: 'Provide repository ids' });
   const out = await prisma.repository.deleteMany({ where: { id: { in: ids }, userId: req.uid } });
+  catCache.delete(req.uid);
   res.json({ removed: out.count });
 });
 
@@ -359,4 +365,147 @@ hubRouter.get('/effective-config', async (req, res) => {
   }
   const eff = await resolveEffectiveConfig(req.uid, provider, repo, branch, { ruleSetId: String(req.query.ruleSetId || '') });
   res.json({ provider, repo, branch, ...eff });
+});
+
+/* ================= Organisation connections + unified catalogue =================
+   Connections live ONLY here. Workflow pages (Source, Automation, Doc sync)
+   consume GET /hub/catalogue — one aggregated, deduped repository list built
+   from: the OAuth account of each provider, every connected organisation /
+   group / workspace, and individually added hub repositories. */
+
+const ORG_RE = /^[\w.-]+$/;
+const accountList = (p, token) => (p === 'gitlab' ? glList(token) : p === 'bitbucket' ? bbList(token) : ghList(token));
+const orgList = (p, token, org) => (p === 'gitlab' ? glOrg(token, org) : p === 'bitbucket' ? bbOrg(token, org) : ghOrg(token, org));
+
+const serializeOrg = (o) => ({
+  id: o.id, provider: o.provider, org: o.org, status: o.status, statusMsg: o.statusMsg,
+  repoCount: o.repoCount, lastSync: o.lastSync, createdAt: o.createdAt
+});
+
+hubRouter.get('/orgs', async (req, res) => {
+  const rows = await prisma.orgConnection.findMany({ where: { userId: req.uid }, orderBy: [{ provider: 'asc' }, { org: 'asc' }] });
+  res.json({ orgs: rows.map(serializeOrg) });
+});
+
+hubRouter.post('/orgs', async (req, res) => {
+  const provider = String((req.body || {}).provider || 'github');
+  const org = String((req.body || {}).org || '').trim();
+  if (!PROVIDERS.includes(provider)) return res.status(400).json({ error: 'Unknown provider' });
+  if (!ORG_RE.test(org)) return res.status(400).json({ error: 'Enter an organisation, group, or workspace name (letters, digits, dots, dashes)' });
+  const dup = await prisma.orgConnection.findFirst({ where: { userId: req.uid, provider, org } });
+  if (dup) return res.status(400).json({ error: org + ' is already connected for ' + provider });
+  // Validate against the provider before saving — never store a dead connection.
+  const token = await userToken(req.uid, provider);
+  let repos;
+  try { repos = await orgList(provider, token, org); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  const row = await prisma.orgConnection.create({
+    data: { userId: req.uid, provider, org, status: 'connected', statusMsg: '', repoCount: repos.length, lastSync: new Date() }
+  });
+  catCache.delete(req.uid);
+  res.status(201).json({ org: serializeOrg(row), repos: repos.length });
+});
+
+hubRouter.post('/orgs/:id/sync', async (req, res) => {
+  const row = await prisma.orgConnection.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  if (!row) return res.status(404).json({ error: 'Connection not found' });
+  const token = await userToken(req.uid, row.provider);
+  let data;
+  try {
+    const repos = await orgList(row.provider, token, row.org);
+    data = { status: 'connected', statusMsg: '', repoCount: repos.length, lastSync: new Date() };
+  } catch (e) {
+    data = { status: 'error', statusMsg: e.message, lastSync: new Date() };
+  }
+  const upd = await prisma.orgConnection.update({ where: { id: row.id }, data });
+  catCache.delete(req.uid);
+  res.json({ org: serializeOrg(upd) });
+});
+
+hubRouter.delete('/orgs/:id', async (req, res) => {
+  await prisma.orgConnection.deleteMany({ where: { id: req.params.id, userId: req.uid } });
+  catCache.delete(req.uid);
+  res.json({ ok: true });
+});
+
+/* ------------------------------ The catalogue ----------------------------- */
+// Aggregation hits three provider APIs, so results are cached briefly per
+// user. Mutations above and ?fresh=1 invalidate.
+const catCache = new Map(); // userId -> { at, data }
+const CAT_TTL = 60 * 1000;
+// Called whenever provider credentials change (OAuth connect, disconnect) so
+// the very next catalogue read reflects the new connection.
+export const invalidateCatalogue = (userId) => catCache.delete(userId);
+
+async function buildCatalogue(userId) {
+  const providers = {};
+  const repos = new Map(); // provider/name -> row
+  const put = (provider, r, source, orgName) => {
+    const key = provider + '/' + r.name;
+    if (!repos.has(key)) {
+      repos.set(key, {
+        provider, name: r.name, org: (r.name.split('/')[0] || ''),
+        branch: r.branch || 'main',
+        private: r.private === undefined ? null : !!r.private,
+        updated: r.updated || '', source, orgName: orgName || '',
+        ruleSetId: '', ruleSetName: ''
+      });
+    }
+  };
+
+  const sources = await prisma.source.findMany({ where: { userId, provider: { in: PROVIDERS } } });
+  await Promise.all(PROVIDERS.map(async (p) => {
+    const src = sources.find((s) => s.provider === p);
+    providers[p] = { connected: false, account: null, reason: '' };
+    const m = src && src.detail ? String(src.detail).match(/\(as ([^)]+)\)/) : null;
+    if (m) providers[p].account = m[1];
+    let token = '';
+    try { token = src && src.token ? await freshToken(src) : ''; }
+    catch (e) { providers[p].reason = e.message; return; }
+    if (!token) return;
+    try {
+      (await accountList(p, token)).forEach((r) => put(p, r, 'account'));
+      providers[p].connected = true;
+    } catch (e) {
+      providers[p].reason = e.message;
+    }
+  }));
+
+  const orgs = await prisma.orgConnection.findMany({ where: { userId }, orderBy: [{ provider: 'asc' }, { org: 'asc' }] });
+  await Promise.all(orgs.map(async (o) => {
+    const token = await userToken(userId, o.provider);
+    try { (await orgList(o.provider, token, o.org)).forEach((r) => put(o.provider, r, 'org', o.org)); }
+    catch { /* the org row keeps its own status via /sync */ }
+  }));
+
+  const hubRows = await prisma.repository.findMany({ where: { userId, enabled: true } });
+  const sets = await prisma.ruleSet.findMany({ where: { userId } });
+  const setName = (id) => (sets.find((s) => s.id === id) || {}).name || '';
+  hubRows.forEach((h) => {
+    const key = h.provider + '/' + h.repo;
+    const existing = repos.get(key);
+    if (existing) {
+      existing.ruleSetId = h.ruleSetId || '';
+      existing.ruleSetName = setName(h.ruleSetId);
+    } else {
+      repos.set(key, {
+        provider: h.provider, name: h.repo, org: h.org || (h.repo.split('/')[0] || ''),
+        branch: h.branch || 'main',
+        private: h.visibility === 'unknown' ? null : h.visibility === 'private',
+        updated: '', source: 'hub', orgName: '',
+        ruleSetId: h.ruleSetId || '', ruleSetName: setName(h.ruleSetId)
+      });
+    }
+  });
+
+  return { providers, orgs: orgs.map(serializeOrg), repos: [...repos.values()] };
+}
+
+hubRouter.get('/catalogue', async (req, res) => {
+  const fresh = String(req.query.fresh || '') === '1';
+  const hit = catCache.get(req.uid);
+  if (!fresh && hit && Date.now() - hit.at < CAT_TTL) return res.json(hit.data);
+  const data = await buildCatalogue(req.uid);
+  catCache.set(req.uid, { at: Date.now(), data });
+  res.json(data);
 });

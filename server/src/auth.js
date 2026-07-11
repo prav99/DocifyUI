@@ -404,6 +404,10 @@ authRouter.get('/:provider(github|gitlab|bitbucket)/callback', async (req, res) 
     const existing = await prisma.source.findFirst({ where: { userId: user.id, provider } });
     if (existing) await prisma.source.update({ where: { id: existing.id }, data });
     else await prisma.source.create({ data });
+    // The unified catalogue must see the new credentials immediately.
+    // (dynamic import avoids a static auth ⇄ repohub cycle)
+    const { invalidateCatalogue } = await import('./repohub.js');
+    invalidateCatalogue(user.id);
     await bootstrapUser(user);
     res.redirect(CLIENT_ORIGIN + '/oauth/complete#token=' + encodeURIComponent(sign(user.id)) + '&provider=' + provider);
   } catch (e) {

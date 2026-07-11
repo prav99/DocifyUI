@@ -15,7 +15,7 @@ import { charge } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
 import { SUPPORT_EMAIL } from './config.js';
 import { syncRouter } from './docsync.js';
-import { hubRouter, resolveEffectiveConfig } from './repohub.js';
+import { hubRouter, resolveEffectiveConfig, invalidateCatalogue } from './repohub.js';
 import { evaluateCommit, passesScan } from './adapters/relevance.js';
 import { adminRouter } from './admin.js';
 
@@ -260,6 +260,7 @@ apiRouter.post('/sources', async (req, res) => {
   const row = existing
     ? await prisma.source.update({ where: { id: existing.id }, data })
     : await prisma.source.create({ data });
+  invalidateCatalogue(req.uid);
   res.json({ source: row, info });
 });
 
@@ -291,6 +292,7 @@ apiRouter.post('/sources/scope', async (req, res) => {
 // Disconnect a source (e.g. to re-enter credentials). Idempotent.
 apiRouter.delete('/sources/:provider', async (req, res) => {
   await prisma.source.deleteMany({ where: { userId: req.uid, provider: req.params.provider } });
+  invalidateCatalogue(req.uid);
   res.json({ ok: true });
 });
 

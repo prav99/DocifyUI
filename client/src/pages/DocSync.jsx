@@ -304,11 +304,11 @@ function UploadPanel({ onUploaded }) {
             {busy ? 'Importing…' : 'Import document'}
           </button>
           <span className="helper">
-            Private docs repos: connect the source first so Docify has read access. Re-import any time — versions are kept.
+            Private docs repos: connect the account on the Repository Connections page first so Docify has read access. Re-import any time — versions are kept.
           </span>
         </div>
       )}
-      <RepoHubCta style={{ marginTop: 14, marginBottom: 0 }} />
+      <RepoHubCta action="Open Repository Connections" style={{ marginTop: 14, marginBottom: 0 }} />
     </div>
   );
 }
