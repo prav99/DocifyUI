@@ -91,17 +91,30 @@ export default function Format() {
         .join('; ');
       const instructions = [scopeNote && 'Focus on these source items — ' + scopeNote + '.', flow.instructions]
         .filter(Boolean).join('\n');
-      const d = await api('/generations', {
-        method: 'POST',
-        body: {
-          repo: flow.repo || flow.provider, branch: 'main', track: flow.track,
-          docTypes: flow.docTypes, format: selected[0], formats: selected,
-          instructions, files: flow.files, provider: flow.provider || 'github',
-          skillName: flow.skillName || '', skill: flow.skillContent || '',
-          brief: { audience: flow.briefAudience || '', emphasis: flow.briefEmphasis || '', tone: flow.briefTone || '' },
-          output: { ...OUT_DEFAULTS, ...(flow.outputCfg || {}) }
-        }
-      });
+      const body = {
+        repo: flow.repo || flow.provider, branch: 'main', track: flow.track,
+        docTypes: flow.docTypes, format: selected[0], formats: selected,
+        instructions, files: flow.files, provider: flow.provider || 'github',
+        skillName: flow.skillName || '', skill: flow.skillContent || '',
+        brief: { audience: flow.briefAudience || '', emphasis: flow.briefEmphasis || '', tone: flow.briefTone || '' },
+        output: { ...OUT_DEFAULTS, ...(flow.outputCfg || {}) }
+      };
+      const d = await api('/generations', { method: 'POST', body });
+      // Every additional repository selected at the Source step gets its own
+      // generation with the same settings — they run in parallel and appear on
+      // the Dashboard alongside this one.
+      const extras = (flow.extraRepos || []).filter((x) => x && x.repo && x.repo !== body.repo);
+      let started = 0;
+      for (const ex of extras) {
+        try {
+          await api('/generations', { method: 'POST', body: { ...body, repo: ex.repo, provider: ex.provider } });
+          started += 1;
+        } catch { /* one bad extra must not block the primary run */ }
+      }
+      if (started) {
+        toast('success', started + ' more generation' + (started > 1 ? 's' : '') + ' started',
+          'Same settings, one per additional repository — follow them on the Dashboard.');
+      }
       setFlow({ genId: d.generation.id });
       nav('/generate');
     } catch (e) { toast('error', 'Could not start generation', e.message); }

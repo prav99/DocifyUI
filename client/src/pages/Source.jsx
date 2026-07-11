@@ -39,7 +39,7 @@ export default function Source() {
   const [hubRepos, setHubRepos] = useState(null); // Repository hub: connect once, use everywhere
   const [hosts, setHosts] = useState({}); // per code host: { loading, connected, repos, reason }
   const [oauthAvail, setOauthAvail] = useState({}); // which hosts have real OAuth configured
-  const [addOther, setAddOther] = useState({}); // per host: show owner/name input
+  const [adding, setAdding] = useState({}); // per host: '' | 'list' | 'name' — the add-another chooser
   const [otherVal, setOtherVal] = useState({}); // per host: owner/name draft
 
   const sources = flow.sources || [];
@@ -110,11 +110,17 @@ export default function Source() {
     sources.filter((p) => KIND[p] === 'picker').forEach((p) => {
       const st = hosts[p];
       const c = cfg[p] || {};
-      if (!st || st.loading || !c.sel || c.custom || c.fromHub) return;
-      if (!st.connected || !(st.repos || []).some((r) => r.name === c.sel)) {
-        setCfg(p, { sel: '' });
+      if (!st || st.loading) return;
+      const ok = (name, custom, fromHub) =>
+        custom || fromHub || (st.connected && (st.repos || []).some((r) => r.name === name));
+      const patch = {};
+      if (c.sel && !ok(c.sel, c.custom, c.fromHub)) {
+        patch.sel = '';
         toast('info', 'Selection cleared', c.sel + ' is no longer accessible from your ' + p + ' account.');
       }
+      const extra = (c.extra || []).filter((e) => ok(e.repo, e.custom, e.fromHub));
+      if (extra.length !== (c.extra || []).length) patch.extra = extra;
+      if (Object.keys(patch).length) setCfg(p, patch);
     });
   }, [hosts]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -264,7 +270,16 @@ export default function Source() {
         if (c.scope && c.scopeLabel) srcScope[id] = { scope: c.scope, label: c.scopeLabel };
         else if (c.sel && PICK_AFTER[id]) srcScope[id] = { scope: c.sel, label: PICK_AFTER[id] + ' ' + c.sel };
       }
-      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null, srcScope });
+      // Additional repositories (beyond the primary per host) travel with the
+      // flow — each one gets its own generation with identical settings.
+      const extraRepos = [];
+      for (const id of hostIds) {
+        ((cfg[id] || {}).extra || []).forEach((e) => extraRepos.push({ provider: id, repo: e.repo }));
+        // A second host's primary is also documented separately from the flow's
+        // primary repository.
+        if (primary !== id && (cfg[id] || {}).sel) extraRepos.push({ provider: id, repo: cfg[id].sel });
+      }
+      setFlow({ provider: primary || sources[0], repo: pc.sel || pc.url || null, srcScope, extraRepos });
       nav('/doctype');
     } catch (e) { toast('error', 'Could not save sources', e.message); }
     finally { setBusy(false); }
@@ -344,14 +359,26 @@ export default function Source() {
                   });
                   return out;
                 };
+                // First pick per host becomes the primary; every further pick is
+                // an EXTRA repository that gets its own generation with the
+                // same settings when the user hits Generate.
+                const addRepo = (p, repo, { hub = false, custom = false } = {}) => {
+                  const c = cfg[p] || {};
+                  const extra = c.extra || [];
+                  if (repo === c.sel || extra.some((e) => e.repo === repo)) {
+                    return toast('info', 'Already selected', repo + ' is already in your selection.');
+                  }
+                  if (!c.sel) setCfg(p, { sel: repo, custom, fromHub: hub });
+                  else setCfg(p, { extra: [...extra, { repo, fromHub: hub, custom }] });
+                  setAdding((a) => ({ ...a, [p]: '' }));
+                  setOtherVal((o) => ({ ...o, [p]: '' }));
+                };
                 const addByName = (p) => {
                   const v = (otherVal[p] || '').trim();
                   if (!/^[\w.-]+\/[\w.-]+$/.test(v)) {
                     return toast('error', 'Use the owner/name format', 'For example expressjs/express — any public repository works.');
                   }
-                  setCfg(p, { sel: v, custom: true, fromHub: false });
-                  setAddOther((o) => ({ ...o, [p]: false }));
-                  setOtherVal((o) => ({ ...o, [p]: '' }));
+                  addRepo(p, v, { custom: true });
                 };
                 return (
                   <div className="srccard" style={{ borderLeftColor: readyCount === hostIds.length ? 'var(--support-success)' : 'var(--support-warning)' }}>
@@ -400,25 +427,64 @@ export default function Source() {
                       const c = cfg[p] || {};
                       const st = hosts[p];
                       const opts = optionsFor(p);
-                      if (!st.connected && !opts.length && !c.sel && !addOther[p]) {
+                      const mode = adding[p] || '';
+                      if (!st.connected && !opts.length && !c.sel && !mode) {
                         // Fully unconnected host: the connect block above is the
                         // state; offer only the compact public-repo escape hatch.
                         return (
                           <p key={p} className="helper mt3">
-                            <button type="button" className="linkbtn" onClick={() => setAddOther((o) => ({ ...o, [p]: true }))}>
+                            <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: 'name' }))}>
                               ＋ Or document a public {byId(p).name} repository by owner/name
                             </button>
                           </p>
                         );
                       }
+                      const picked = [c.sel, ...(c.extra || []).map((e) => e.repo)].filter(Boolean);
+                      const remaining = opts.filter((r) => !picked.includes(r.name));
                       // Organisation groups keep long lists navigable and make
                       // picking from another org a one-scroll job.
                       const orgs = {};
-                      opts.forEach((r) => {
+                      remaining.forEach((r) => {
                         const org = r.name.split('/')[0] || 'other';
                         (orgs[org] = orgs[org] || []).push(r);
                       });
-                      const info = opts.find((r) => r.name === c.sel);
+                      const metaFor = (name, custom) => {
+                        const i = opts.find((r) => r.name === name);
+                        return i
+                          ? [i.branch, i.priv !== undefined ? (i.priv ? 'Private' : 'Public') : '', i.hub && i.ruleSetName ? i.ruleSetName : ''].filter(Boolean).join(' · ')
+                          : custom ? 'Public repository' : '';
+                      };
+                      const chooser = (
+                        <select className="select" style={{ flex: '1 1 260px', maxWidth: 440 }} value=""
+                          aria-label={'Choose a ' + byId(p).name + ' repository'}
+                          onChange={(e) => {
+                            const r = opts.find((x) => x.name === e.target.value);
+                            addRepo(p, e.target.value, { hub: !!(r && r.hub) });
+                          }}>
+                          <option value="" disabled>Choose a repository…</option>
+                          {Object.keys(orgs).sort().map((org) => (
+                            <optgroup key={org} label={org}>
+                              {orgs[org].map((r) => (
+                                <option key={r.name} value={r.name}>
+                                  {[r.name, r.branch, r.hub && r.ruleSetName ? r.ruleSetName : ''].filter(Boolean).join(' · ')}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      );
+                      const nameInput = (
+                        <div className="row mt3" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                          <input className="input" style={{ flex: '1 1 220px', maxWidth: 320 }}
+                            placeholder="owner/name — e.g. expressjs/express" autoFocus
+                            aria-label={byId(p).name + ' repository by owner/name'}
+                            value={otherVal[p] || ''}
+                            onChange={(e) => setOtherVal((o) => ({ ...o, [p]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addByName(p); }} />
+                          <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => addByName(p)}>Add</button>
+                          <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: '' }))}>Cancel</button>
+                        </div>
+                      );
                       return (
                         <div key={p} className="pickblock mt4">
                           <div className="pickrow">
@@ -428,33 +494,12 @@ export default function Source() {
                                 <span className="pickrow-sel">
                                   <IcCheck />
                                   <b>{c.sel}</b>
-                                  <span className="reporow-meta">
-                                    {info
-                                      ? [info.branch, info.priv !== undefined ? (info.priv ? 'Private' : 'Public') : '', info.hub && info.ruleSetName ? info.ruleSetName : ''].filter(Boolean).join(' · ')
-                                      : c.custom ? 'Public repository' : ''}
-                                  </span>
+                                  <span className="reporow-meta">{metaFor(c.sel, c.custom)}</span>
                                 </span>
-                                <button type="button" className="linkbtn" onClick={() => setCfg(p, { sel: '', custom: false, fromHub: false })}>Change</button>
+                                <button type="button" className="linkbtn"
+                                  onClick={() => setCfg(p, { sel: '', custom: false, fromHub: false, extra: [] })}>Change</button>
                               </>
-                            ) : opts.length ? (
-                              <select className="select" style={{ flex: '1 1 260px', maxWidth: 440 }} value=""
-                                aria-label={'Choose a ' + byId(p).name + ' repository'}
-                                onChange={(e) => {
-                                  const r = opts.find((x) => x.name === e.target.value);
-                                  setCfg(p, { sel: e.target.value, custom: false, fromHub: !!(r && r.hub) });
-                                }}>
-                                <option value="" disabled>Choose a repository…</option>
-                                {Object.keys(orgs).sort().map((org) => (
-                                  <optgroup key={org} label={org}>
-                                    {orgs[org].map((r) => (
-                                      <option key={r.name} value={r.name}>
-                                        {[r.name, r.branch, r.hub && r.ruleSetName ? r.ruleSetName : ''].filter(Boolean).join(' · ')}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                ))}
-                              </select>
-                            ) : (
+                            ) : opts.length ? chooser : (
                               <span className="helper">
                                 {st.connected
                                   ? 'No repositories found — check your permissions or connect another account.'
@@ -462,27 +507,40 @@ export default function Source() {
                               </span>
                             )}
                           </div>
-                          {!c.sel && (
-                            addOther[p] ? (
-                              <div className="row mt3" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                                <input className="input" style={{ flex: '1 1 220px', maxWidth: 320 }}
-                                  placeholder="owner/name — e.g. expressjs/express" autoFocus
-                                  aria-label={byId(p).name + ' repository by owner/name'}
-                                  value={otherVal[p] || ''}
-                                  onChange={(e) => setOtherVal((o) => ({ ...o, [p]: e.target.value }))}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') addByName(p); }} />
-                                <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => addByName(p)}>Add</button>
-                                <button type="button" className="linkbtn" onClick={() => setAddOther((o) => ({ ...o, [p]: false }))}>Cancel</button>
+                          {(c.extra || []).map((e) => (
+                            <div key={e.repo} className="pickrow mt2">
+                              <span className={'provtag prov--' + p}>{byId(p).name}</span>
+                              <span className="pickrow-sel">
+                                <IcCheck />
+                                <b>{e.repo}</b>
+                                <span className="reporow-meta">{metaFor(e.repo, e.custom)}</span>
+                              </span>
+                              <button type="button" className="linkbtn"
+                                onClick={() => setCfg(p, { extra: (c.extra || []).filter((x) => x.repo !== e.repo) })}>Remove</button>
+                            </div>
+                          ))}
+                          {c.sel && (c.extra || []).length > 0 && (
+                            <p className="helper mt2">Each additional repository gets its own generation with the same settings.</p>
+                          )}
+                          {mode === 'name' ? nameInput
+                            : mode === 'list' ? (
+                              <div className="row mt3" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                                {remaining.length ? chooser : <span className="helper">All listed repositories are selected.</span>}
+                                <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: 'name' }))}>
+                                  Another organisation or public repository
+                                </button>
+                                <button type="button" className="linkbtn" onClick={() => setAdding((a) => ({ ...a, [p]: '' }))}>Cancel</button>
                               </div>
                             ) : (
                               <p className="mt2">
                                 <button type="button" className="linkbtn" style={{ fontSize: 12.5 }}
-                                  onClick={() => setAddOther((o) => ({ ...o, [p]: true }))}>
-                                  ＋ Repository from another organisation or any public repository
+                                  onClick={() => setAdding((a) => ({ ...a, [p]: c.sel ? 'list' : 'name' }))}>
+                                  {c.sel
+                                    ? '＋ Add another repository'
+                                    : '＋ Repository from another organisation or any public repository'}
                                 </button>
                               </p>
-                            )
-                          )}
+                            )}
                         </div>
                       );
                     })}
