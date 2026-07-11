@@ -1149,6 +1149,16 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .hubcta-plus{font-size:13px;line-height:1}
 .returnbar{position:sticky;top:56px;z-index:58;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#edf5ff;border:1px solid #d0e2ff;border-left:3px solid #0f62fe;padding:12px 18px;margin-bottom:20px}
 
+/* ==== Public status page ==== */
+.statusbanner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#defbe6;border:1px solid #a7f0ba;border-left:3px solid #24a148;padding:14px 20px;font-size:14.5px}
+.statusbanner--down{background:#fff1f1;border-color:#ffd7d9;border-left-color:#da1e28}
+.updays{display:flex;gap:2px;flex-wrap:wrap}
+.upday{width:7px;height:26px;border-radius:1px;background:#e0e0e0;flex:none}
+.upday--ok{background:#24a148}
+.upday--partial{background:#f1c21b}
+.upday--down{background:#da1e28}
+.upday--none{background:#e0e0e0}
+
 /* ==== Repository selection panel (Source step) ==== */
 .connrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .connchip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-secondary);background:var(--layer-02,#ffffff);border:1px solid var(--border-subtle);padding:4px 10px}

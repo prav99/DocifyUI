@@ -759,6 +759,7 @@ export default function Landing() {
             <a onClick={() => nav('/legal/privacy')}>Privacy policy</a>
             <a onClick={() => nav('/legal/terms')}>Terms of service</a>
             <a onClick={() => nav('/legal/security')}>Security</a>
+            <a onClick={() => nav('/status')}>System status</a>
           </nav>
         </div>
         <div className="sitefoot-inner">
@@ -767,6 +768,7 @@ export default function Landing() {
             <a onClick={() => nav('/docs')}>Docs</a>
             <a onClick={() => nav('/pricing')}>Pricing</a>
             <a onClick={() => nav('/legal/security')}>Security</a>
+            <a onClick={() => nav('/status')}>Status</a>
           </nav>
         </div>
       </footer>

@@ -25,6 +25,7 @@ import { Docs, DocArticle } from './pages/Docs.jsx';
 import Help from './pages/Help.jsx';
 import Legal from './pages/Legal.jsx';
 import Contact from './pages/Contact.jsx';
+import Status from './pages/Status.jsx';
 import { trackPageview, installClickTracking } from './analytics.js';
 
 function Analytics() {
@@ -84,6 +85,7 @@ function App() {
               <Route path="/help/:topic" element={<Help />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/legal/:slug" element={<Legal />} />
+              <Route path="/status" element={<Status />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

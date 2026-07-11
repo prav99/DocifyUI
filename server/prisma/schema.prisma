@@ -213,6 +213,18 @@ model Repository {
   updatedAt  DateTime  @updatedAt
 }
 
+// Self-monitoring: one health sample every few minutes powers the public
+// status page (component states + uptime history). Gaps in samples read as
+// downtime — honest by construction.
+model StatusSample {
+  id   String   @id @default(cuid())
+  at   DateTime @default(now())
+  ok   Boolean  @default(true)
+  dbMs Int      @default(0)
+  aiOk Boolean  @default(true)
+  note String   @default("")
+}
+
 // Tenant writing profile: the organization's voice, terminology, and
 // prohibited words. Merged into every generation's resolved writing policy.
 model WritingProfile {

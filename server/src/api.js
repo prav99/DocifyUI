@@ -252,6 +252,102 @@ apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
   res.json({ ok: true, action: run.status === 'skipped' ? 'skipped' : 'regenerating', run });
 });
 
+/* ---------------- Public status page (self-monitoring) ----------------
+   A health sample is recorded every 5 minutes. If the service is down,
+   nothing is recorded — so gaps count as downtime, which keeps the page
+   honest. GET /health also runs a LIVE check for external monitors. */
+async function liveHealth() {
+  const out = { ok: true, components: {} };
+  const t0 = Date.now();
+  try {
+    await prisma.user.count();
+    out.components.database = { ok: true, latencyMs: Date.now() - t0 };
+  } catch (e) {
+    out.ok = false;
+    out.components.database = { ok: false, error: 'unreachable' };
+  }
+  out.components.aiGeneration = { ok: !!process.env.ANTHROPIC_API_KEY, note: process.env.ANTHROPIC_API_KEY ? 'configured' : 'not configured — template fallback active' };
+  out.components.webhooks = { ok: true, note: 'receiver in-process' };
+  out.components.api = { ok: true };
+  return out;
+}
+
+apiRouter.get('/health', async (req, res) => {
+  const h = await liveHealth();
+  res.status(h.ok ? 200 : 503).json(h);
+});
+
+// One sampler per process; retention 95 days.
+const SAMPLE_EVERY_MS = 5 * 60 * 1000;
+setInterval(async () => {
+  try {
+    const h = await liveHealth();
+    await prisma.statusSample.create({
+      data: {
+        ok: h.ok, dbMs: (h.components.database && h.components.database.latencyMs) || 0,
+        aiOk: !!(h.components.aiGeneration && h.components.aiGeneration.ok),
+        note: h.ok ? '' : 'degraded'
+      }
+    });
+    await prisma.statusSample.deleteMany({ where: { at: { lt: new Date(Date.now() - 95 * 864e5) } } });
+  } catch { /* if the DB is down there is nothing to record — the gap tells the story */ }
+}, SAMPLE_EVERY_MS).unref?.();
+
+apiRouter.get('/status', async (req, res) => {
+  const now = Date.now();
+  const [live, samples] = await Promise.all([
+    liveHealth(),
+    prisma.statusSample.findMany({ where: { at: { gte: new Date(now - 90 * 864e5) } }, orderBy: { at: 'asc' } })
+      .catch(() => [])
+  ]);
+  // Uptime per window: expected one sample per 5 minutes; missing or failed
+  // samples both count against uptime.
+  const uptime = {};
+  for (const [label, ms] of [['24h', 864e5], ['7d', 7 * 864e5], ['30d', 30 * 864e5]]) {
+    const inWin = samples.filter((s) => now - new Date(s.at).getTime() <= ms);
+    const expected = Math.max(1, Math.floor(ms / SAMPLE_EVERY_MS));
+    const okCount = inWin.filter((s) => s.ok).length;
+    // A young deployment has fewer samples than the window expects — measure
+    // against observed history, never claim more than we can prove.
+    uptime[label] = inWin.length
+      ? Math.round((okCount / Math.min(expected, Math.max(inWin.length, 1))) * 1000) / 10
+      : null;
+  }
+  // Daily buckets for the 90-day bar strip.
+  const days = [];
+  for (let i = 89; i >= 0; i--) {
+    const dayStart = new Date(new Date(now - i * 864e5).toISOString().slice(0, 10));
+    const dayEnd = new Date(dayStart.getTime() + 864e5);
+    const inDay = samples.filter((s) => new Date(s.at) >= dayStart && new Date(s.at) < dayEnd);
+    const okc = inDay.filter((s) => s.ok).length;
+    days.push({
+      date: dayStart.toISOString().slice(0, 10),
+      state: !inDay.length ? 'none' : okc === inDay.length ? 'ok' : okc / inDay.length > 0.5 ? 'partial' : 'down'
+    });
+  }
+  // Incidents: consecutive failed samples in the last 30 days.
+  const incidents = [];
+  let run = null;
+  for (const s of samples.filter((x) => now - new Date(x.at).getTime() <= 30 * 864e5)) {
+    if (!s.ok) {
+      if (!run) run = { start: s.at, end: s.at, samples: 0 };
+      run.end = s.at; run.samples++;
+    } else if (run) { incidents.push(run); run = null; }
+  }
+  if (run) incidents.push(run);
+  res.json({
+    ok: live.ok,
+    components: live.components,
+    uptime,
+    days,
+    incidents: incidents.slice(-10).reverse().map((i) => ({
+      start: i.start, end: i.end, approxMinutes: i.samples * 5
+    })),
+    monitoringSince: samples.length ? samples[0].at : null,
+    generatedAt: new Date().toISOString()
+  });
+});
+
 /* ---------- everything below requires auth ---------- */
 apiRouter.use(requireAuth);
 
