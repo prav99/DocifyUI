@@ -16,7 +16,10 @@ const DEFAULT_CFG = {
   provider: 'github', repo: '',
   branch: 'main',
   events: { push: true, mergedPr: true }, pathFilter: '',
-  jira: { enabled: false, site: '', projectKey: '', requireIssue: false },
+  jira: {
+    enabled: false, site: '', projectKey: '', requireIssue: false,
+    triggers: { created: false, updated: false, statusDone: true, comment: false }
+  },
   track: 'technical', docTypes: ['api'], format: 'markdown',
   templateFrom: 'latest', updatePolicy: 'place', versioning: 'semver-patch',
   gate: 85, minAssistant: 0, autoFix: true, requireApproval: false,
