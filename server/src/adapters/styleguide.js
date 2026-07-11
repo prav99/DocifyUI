@@ -290,9 +290,33 @@ export function styleAudit(content, policy) {
     if (heads[i].level > heads[i - 1].level + 1) hierarchyJumps++;
   }
   if (hierarchyJumps) findings.push({ kind: 'structure', preferred: 'sequential heading levels', detected: hierarchyJumps + ' level jump(s)', occurrences: hierarchyJumps, action: 'Do not skip heading levels (## → ####)' });
-  // Required sections present (fuzzy heading match).
+  // Required sections present — matched by MEANING, not exact wording:
+  // "Before you begin" satisfies Prerequisites, "About this guide" satisfies
+  // Overview. Good writing must never be penalized for better headings.
+  const SECTION_SYNONYMS = {
+    overview: ['overview', 'about', 'introduction', 'what is', 'summary'],
+    prerequisites: ['prerequisite', 'before you begin', 'requirement', 'what you need', 'before you start'],
+    troubleshooting: ['troubleshoot', 'faq', 'common problem', 'known issue', 'if something goes wrong'],
+    authentication: ['authentication', 'auth', 'credentials', 'api key', 'token'],
+    endpoints: ['endpoint', 'operations', 'resources', 'api reference', 'methods'],
+    errors: ['error', 'status code', 'failure'],
+    installation: ['install', 'setup', 'set up', 'getting started'],
+    verification: ['verif', 'confirm', 'check the installation', 'test the'],
+    configuration: ['configur', 'settings', 'options'],
+    'system requirements': ['system requirement', 'supported', 'environment'],
+    'new features': ['new feature', 'what', 'added', 'highlights'],
+    'resolved issues': ['resolved', 'fixed', 'bug fix'],
+    steps: ['step', 'procedure', 'how to', 'instructions'],
+    summary: ['summary', 'overview', 'tl;dr'],
+    problem: ['problem', 'challenge', 'pain'],
+    solution: ['solution', 'how it works', 'approach'],
+    'what’s new': ['what', 'new', 'change', 'update']
+  };
   const headingBlob = heads.map((h) => h.title.toLowerCase()).join(' | ');
-  const missing = policy.requiredSections.filter((s) => !headingBlob.includes(s.toLowerCase().split(' ')[0]));
+  const missing = policy.requiredSections.filter((s) => {
+    const syns = SECTION_SYNONYMS[s.toLowerCase()] || [s.toLowerCase().split(' ')[0]];
+    return !syns.some((syn) => headingBlob.includes(syn));
+  });
   for (const s of missing) findings.push({ kind: 'structure', preferred: s, detected: 'section missing', occurrences: 1, action: 'Add the mandatory “' + s + '” section' });
   // Sentence length.
   const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 25);
