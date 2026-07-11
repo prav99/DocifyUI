@@ -141,22 +141,36 @@ export default function Governance() {
 
   async function correctAll() {
     const results = [];
-    setRun({ idx: 0, stage: 0, total: selDocs.length, results });
+    setRun({ idx: 0, elapsed: 0, total: selDocs.length, results });
     for (let i = 0; i < selDocs.length; i++) {
       const d = selDocs[i];
-      setRun((r) => ({ ...r, idx: i, stage: 0 }));
-      const tick = setInterval(() => setRun((r) => (r ? { ...r, stage: Math.min(r.stage + 1, RUN_STEPS.length - 1) } : r)), 8000);
+      setRun((r) => ({ ...r, idx: i, elapsed: 0 }));
+      // Elapsed-seconds ticker: the visible percentage creeps toward — but
+      // never reaches — the current document's share, so the bar cannot claim
+      // completion while the AI is still writing.
+      const tick = setInterval(() => setRun((r) => (r ? { ...r, elapsed: r.elapsed + 1 } : r)), 1000);
       try {
-        const out = await api('/sync/documents/' + d.id + '/standardize', { method: 'POST', body: { docType, guide, notes } });
+        const out = await Promise.race([
+          api('/sync/documents/' + d.id + '/standardize', { method: 'POST', body: { docType, guide, notes } }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('__timeout__')), 240000))
+        ]);
         results.push({ docId: d.id, name: d.name, scores: out.scores, updateId: out.update && out.update.id });
       } catch (e) {
-        results.push({ docId: d.id, name: d.name, error: e.message });
+        results.push({
+          docId: d.id, name: d.name,
+          error: e.message === '__timeout__'
+            ? 'Still rebuilding in the background — the proposal will appear in Review & export when ready'
+            : e.message,
+          soft: e.message === '__timeout__'
+        });
       } finally { clearInterval(tick); }
       setRun((r) => (r ? { ...r, results: [...results] } : r));
     }
     setRun((r) => (r ? { ...r, idx: selDocs.length } : r));
     const ok = results.filter((x) => !x.error).length;
-    toast(ok ? 'success' : 'error', ok + ' of ' + selDocs.length + ' proposals ready', ok ? 'Review, approve, and export in the final step.' : 'See the per-document errors.');
+    toast(ok ? 'success' : 'info', ok + ' of ' + selDocs.length + ' proposals ready',
+      ok === selDocs.length ? 'Review, approve, and export in the final step.'
+        : 'Documents still rebuilding will appear in Review & export automatically.');
     await loadProposals();
     setStep(3);
   }
@@ -398,21 +412,38 @@ export default function Governance() {
             );
           })}
 
-          {run && (
-            <div className="pickblock mt5" style={{ borderLeft: '3px solid #0f62fe' }}>
-              <p className="body01"><b>Correcting document {Math.min(run.idx + 1, run.total)} of {run.total}</b>
-                {run.idx < run.total && <span className="t2"> — {selDocs[run.idx] ? selDocs[run.idx].name : ''}</span>}
-              </p>
-              <div className="syncprog mt3"><div style={{ width: Math.round(((run.idx + (run.idx < run.total ? (run.stage + 1) / RUN_STEPS.length : 0)) / run.total) * 100) + '%' }} /></div>
-              <p className="helper mt2">{run.idx < run.total ? RUN_STEPS[run.stage] + '…' : 'Finishing…'} · you can leave this page — proposals land in the review queue either way</p>
-              {run.results.map((r) => (
-                <p key={r.docId} className="helper mt2">
-                  {r.error ? '✕ ' + r.name + ' — ' + r.error
-                    : '✓ ' + r.name + (r.scores ? ' — consistency ' + r.scores.before.overall + ' → ' + r.scores.after.overall : '')}
+          {run && (() => {
+            // Honest progress: within the current document the fraction creeps
+            // asymptotically toward ~95% (elapsed / (elapsed + 40s)) — it can
+            // slow down, but it can never claim "done" before the server does.
+            const inFlight = run.idx < run.total;
+            const perDoc = inFlight ? Math.min(0.95, run.elapsed / (run.elapsed + 40)) : 0;
+            const pct = Math.min(100, Math.round(((run.idx + perDoc) / run.total) * 100));
+            const stageIdx = Math.min(Math.floor(run.elapsed / 8), RUN_STEPS.length - 1);
+            return (
+              <div className="pickblock mt5" style={{ borderLeft: '3px solid #0f62fe' }}>
+                <div className="row row--between" style={{ flexWrap: 'wrap', gap: 10 }}>
+                  <p className="body01"><b>Correcting document {Math.min(run.idx + 1, run.total)} of {run.total}</b>
+                    {inFlight && <span className="t2"> — {selDocs[run.idx] ? selDocs[run.idx].name : ''}</span>}
+                  </p>
+                  <p className="h02" style={{ color: '#0f62fe' }}>{pct}%</p>
+                </div>
+                <div className="syncprog mt3"><div style={{ width: pct + '%' }} /></div>
+                <p className="helper mt2">
+                  {inFlight
+                    ? RUN_STEPS[stageIdx] + '… · ' + run.elapsed + 's elapsed — large documents take 1–3 minutes'
+                    : 'Finishing…'}
+                  {' · you can leave this page — proposals land in the review queue either way'}
                 </p>
-              ))}
-            </div>
-          )}
+                {run.results.map((r) => (
+                  <p key={r.docId} className="helper mt2">
+                    {r.error ? (r.soft ? '⏳ ' : '✕ ') + r.name + ' — ' + r.error
+                      : '✓ ' + r.name + (r.scores ? ' — consistency ' + r.scores.before.overall + ' → ' + r.scores.after.overall : '')}
+                  </p>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="row mt6" style={{ justifyContent: 'space-between' }}>
             <button className="btn btn--ghost btn--field" disabled={!!run} onClick={() => setStep(1)}>← Back</button>
