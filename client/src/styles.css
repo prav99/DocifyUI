@@ -1141,6 +1141,14 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 @media(max-width:1000px){.trustgrid{grid-template-columns:1fr 1fr}}
 @media(max-width:520px){.trustgrid{grid-template-columns:1fr}}
 
+/* ==== Repo-hub contextual CTA + return-to-workflow bar ==== */
+.hubcta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--text-secondary)}
+.hubcta-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid #0f62fe;color:#0f62fe;padding:5px 12px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .12s,color .12s}
+.hubcta-btn:hover{background:#0f62fe;color:#fff}
+.hubcta-btn:focus-visible{outline:2px solid #0f62fe;outline-offset:2px}
+.hubcta-plus{font-size:13px;line-height:1}
+.returnbar{position:sticky;top:56px;z-index:58;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#edf5ff;border:1px solid #d0e2ff;border-left:3px solid #0f62fe;padding:12px 18px;margin-bottom:20px}
+
 /* ==== Sample-data provenance: demo commits must never read as real work ==== */
 .tag--sample{background:#f4f4f4;color:#6f6f6f;border:1px dashed #a8a8a8;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase}
 .demonote{display:flex;gap:12px;align-items:flex-start;background:#fcf4d6;border:1px solid #f1c21b;border-left:3px solid #f1c21b;padding:12px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.55;color:#525252}

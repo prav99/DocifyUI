@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, ScoreTag, IcCheck, HelpLink } from '../ui.jsx';
+import { NavBar, ScoreTag, IcCheck, HelpLink, RepoHubCta } from '../ui.jsx';
 
 /* =====================================================================
    Auto-regenerate on merge — the orchestration module.
@@ -275,6 +275,7 @@ function Wizard({ existing, catalog, onDone }) {
                 onChange={(e) => set({ repo: e.target.value.trim() })} />
               <p className="helper">Public repositories work without connecting an account — documentation is generated from their real source files.</p>
             </div>
+            <RepoHubCta style={{ marginBottom: 16 }} />
             <div className="field" style={{ marginBottom: 0 }}>
               <label htmlFor="wzrules">Documentation rule set</label>
               {ruleSets === null ? <p className="helper">Loading rule sets…</p> : (

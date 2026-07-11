@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
-import { NavBar, Modal, SrcMark, IcCheck, HelpLink } from '../ui.jsx';
+import { NavBar, Modal, SrcMark, IcCheck, HelpLink, RepoHubCta } from '../ui.jsx';
 
 // How each source gets configured.
 const KIND = {
@@ -47,6 +47,27 @@ export default function Source() {
       .then((d) => setHubRepos(d.repositories))
       .catch(() => setHubRepos([]));
   }, []);
+
+  // Returning from the Repository hub with a fresh connection? Auto-select it
+  // so the user lands exactly where they left off — repo already chosen.
+  useEffect(() => {
+    if (!hubRepos) return;
+    try {
+      const stash = JSON.parse(sessionStorage.getItem('docify_new_repos') || 'null');
+      if (!Array.isArray(stash) || !stash.length) return;
+      sessionStorage.removeItem('docify_new_repos');
+      const first = stash[0];
+      if ((flow.sources || []).includes(first.provider)) {
+        setFlow((f) => ({
+          srcCfg: {
+            ...(f.srcCfg || {}),
+            [first.provider]: { ...((f.srcCfg || {})[first.provider] || {}), sel: first.repo, custom: false, fromHub: true }
+          }
+        }));
+        toast('success', first.repo + ' connected and selected', 'Your workflow continues right where you left off.');
+      }
+    } catch { /* convenience only */ }
+  }, [hubRepos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The provider chosen at sign-in is already authorized — pre-select it once,
   // so the user lands here with only the repository dropdown left to fill.
@@ -313,6 +334,13 @@ export default function Source() {
                               value={c.custom ? (c.sel || '') : ''}
                               onChange={(e) => setCfg(id, { sel: e.target.value.trim(), custom: true })} />
                           </div>
+                          <RepoHubCta
+                            label={hubRepos && !hubRepos.filter((r) => r.provider === id).length
+                              ? 'No repositories connected yet.'
+                              : 'Need a different repository?'}
+                            action={hubRepos && !hubRepos.filter((r) => r.provider === id).length
+                              ? 'Connect repository'
+                              : 'Add or manage repositories'} />
                         </div>
                       )}
 

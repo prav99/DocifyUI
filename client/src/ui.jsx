@@ -2,6 +2,25 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, toast } from './store.jsx';
 
+/* ---------- Repository-hub contextual action ----------
+   One consistent escape hatch wherever a repository is being selected:
+   "Add or manage repositories" carries a ?return= parameter so the hub can
+   send the user straight back. Workflow state lives in React context, so
+   nothing is lost while they hop over and connect a repo. */
+export function RepoHubCta({ label = 'Need a different repository?', action = 'Add or manage repositories', style }) {
+  const nav = useNavigate();
+  const loc = useLocation();
+  return (
+    <p className="hubcta" style={style}>
+      <span>{label}</span>
+      <button type="button" className="hubcta-btn" data-track="repo-hub-cta"
+        onClick={() => nav('/repos?return=' + encodeURIComponent(loc.pathname))}>
+        <span className="hubcta-plus" aria-hidden="true">＋</span>{action}
+      </button>
+    </p>
+  );
+}
+
 /* ---------- Logo: a generated document, verified ---------- */
 export function LogoMark({ size = 24 }) {
   return (

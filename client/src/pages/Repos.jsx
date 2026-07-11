@@ -1,8 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { toast } from '../store.jsx';
 import { usePageMeta } from '../seo.js';
+
+/* Workflow handoff: pages that send users here append ?return=<path>. Newly
+   connected repos are stashed so the originating page can auto-select them. */
+const NEW_REPO_KEY = 'docify_new_repos';
 
 /* ================= Repository hub =================
    Central management for every connected repository plus reusable
@@ -37,7 +41,7 @@ function Panel({ open, onClose, title, children, wide }) {
 }
 
 /* ---------------- Add repositories panel ---------------- */
-function AddReposPanel({ open, onClose, ruleSets, onAdded }) {
+function AddReposPanel({ open, onClose, ruleSets, onAdded, stashNew }) {
   const [provider, setProvider] = useState('github');
   const [repos, setRepos] = useState('');
   const [ruleSetId, setRuleSetId] = useState('');
@@ -50,6 +54,7 @@ function AddReposPanel({ open, onClose, ruleSets, onAdded }) {
       const d = await api('/hub/repositories', { method: 'POST', body: { provider, repos, ruleSetId, verify } });
       toast('success', d.added + ' repositor' + (d.added === 1 ? 'y' : 'ies') + ' added',
         d.skipped.length ? d.skipped.length + ' already connected: ' + d.skipped.slice(0, 3).join(', ') + (d.skipped.length > 3 ? '…' : '') : 'Available in every workflow immediately.');
+      if (stashNew && d.repositories.length) stashNew(d.repositories);
       setRepos('');
       onAdded();
       onClose();
@@ -286,7 +291,15 @@ export default function Repos() {
     description: 'Central repository management: GitHub, GitLab, and Bitbucket repositories with reusable documentation rule sets applied across generation, automation, and Doc sync.'
   });
   const nav = useNavigate();
+  const loc = useLocation();
+  const returnTo = new URLSearchParams(loc.search).get('return') || '';
   const [tab, setTab] = useState('repos');
+
+  // Stash newly connected repos so the originating workflow can auto-select them.
+  const stashNew = (repos) => {
+    try { sessionStorage.setItem(NEW_REPO_KEY, JSON.stringify(repos.map((r) => ({ provider: r.provider, repo: r.repo })))); }
+    catch { /* selection convenience only */ }
+  };
 
   // repositories state
   const [data, setData] = useState(null);
@@ -376,6 +389,14 @@ export default function Repos() {
 
   return (
     <div className="page" style={{ maxWidth: 1200 }}>
+      {returnTo && (
+        <div className="returnbar" role="status">
+          <span className="body01">You came from a workflow — <b>your progress is saved</b>. Connect what you need, then head back.</span>
+          <button className="btn btn--primary btn--sm btn--center" onClick={() => nav(returnTo)}>
+            ← Return to workflow
+          </button>
+        </div>
+      )}
       <div className="row row--between" style={{ flexWrap: 'wrap', gap: 16 }}>
         <div>
           <h1 className="h04">Repositories</h1>
@@ -578,7 +599,7 @@ export default function Repos() {
         </>
       )}
 
-      <AddReposPanel open={addOpen} onClose={() => setAddOpen(false)} ruleSets={ruleSets} onAdded={() => { loadRepos(); }} />
+      <AddReposPanel open={addOpen} onClose={() => setAddOpen(false)} ruleSets={ruleSets} onAdded={() => { loadRepos(); }} stashNew={returnTo ? stashNew : null} />
       <EffectiveConfigPanel repo={effRepo} onClose={() => setEffRepo(null)} />
       <RuleSetPanel open={rsPanel !== null} ruleSet={rsPanel && rsPanel.id ? rsPanel : null}
         onClose={() => setRsPanel(null)} onSaved={() => { loadRuleSets(); loadRepos(); }} />

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { toast } from '../store.jsx';
-import { Modal, NavBar, Notif } from '../ui.jsx';
+import { Modal, NavBar, Notif, RepoHubCta } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
 
 /* =========================================================================
@@ -308,6 +308,7 @@ function UploadPanel({ onUploaded }) {
           </span>
         </div>
       )}
+      <RepoHubCta style={{ marginTop: 14, marginBottom: 0 }} />
     </div>
   );
 }
