@@ -314,6 +314,14 @@ function UploadPanel({ onUploaded }) {
 }
 
 /* ---------- One document card ---------- */
+const STD_STEPS = [
+  'Reading the document',
+  'Rebuilding sections in one voice',
+  'Merging duplicated passages',
+  'Normalizing terminology and formatting',
+  'Scoring writing consistency'
+];
+
 function DocCard({ doc, onChanged, onSynced }) {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [simOpen, setSimOpen] = useState(false);
@@ -322,6 +330,7 @@ function DocCard({ doc, onChanged, onSynced }) {
   const [stdOpen, setStdOpen] = useState(false);
   const [stdType, setStdType] = useState('userguide');
   const [stdBusy, setStdBusy] = useState(false);
+  const [stdStep, setStdStep] = useState(0);
   const busyParsing = doc.status === 'parsing' || doc.status === 'indexing';
   const p = doc.profile || {};
 
@@ -357,11 +366,19 @@ function DocCard({ doc, onChanged, onSynced }) {
   }
 
   // Full-document standardization: one voice, blueprint structure — proposed
-  // as a review-queue diff, never applied silently.
+  // as a review-queue diff, never applied silently. The rebuild takes 30–90s,
+  // so the modal shows staged progress; if the connection outlasts patience,
+  // a background watcher announces the proposal when it lands.
   async function standardize() {
     setStdBusy(true);
+    setStdStep(0);
+    const tick = setInterval(() => setStdStep((s) => Math.min(s + 1, STD_STEPS.length - 1)), 8000);
+    const startedAt = Date.now();
     try {
-      const d = await api('/sync/documents/' + doc.id + '/standardize', { method: 'POST', body: { docType: stdType } });
+      const d = await Promise.race([
+        api('/sync/documents/' + doc.id + '/standardize', { method: 'POST', body: { docType: stdType } }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('__timeout__')), 180000))
+      ]);
       const s = d.scores || {};
       toast('success', 'Standardization proposal ready',
         (s.before && s.after ? 'Writing consistency ' + s.before.overall + ' → ' + s.after.overall + '. ' : '') +
@@ -369,8 +386,31 @@ function DocCard({ doc, onChanged, onSynced }) {
       setStdOpen(false);
       onSynced();
       onChanged();
-    } catch (e) { toast('error', 'Standardization failed', e.message); }
-    finally { setStdBusy(false); }
+    } catch (e) {
+      if (e.message === '__timeout__') {
+        toast('info', 'Still rebuilding in the background',
+          'Large documents can take a few minutes. You can close this — the proposal appears in the review queue automatically.');
+        setStdOpen(false);
+        // Watch for the proposal landing, then refresh and announce it.
+        const poll = setInterval(async () => {
+          try {
+            const q = await api('/sync/updates');
+            if ((q.updates || []).some((u) => u.kind === 'restructure' && new Date(u.createdAt).getTime() >= startedAt - 5000)) {
+              clearInterval(poll);
+              toast('success', 'Standardization proposal ready', 'Review the full-document diff in the queue.');
+              onSynced();
+              onChanged();
+            }
+          } catch { /* keep watching */ }
+        }, 10000);
+        setTimeout(() => clearInterval(poll), 600000);
+      } else {
+        toast('error', 'Standardization failed', e.message);
+      }
+    } finally {
+      clearInterval(tick);
+      setStdBusy(false);
+    }
   }
 
   return (
@@ -482,11 +522,19 @@ function DocCard({ doc, onChanged, onSynced }) {
             </select>
             <span className="helper">The blueprint that decides the target section outline. Mandatory sections are kept; empty ones are omitted.</span>
           </div>
+          {stdBusy && (
+            <div className="mt5">
+              <div className="syncprog"><div style={{ width: Math.round(((stdStep + 1) / STD_STEPS.length) * 90) + '%' }} /></div>
+              <p className="helper mt2">
+                {STD_STEPS[stdStep]}… · step {stdStep + 1} of {STD_STEPS.length} · large documents can take a couple of minutes
+              </p>
+            </div>
+          )}
         </div>
         <div className="mfoot">
-          <button className="btn btn--ghost btn--center" onClick={() => setStdOpen(false)}>Cancel</button>
+          <button className="btn btn--ghost btn--center" onClick={() => setStdOpen(false)}>{stdBusy ? 'Close (keeps running)' : 'Cancel'}</button>
           <button className="btn btn--primary" disabled={stdBusy} onClick={standardize}>
-            {stdBusy ? 'Rebuilding… (30–60s)' : 'Create standardization proposal'}
+            {stdBusy ? STD_STEPS[stdStep] + '…' : 'Create standardization proposal'}
           </button>
         </div>
       </Modal>
