@@ -99,7 +99,7 @@ export function Signup() {
         return;
       }
       login(d.token, d.user);
-      toast('success', 'Account created', 'Welcome to DocGen');
+      toast('success', 'Account created', 'Welcome to Docify');
       nav(dest || '/source');
     } catch (e) { toast('error', 'Signup failed', e.message); }
     finally { setBusy(false); }
@@ -119,7 +119,7 @@ export function Signup() {
     try {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email: sentTo, code: otp.trim() } });
       login(d.token, d.user);
-      toast('success', 'Account activated', 'Welcome to DocGen');
+      toast('success', 'Account activated', 'Welcome to Docify');
       nav(dest || '/source');
     } catch (e) { toast('error', 'Verification failed', e.message); }
     finally { setBusy(false); }
@@ -151,7 +151,7 @@ export function Signup() {
     try {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email, code: otp.trim() } });
       login(d.token, d.user);
-      toast('success', 'Verified and logged in', 'Welcome to DocGen');
+      toast('success', 'Verified and logged in', 'Welcome to Docify');
       nav(dest || '/dashboard');
     } catch (e) { toast('error', 'Verification failed', e.message); }
     finally { setBusy(false); }

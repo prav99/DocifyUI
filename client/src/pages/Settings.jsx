@@ -112,7 +112,7 @@ export default function Settings() {
               <div className="field">
                 <label htmlFor="wpnotes">Organization writing policy (optional)</label>
                 <textarea id="wpnotes" className="textarea" rows={4}
-                  placeholder="Anything your style guide requires — e.g. 'Refer to customers as members. Spell out numbers under ten. Product name is always DocGen, never Docgen.'"
+                  placeholder="Anything your style guide requires — e.g. 'Refer to customers as members. Spell out numbers under ten. Product name is always Docify, never Docgen.'"
                   value={wp.notes} onChange={(e) => setWp({ ...wp, notes: e.target.value })} />
               </div>
               <div className="row" style={{ gap: 12 }}>

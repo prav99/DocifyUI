@@ -129,7 +129,7 @@ export async function freshToken(src) {
 }
 
 async function fetchProfile(provider, token) {
-  const H = { Authorization: 'Bearer ' + token, 'User-Agent': 'DocGen' };
+  const H = { Authorization: 'Bearer ' + token, 'User-Agent': 'Docify' };
   if (provider === 'github') {
     const u = await (await fetch('https://api.github.com/user', { headers: H })).json();
     let email = u.email;
@@ -231,8 +231,8 @@ async function issueOtp(user) {
   });
   const token = jwt.sign({ v: user.email }, SECRET, { expiresIn: '2d' });
   const link = OAUTH_BASE + '/api/auth/verify?token=' + encodeURIComponent(token);
-  await sendMail(user.email, 'Your DocGen verification code',
-    '<p>Welcome to DocGen. Your verification code:</p>' +
+  await sendMail(user.email, 'Your Docify verification code',
+    '<p>Welcome to Docify. Your verification code:</p>' +
     '<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace">' + code + '</p>' +
     '<p>It expires in 10 minutes. You can also <a href="' + link + '">verify with one click</a>.</p>');
 }

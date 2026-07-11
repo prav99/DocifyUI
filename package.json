@@ -2,7 +2,7 @@
   "name": "docgen",
   "version": "1.0.0",
   "private": true,
-  "description": "DocGen — documentation automation SaaS (web app: React client + Node API + SQLite via Prisma)",
+  "description": "Docify — documentation automation SaaS (web app: React client + Node API + SQLite via Prisma)",
   "scripts": {
     "setup": "npm install --prefix server && npm install --prefix client && npm run db:push --prefix server && npm run seed --prefix server",
     "dev": "concurrently -n api,web -c blue,green \"npm run dev --prefix server\" \"npm run dev --prefix client\"",

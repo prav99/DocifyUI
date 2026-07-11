@@ -120,7 +120,7 @@ app.use((err, req, res, next) => {
 });
 
 const server = app.listen(PORT, () => {
-  console.log('DocGen API listening on http://localhost:' + PORT +
+  console.log('Docify API listening on http://localhost:' + PORT +
     (fs.existsSync(dist) ? ' (serving built client)' : '') + ' · pid ' + process.pid);
 });
 

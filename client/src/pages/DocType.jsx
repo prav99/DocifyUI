@@ -6,9 +6,9 @@ import { NavBar, IcCheck, HelpLink } from '../ui.jsx';
 const PLACEHOLDER = 'Provide any additional instructions for document generation. You can specify the content to include, preferred document structure, formatting requirements, target audience, sections to generate, or upload a reference file.';
 
 const SKILL_TEMPLATE = [
-  '# DocGen Skill',
+  '# Docify Skill',
   '',
-  'Configure how DocGen writes your documents. Every directive below is',
+  'Configure how Docify writes your documents. Every directive below is',
   'applied at generation time — edit freely.',
   '',
   'tone: plain and direct',
@@ -87,7 +87,7 @@ export default function DocType() {
     <>
       <div className="page">
         <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <h1 className="h04">What should DocGen produce?</h1>
+          <h1 className="h04">What should Docify produce?</h1>
           <HelpLink topic="doctype" />
         </div>
         <p className="body01 t2 mt3">Pick a track, then select one or more document types. Selections generate together as a set.</p>

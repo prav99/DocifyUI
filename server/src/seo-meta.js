@@ -5,15 +5,15 @@
 // handled by the matching hook in client/src/seo.js.
 
 export const SITE_URL = 'https://docifydocai.com';
-const SITE_NAME = 'DocGen';
+const SITE_NAME = 'Docify';
 
-const DEFAULT_DESC = 'DocGen automates technical documentation end to end: connect GitHub, GitLab, or Bitbucket and every merge updates your documentation automatically — validated by an AI quality judge and scored for AI search readiness across ChatGPT, Claude, Gemini, and Copilot.';
+const DEFAULT_DESC = 'Docify automates technical documentation end to end: connect GitHub, GitLab, or Bitbucket and every merge updates your documentation automatically — validated by an AI quality judge and scored for AI search readiness across ChatGPT, Claude, Gemini, and Copilot.';
 
 // Public, indexable routes. Anything not listed falls back to the default
 // tags (in-app routes are noindexed via robots.txt anyway).
 export const PAGE_META = {
   '/': {
-    title: 'Docify — Documentation that updates itself when your code changes | DocGen',
+    title: 'Docify — Documentation that updates itself when your code changes | Docify',
     desc: DEFAULT_DESC
   },
   '/pricing': {
@@ -26,19 +26,19 @@ export const PAGE_META = {
   },
   '/docs': {
     title: 'Product Docs & Guides | ' + SITE_NAME,
-    desc: 'How DocGen works: AI compatibility checking, LLM-as-a-Judge scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.'
+    desc: 'How Docify works: AI compatibility checking, LLM-as-a-Judge scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.'
   },
   '/help': {
     title: 'Help Center | ' + SITE_NAME,
-    desc: 'Guides for every screen of DocGen — connecting sources, choosing document types, output formats, the AI quality review, exporting, and automation.'
+    desc: 'Guides for every screen of Docify — connecting sources, choosing document types, output formats, the AI quality review, exporting, and automation.'
   },
   '/contact': {
     title: 'Contact Support | ' + SITE_NAME,
-    desc: 'Get in touch with the DocGen team — questions, bug reports, billing, or Enterprise enquiries.'
+    desc: 'Get in touch with the Docify team — questions, bug reports, billing, or Enterprise enquiries.'
   },
-  '/legal/terms': { title: 'Terms of Service | ' + SITE_NAME, desc: 'The terms that govern your use of DocGen.' },
-  '/legal/privacy': { title: 'Privacy Policy | ' + SITE_NAME, desc: 'What DocGen collects, what it never stores (your source code), and how data is handled.' },
-  '/legal/security': { title: 'Security | ' + SITE_NAME, desc: 'How DocGen protects your data: read-only source access, no source code storage, encryption in transit.' }
+  '/legal/terms': { title: 'Terms of Service | ' + SITE_NAME, desc: 'The terms that govern your use of Docify.' },
+  '/legal/privacy': { title: 'Privacy Policy | ' + SITE_NAME, desc: 'What Docify collects, what it never stores (your source code), and how data is handled.' },
+  '/legal/security': { title: 'Security | ' + SITE_NAME, desc: 'How Docify protects your data: read-only source access, no source code storage, encryption in transit.' }
 };
 
 // /docs/<slug> articles get a readable title derived from the slug.
@@ -53,7 +53,7 @@ function docArticleMeta(path) {
   )).join(' ');
   return {
     title: name + ' | ' + SITE_NAME + ' Docs',
-    desc: name + ' — how it works in DocGen, the AI documentation platform. ' + DEFAULT_DESC
+    desc: name + ' — how it works in Docify, the AI documentation platform. ' + DEFAULT_DESC
   };
 }
 
@@ -84,17 +84,17 @@ const FAQ_LD = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
   mainEntity: [
-    ['What is DocGen?',
-      'DocGen is an AI documentation generator that turns your GitHub, GitLab, or Bitbucket repository into standards-grade technical documentation — API references, user guides, release notes, and more — exported to DITA, PDF, Word, HTML, or Markdown. Every document is scored by an AI quality judge before you publish.'],
+    ['What is Docify?',
+      'Docify is an AI documentation generator that turns your GitHub, GitLab, or Bitbucket repository into standards-grade technical documentation — API references, user guides, release notes, and more — exported to DITA, PDF, Word, HTML, or Markdown. Every document is scored by an AI quality judge before you publish.'],
     ['How does the AI quality scoring work?',
       'Every generated document is reviewed by an LLM judge across six weighted dimensions: style, consistency, completeness, readability, LLM readiness, and link integrity. Each finding ships with a one-click fix and a declared score gain, and a quality gate (85 by default) blocks anything below your bar.'],
     ['What is AI ranking prediction?',
-      'Before you publish, DocGen models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, structure, readability, completeness — and estimates the probability that each platform will retrieve and cite your page. The estimate is recomputed live as you apply fixes.'],
+      'Before you publish, Docify models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, structure, readability, completeness — and estimates the probability that each platform will retrieve and cite your page. The estimate is recomputed live as you apply fixes.'],
     ['Is my source code stored?',
-      'No. DocGen reads your repository through a read-only grant, generates documentation from code structure, comments, and commit history, and never stores your source code. You can revoke access at any time.'],
+      'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and commit history, and never stores your source code. You can revoke access at any time.'],
     ['Can documentation update automatically on every merge?',
       'Yes. Automation pipelines regenerate documentation on every merge via webhook, re-score it with the AI judge, update the AI ranking outlook, and hold anything below the quality gate for review — so the release and its documentation ship together.'],
-    ['Who is DocGen built for?',
+    ['Who is Docify built for?',
       'Developer platform teams, technical writers, product managers, and documentation teams at startups and enterprises — anyone who needs accurate, AI-ready developer documentation without the manual upkeep.']
   ].map(([q, a]) => ({
     '@type': 'Question',
@@ -123,7 +123,7 @@ export function injectMeta(html, path) {
     '<meta property="og:image" content="' + OG_IMAGE + '" />',
     '<meta property="og:image:width" content="1200" />',
     '<meta property="og:image:height" content="630" />',
-    '<meta property="og:image:alt" content="DocGen — documentation that AI understands, trusts, and ranks" />',
+    '<meta property="og:image:alt" content="Docify — documentation that AI understands, trusts, and ranks" />',
     '<meta name="twitter:card" content="summary_large_image" />',
     '<meta name="twitter:title" content="' + esc(meta.title) + '" />',
     '<meta name="twitter:description" content="' + esc(meta.desc) + '" />',

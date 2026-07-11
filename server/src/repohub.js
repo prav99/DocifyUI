@@ -24,7 +24,7 @@ const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 /* ------------------------- Provider metadata check ------------------------ */
 // Fetch repo metadata (existence, visibility, default branch). Never throws.
 async function probeRepo(provider, repo, token) {
-  const H = { 'User-Agent': 'DocGen' };
+  const H = { 'User-Agent': 'Docify' };
   if (token) H.Authorization = 'Bearer ' + token;
   try {
     let r, d;

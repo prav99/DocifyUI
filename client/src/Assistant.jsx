@@ -14,7 +14,7 @@ import { SUPPORT_EMAIL, supportMailto } from './config.js';
 const KB = [
   {
     k: 'price pricing cost plan plans free paid subscription billing money charge upgrade team enterprise',
-    a: 'DocGen has a free plan to start, plus paid plans for teams — the pricing page compares every plan and feature side by side.',
+    a: 'Docify has a free plan to start, plus paid plans for teams — the pricing page compares every plan and feature side by side.',
     link: '/pricing', label: 'View pricing'
   },
   {
@@ -29,7 +29,7 @@ const KB = [
   },
   {
     k: 'start begin generate create first document how work getting started quickstart tutorial demo try',
-    a: 'Generating your first document takes about three minutes: connect a repository, pick a document type and format, and DocGen drafts it from your actual code.',
+    a: 'Generating your first document takes about three minutes: connect a repository, pick a document type and format, and Docify drafts it from your actual code.',
     link: '/signup', label: 'Start free'
   },
   {
@@ -39,12 +39,12 @@ const KB = [
   },
   {
     k: 'ranking chatgpt claude gemini cite citation retrieval probability ai assistant rank seo discover',
-    a: 'DocGen predicts how likely ChatGPT, Claude, and Gemini are to retrieve and cite your documentation — before you publish — and shows exactly what to fix to climb.',
+    a: 'Docify predicts how likely ChatGPT, Claude, and Gemini are to retrieve and cite your documentation — before you publish — and shows exactly what to fix to climb.',
     link: '/docs/chatgpt-ranking-analysis', label: 'AI ranking analysis'
   },
   {
     k: 'github gitlab bitbucket integration connect repository repo source oauth code host',
-    a: 'DocGen connects to GitHub, GitLab, and Bitbucket with one read-only OAuth grant — repositories, READMEs, and commit history become source material. Your code is never stored.',
+    a: 'Docify connects to GitHub, GitLab, and Bitbucket with one read-only OAuth grant — repositories, READMEs, and commit history become source material. Your code is never stored.',
     link: '/docs/github-integration', label: 'Integration details'
   },
   {
@@ -54,7 +54,7 @@ const KB = [
   },
   {
     k: 'security secure privacy private data stored store code safe compliance legal terms gdpr',
-    a: 'Access is read-only and your source code is never stored — DocGen reads structure, comments, and commit history at generation time only.',
+    a: 'Access is read-only and your source code is never stored — Docify reads structure, comments, and commit history at generation time only.',
     link: '/legal/security', label: 'Security policy'
   },
   {
@@ -123,7 +123,7 @@ export default function Assistant() {
 
   useEffect(() => {
     if (open && msgs.length === 0) {
-      setMsgs([{ who: 'bot', text: 'Hi! I can point you to the right documentation — ask me anything about DocGen. For anything specific I can’t answer, I’ll connect you to our team by email.' }]);
+      setMsgs([{ who: 'bot', text: 'Hi! I can point you to the right documentation — ask me anything about Docify. For anything specific I can’t answer, I’ll connect you to our team by email.' }]);
     }
     if (open) setTimeout(() => inputRef.current && inputRef.current.focus(), 100);
   }, [open]); // eslint-disable-line
@@ -163,7 +163,7 @@ export default function Assistant() {
   return (
     <>
       {open && (
-        <div className="asst-panel" role="dialog" aria-label="DocGen assistant">
+        <div className="asst-panel" role="dialog" aria-label="Docify assistant">
           <div className="asst-head">
             <div>
               <p className="asst-title">Assistant</p>
@@ -182,7 +182,7 @@ export default function Assistant() {
                   </button>
                 )}
                 {m.email && (
-                  <a className="asst-action" href={supportMailto('Question from website chat', 'Hi DocGen team,\n\n' + (m.q || '') + '\n\n')}>
+                  <a className="asst-action" href={supportMailto('Question from website chat', 'Hi Docify team,\n\n' + (m.q || '') + '\n\n')}>
                     Email {SUPPORT_EMAIL}<span aria-hidden="true"> →</span>
                   </a>
                 )}
@@ -207,7 +207,7 @@ export default function Assistant() {
               className="asst-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about DocGen…"
+              placeholder="Ask about Docify…"
               aria-label="Ask the assistant a question"
               maxLength={300}
             />
@@ -220,7 +220,7 @@ export default function Assistant() {
 
       <button
         className={'asst-launcher' + (open ? ' open' : '')}
-        aria-label={open ? 'Close AI assistant' : 'Open AI assistant — ask about DocGen'}
+        aria-label={open ? 'Close AI assistant' : 'Open AI assistant — ask about Docify'}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >

@@ -915,7 +915,7 @@ export default function Source() {
           <h1 className="h04">Where does your source of truth live?</h1>
           <HelpLink topic="source" />
         </div>
-        <p className="body01 t2 mt3">Select every source you want DocGen to read — combine a repository with Jira for changelogs, or a spec with Confluence pages. Configure each one below.</p>
+        <p className="body01 t2 mt3">Select every source you want Docify to read — combine a repository with Jira for changelogs, or a spec with Confluence pages. Configure each one below.</p>
 
         <div className="grid4 mt7">
           {catalog.sources.map((s) => {
@@ -1161,7 +1161,7 @@ export default function Source() {
                           </p>
                           <p className="helper">
                             {KIND[id] === 'picker' ? 'Pick the ' + PICKER_LABEL[id].toLowerCase() + ' to document'
-                              : KIND[id] === 'url' ? 'Point DocGen at your spec'
+                              : KIND[id] === 'url' ? 'Point Docify at your spec'
                               : 'Authenticate with a token'}
                           </p>
                         </div>

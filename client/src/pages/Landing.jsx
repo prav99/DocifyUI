@@ -257,7 +257,7 @@ function IlluAutomate() {
 const FEATURES = [
   {
     eyebrow: 'CONNECT YOUR TOOLS', title: 'It starts where your truth already lives',
-    body: 'One authorization — the same grant that signs you in. DocGen reads your repository the way your best writer would: structure, comments, commit history, API annotations. Read-only, never stored, nothing to configure.',
+    body: 'One authorization — the same grant that signs you in. Docify reads your repository the way your best writer would: structure, comments, commit history, API annotations. Read-only, never stored, nothing to configure.',
     illu: <IlluSource />
   },
   {
@@ -272,7 +272,7 @@ const FEATURES = [
   },
   {
     eyebrow: 'AI DISCOVERY', title: 'Know where you will rank — before you publish',
-    body: 'This is the part nobody else shows you. DocGen models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, links, readability, completeness — and puts a number on your chance of being retrieved and cited. Apply the fixes and watch the number climb.',
+    body: 'This is the part nobody else shows you. Docify models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, links, readability, completeness — and puts a number on your chance of being retrieved and cited. Apply the fixes and watch the number climb.',
     illu: <IlluRank />
   },
   {
@@ -290,8 +290,8 @@ const FMTS = ['DITA', 'PDF', 'Word', 'Markdown'];
    Keep the two in sync when editing. */
 export const FAQS = [
   {
-    q: 'What is DocGen?',
-    a: 'DocGen is an AI documentation generator that turns your GitHub, GitLab, or Bitbucket repository into standards-grade technical documentation — API references, user guides, release notes, and more — exported to DITA, PDF, Word, HTML, or Markdown. Every document is scored by an AI quality judge before you publish.'
+    q: 'What is Docify?',
+    a: 'Docify is an AI documentation generator that turns your GitHub, GitLab, or Bitbucket repository into standards-grade technical documentation — API references, user guides, release notes, and more — exported to DITA, PDF, Word, HTML, or Markdown. Every document is scored by an AI quality judge before you publish.'
   },
   {
     q: 'How does the AI quality scoring work?',
@@ -299,18 +299,18 @@ export const FAQS = [
   },
   {
     q: 'What is AI ranking prediction?',
-    a: 'Before you publish, DocGen models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, structure, readability, completeness — and estimates the probability that each platform will retrieve and cite your page. The estimate is recomputed live as you apply fixes.'
+    a: 'Before you publish, Docify models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, structure, readability, completeness — and estimates the probability that each platform will retrieve and cite your page. The estimate is recomputed live as you apply fixes.'
   },
   {
     q: 'Is my source code stored?',
-    a: 'No. DocGen reads your repository through a read-only grant, generates documentation from code structure, comments, and commit history, and never stores your source code. You can revoke access at any time.'
+    a: 'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and commit history, and never stores your source code. You can revoke access at any time.'
   },
   {
     q: 'Can documentation update automatically on every merge?',
     a: 'Yes. Automation pipelines regenerate documentation on every merge via webhook, re-score it with the AI judge, update the AI ranking outlook, and hold anything below the quality gate for review — so the release and its documentation ship together.'
   },
   {
-    q: 'Who is DocGen built for?',
+    q: 'Who is Docify built for?',
     a: 'Developer platform teams, technical writers, product managers, and documentation teams at startups and enterprises — anyone who needs accurate, AI-ready developer documentation without the manual upkeep.'
   }
 ];
@@ -393,8 +393,8 @@ function FaqItem({ q, a }) {
 
 export default function Landing() {
   usePageMeta({
-    title: 'DocGen — Automated AI Documentation Generator with Quality & AI Search Readiness Scores',
-    description: 'DocGen automates technical documentation end to end: connect GitHub, GitLab, or Bitbucket and every merge updates your docs automatically, validated by an AI quality judge and scored for AI search readiness across ChatGPT, Claude, Gemini, and Copilot.',
+    title: 'Docify — Automated AI Documentation Generator with Quality & AI Search Readiness Scores',
+    description: 'Docify automates technical documentation end to end: connect GitHub, GitLab, or Bitbucket and every merge updates your docs automatically, validated by an AI quality judge and scored for AI search readiness across ChatGPT, Claude, Gemini, and Copilot.',
     path: '/'
   });
   const nav = useNavigate();
@@ -427,7 +427,7 @@ export default function Landing() {
             <p className="eyebrow mb3">DOCIFY · AI DOCUMENTATION INTELLIGENCE</p>
             <h1 className="display">Documentation that AI understands, trusts, and ranks.</h1>
             <p className="lead t2 mt5" style={{ maxWidth: 560 }}>
-              DocGen turns your code commits into standards-grade documentation, cross-examines every
+              Docify turns your code commits into standards-grade documentation, cross-examines every
               page with an LLM judge, and tells you — in numbers — how likely ChatGPT, Claude, and
               Google Gemini are to retrieve and cite it. Before you publish, not after.
             </p>
@@ -460,7 +460,7 @@ export default function Landing() {
             two sprints ago.
           </p>
           <div className="relief mt6">
-            <p className="relief-main">DocGen closes that gap — <span className="relief-blue">permanently.</span></p>
+            <p className="relief-main">Docify closes that gap — <span className="relief-blue">permanently.</span></p>
             <p className="relief-sub">See the complete workflow, in thirty seconds <span className="relief-arrow" aria-hidden="true">↓</span></p>
           </div>
         </Reveal>
@@ -479,7 +479,7 @@ export default function Landing() {
       </div>
 
 
-      {/* SECTION 2 · Meet DocGen — Film 1: complete automation */}
+      {/* SECTION 2 · Meet Docify — Film 1: complete automation */}
       <div className="page" id="how-it-works" style={{ paddingTop: 40, paddingBottom: 32 }}>
         <div id="film-automation" />
         <Reveal>
@@ -487,7 +487,7 @@ export default function Landing() {
           <p className="eyebrow eyebrow--blue mb3">HOW IT WORKS</p>
           <h2 className="feathead">Your code changes. Your documentation updates automatically.</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
-            DocGen closes the loop between your code and your published docs — generate, validate,
+            Docify closes the loop between your code and your published docs — generate, validate,
             optimise for AI, publish. Thirty seconds: a pull request merges, verified documentation
             ships. Press play.
           </p>
@@ -537,7 +537,7 @@ export default function Landing() {
           <p className="eyebrow eyebrow--blue mb3">GENERATE ON DEMAND</p>
           <h2 className="feathead">Complex technical input → professional documentation, in minutes</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 640 }}>
-            Pick a source, a document type, and a format — DocGen writes it, verifies it, and
+            Pick a source, a document type, and a format — Docify writes it, verifies it, and
             exports it. Thirty seconds, start to finish.
           </p>
         </Reveal>
@@ -712,7 +712,7 @@ export default function Landing() {
         <div style={{ maxWidth: 1056, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
             <p className="eyebrow mb3">START TODAY</p>
-            <h2 className="h04" style={{ color: '#fff', maxWidth: 640 }}>Your code already tells the story. Let DocGen turn it into documentation.</h2>
+            <h2 className="h04" style={{ color: '#fff', maxWidth: 640 }}>Your code already tells the story. Let Docify turn it into documentation.</h2>
             <div className="row mt6" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start generating documentation<span className="ico">→</span></button>
               <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-automation'); if (el) el.scrollIntoView(); }}>Watch product demo</button>
@@ -763,7 +763,7 @@ export default function Landing() {
           </nav>
         </div>
         <div className="sitefoot-inner">
-          <span className="helper">© {new Date().getFullYear()} DocGen · AI documentation intelligence</span>
+          <span className="helper">© {new Date().getFullYear()} Docify · AI documentation intelligence</span>
           <nav className="sitefoot-links" aria-label="Footer shortcuts">
             <a onClick={() => nav('/docs')}>Docs</a>
             <a onClick={() => nav('/pricing')}>Pricing</a>

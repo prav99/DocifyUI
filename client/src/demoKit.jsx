@@ -241,7 +241,7 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
     return (
       <div className="demo-window">
         <div className="demo-chrome">
-          <span className="demo-shellname">DocGen</span>
+          <span className="demo-shellname">Docify</span>
           <span className="crumb">{crumb}</span>
           <span className="spacer" style={{ flex: 1 }} />
         </div>
@@ -267,7 +267,7 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
         </button>
       )}
       <div className="demo-chrome">
-        <span className="demo-shellname">DocGen</span>
+        <span className="demo-shellname">Docify</span>
         <span className="crumb">{crumb}</span>
         <span className="spacer" style={{ flex: 1 }} />
       </div>

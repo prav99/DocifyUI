@@ -1,8 +1,8 @@
-# DocGen — Real OAuth Setup Runbook
+# Docify — Real OAuth Setup Runbook
 
 **Goal:** turn on real GitHub / GitLab / Bitbucket sign-in on the live site
 (`https://docifydocai.com`), so users authenticate through the provider and
-DocGen reads *their* repositories instead of the built-in demo account.
+Docify reads *their* repositories instead of the built-in demo account.
 
 ## Why this is needed (read first)
 
@@ -42,7 +42,7 @@ that part.
 1. Go to **GitHub → Settings → Developer settings → OAuth Apps → New OAuth App**
    (`https://github.com/settings/developers`).
 2. Fill in:
-   - **Application name:** DocGen
+   - **Application name:** Docify
    - **Homepage URL:** `https://docifydocai.com`
    - **Authorization callback URL:** `https://docifydocai.com/api/auth/github/callback`
 3. Create the app, then **Generate a new client secret**.
@@ -54,7 +54,7 @@ that part.
 1. Go to **GitLab → User Settings → Applications**
    (`https://gitlab.com/-/profile/applications`).
 2. Fill in:
-   - **Name:** DocGen
+   - **Name:** Docify
    - **Redirect URI:** `https://docifydocai.com/api/auth/gitlab/callback`
    - **Confidential:** checked
    - **Scopes:** `read_user`, `read_api`, `read_repository`
@@ -64,7 +64,7 @@ that part.
 1. Go to **Bitbucket → Workspace settings → OAuth consumers → Add consumer**
    (`https://bitbucket.org/<workspace>/workspace/settings/api`).
 2. Fill in:
-   - **Name:** DocGen
+   - **Name:** Docify
    - **Callback URL:** `https://docifydocai.com/api/auth/bitbucket/callback`
    - **Permissions:** Account → **Read**, Repositories → **Read**, Email → **Read**
 3. Save. Expand the consumer to copy the **Key** (client id) and **Secret**.
@@ -76,7 +76,7 @@ that part.
 
 ## Step 2 — Set environment variables in Railway
 
-Open your DocGen service in Railway → **Variables** tab → add these.
+Open your Docify service in Railway → **Variables** tab → add these.
 
 **Always required (so redirects point at production, not localhost):**
 
@@ -127,9 +127,9 @@ been committed or pushed automatically.)
 1. Open `https://docifydocai.com/api/auth/providers` in a browser. You should see
    `true` for each provider you configured, e.g. `{"github":true,...}`.
 2. Go to the sign-in page, click **Continue with GitHub**. You should now be
-   redirected to **github.com** to authorize DocGen (this is the step that was
+   redirected to **github.com** to authorize Docify (this is the step that was
    missing before).
-3. After authorizing, you land back in DocGen and the repository picker shows
+3. After authorizing, you land back in Docify and the repository picker shows
    **your real repositories** — not the `acme/...` demo list.
 4. Generate a document from one of your repos; the run history should no longer
    say "template content was used."

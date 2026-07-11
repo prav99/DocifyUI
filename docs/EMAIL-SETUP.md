@@ -86,7 +86,7 @@ SMTP_HOST     = smtp.zoho.com
 SMTP_PORT     = 587
 SMTP_USER     = support@docifydocai.com
 SMTP_PASS     = <app-specific password from Zoho>
-SMTP_FROM     = DocGen Support <support@docifydocai.com>
+SMTP_FROM     = Docify Support <support@docifydocai.com>
 ```
 
 Notes:

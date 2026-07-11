@@ -174,7 +174,7 @@ export default function Format() {
               {txt('title', 'Title override', 'Leave blank to use the document type')}
               {txt('subtitle', 'Subtitle', 'e.g. Integration guide for the v2 platform')}
               {txt('company', 'Company / product name', 'e.g. Acme Corp')}
-              {txt('trademark', 'Trademark line', 'e.g. Acme™, DocGen®')}
+              {txt('trademark', 'Trademark line', 'e.g. Acme™, Docify®')}
               {txt('author', 'Author / department', 'e.g. Platform Documentation')}
               {txt('version', 'Version label', 'e.g. 2.4.0')}
               {txt('docId', 'Document ID', 'e.g. DOC-2026-014')}

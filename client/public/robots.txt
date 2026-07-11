@@ -1,4 +1,4 @@
-# docifydocai.com — DocGen
+# docifydocai.com — Docify
 User-agent: *
 Allow: /
 # In-app screens: nothing useful to index behind the auth wall

@@ -5,7 +5,7 @@
 import { useEffect } from 'react';
 
 export const SITE_URL = 'https://docifydocai.com';
-export const SITE_NAME = 'DocGen';
+export const SITE_NAME = 'Docify';
 
 function setMeta(attr, key, content) {
   let el = document.head.querySelector(`meta[${attr}="${key}"]`);

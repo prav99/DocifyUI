@@ -11,7 +11,7 @@ import { SUPPORT_EMAIL, supportMailto } from '../config.js';
 export default function Contact() {
   usePageMeta({
     title: 'Contact support',
-    description: 'Get in touch with the DocGen team. Send us a question, report an issue, or ask about Enterprise.',
+    description: 'Get in touch with the Docify team. Send us a question, report an issue, or ask about Enterprise.',
     path: '/contact'
   });
 

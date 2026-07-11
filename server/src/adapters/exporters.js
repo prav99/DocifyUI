@@ -158,7 +158,7 @@ export function buildPdf({ md, title, output = {} }) {
       size: output.paperSize === 'Letter' ? 'LETTER' : 'A4',
       margins: { top: 64, bottom: 64, left: 64, right: 64 },
       bufferPages: true,
-      info: { Title: title || 'Document', Producer: 'DocGen' }
+      info: { Title: title || 'Document', Producer: 'Docify' }
     });
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));

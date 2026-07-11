@@ -16,19 +16,19 @@ const UPDATED = '2026-07-04';
 // mailbox (see client/src/config.js — override with VITE_SUPPORT_EMAIL).
 const CONTACT = SUPPORT_EMAIL;
 const SECURITY_CONTACT = SUPPORT_EMAIL;
-const COMPANY = 'DocGen'; // ← replace with your legal entity name
+const COMPANY = 'Docify'; // ← replace with your legal entity name
 
 export const LEGAL = {
   privacy: {
     title: 'Privacy Policy',
     summary: 'What we collect, why, where it lives, and the rights you keep.',
     sections: [
-      { h: 'The short version', p: 'DocGen reads your repositories to generate documentation. We store your account details, your connection credentials (encrypted), and the documents DocGen produces. We never store your source code, we do not sell data, and Anthropic-style model providers are not sent your credentials. Delete your account and your data goes with it.' },
+      { h: 'The short version', p: 'Docify reads your repositories to generate documentation. We store your account details, your connection credentials (encrypted), and the documents Docify produces. We never store your source code, we do not sell data, and Anthropic-style model providers are not sent your credentials. Delete your account and your data goes with it.' },
       { h: '1. Who we are', p: COMPANY + ' provides an AI documentation intelligence platform: generation of documentation from connected sources, AI quality evaluation, ranking estimates, and merge-driven automation ("the Service"). This policy covers the Service and our websites. Contact: ' + CONTACT + '.' },
       { h: '2. Information we collect', ul: [
         'Account data — email address, name (optional), hashed password (bcrypt; we cannot read it), email-verification state.',
         'Connection credentials — OAuth access/refresh tokens for code hosts (GitHub, GitLab, Bitbucket) and API tokens for Jira, Confluence, and Notion. Requested with read-only scopes wherever the provider supports them.',
-        'Generated content — the documents DocGen produces, their configuration (types, formats, output options, uploaded SKILL.md files), quality reports, and automation run history.',
+        'Generated content — the documents Docify produces, their configuration (types, formats, output options, uploaded SKILL.md files), quality reports, and automation run history.',
         'Merge metadata — when you enable automation: branch names, commit identifiers, commit messages, and changed file paths delivered by your repository webhooks.',
         'Billing data — plan, seats, billing cycle, and optional tax ID. Card details are processed by our payment provider and never touch our servers.',
         'Operational logs — timestamps, IP addresses, and request metadata used for security, rate limiting, and abuse prevention.'
@@ -122,7 +122,7 @@ export default function Legal() {
   const doc = LEGAL[slug];
   usePageMeta({
     title: doc ? doc.title : 'Legal',
-    description: doc ? 'DocGen ' + doc.title + '.' : '',
+    description: doc ? 'Docify ' + doc.title + '.' : '',
     path: doc ? '/legal/' + slug : '/legal/privacy'
   });
   if (!doc) return <Navigate to="/legal/privacy" replace />;

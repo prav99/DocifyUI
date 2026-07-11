@@ -31,7 +31,7 @@ const TOPICS = {
     page: '/source',
     intro: 'Pick where your source of truth lives. Repositories come from your unified catalogue; Jira, Confluence, Notion, and OpenAPI specs each have their own selection panel and can be combined freely.',
     steps: [
-      'Tick every source you want DocGen to read. The first code source becomes the primary input.',
+      'Tick every source you want Docify to read. The first code source becomes the primary input.',
       'Repositories: one panel lists everything from your Repository Connections catalogue in a dropdown grouped by organisation. Pick one, then "＋ Add another repository" for more — each extra repository runs as its own generation with the same settings. "Use a public repository" accepts any owner/name (for example expressjs/express) with no connection.',
       'Jira: connect with site URL, email, and API token, then select ISSUES six ways — paste keys (validated live), search, an epic, a sprint, a release, or a JQL query. Selected issues become chips; their full content (description, comments, links) grounds the document.',
       'OpenAPI / Swagger: add specs from a URL, pasted text, or a repository file. Inspect shows title, version, endpoints, and validation findings; a checkbox tree picks exactly which endpoints to document. Multiple specs can be combined.',
@@ -66,7 +66,7 @@ const TOPICS = {
   doctype: {
     title: 'Step 2 — Choosing document types',
     page: '/doctype',
-    intro: 'Decide what DocGen should produce. Technical documentation and marketing material are separate tracks with different formats.',
+    intro: 'Decide what Docify should produce. Technical documentation and marketing material are separate tracks with different formats.',
     steps: [
       'Pick a track: "Technical documentation" or "Marketing material".',
       'Select one or more document types — each is generated against a recognized open standard (shown on the card).',
@@ -96,7 +96,7 @@ const TOPICS = {
   generate: {
     title: 'Step 4 — Generation pipeline',
     page: '/generate',
-    intro: 'DocGen parses the repository, extracts code context, drafts every selected document type, and runs quality checks — usually under a minute.',
+    intro: 'Docify parses the repository, extracts code context, drafts every selected document type, and runs quality checks — usually under a minute.',
     steps: [
       'Watch the pipeline steps complete on the left; the rendered preview appears on the right when drafting finishes.',
       'Toggle between "Rendered" and "Source" to inspect the raw output.',
@@ -207,7 +207,7 @@ const TOPICS = {
   },
   governance: {
     title: 'Standardize',
-    page: '/governance',
+    page: '/standardize',
     intro: 'A dedicated workspace for correcting documentation you ALREADY have: analyze structure and writing, apply a style guide, review every change, approve, and export — end to end. Move between steps freely; your selection, settings, and step survive a page refresh.',
     steps: [
       'Step 1 — Documents: select existing documents, upload a file, paste content, or import from a repository. Multiple documents run through the same governance settings together.',
@@ -266,7 +266,7 @@ const TOPICS = {
   docs: {
     title: 'Product docs & guides',
     page: '/docs',
-    intro: 'Long-form product documentation: concepts, integration guides, and the full API surface of DocGen itself.',
+    intro: 'Long-form product documentation: concepts, integration guides, and the full API surface of Docify itself.',
     steps: [
       'Browse the article list, or open a guide directly from links in the app.',
       'For hands-on help with a specific screen, use the Help link on that screen instead.'
@@ -282,7 +282,7 @@ export default function Help() {
   const nav = useNavigate();
   usePageMeta({
     title: 'Help Center',
-    description: 'Guides for every screen of DocGen — connecting sources, choosing document types, output formats, the AI quality review, exporting, and automation.',
+    description: 'Guides for every screen of Docify — connecting sources, choosing document types, output formats, the AI quality review, exporting, and automation.',
     path: topic ? '/help/' + topic : '/help'
   });
   const t = TOPICS[topic];
@@ -292,7 +292,7 @@ export default function Help() {
       <div className="page">
         <p className="eyebrow mb3" style={{ color: '#0f62fe' }}>HELP CENTER</p>
         <h1 className="h04">How can we help?</h1>
-        <p className="body01 t2 mt3">Every screen of DocGen has its own guide — pick the one you need. You can also open these from the “Help” link on any page.</p>
+        <p className="body01 t2 mt3">Every screen of Docify has its own guide — pick the one you need. You can also open these from the “Help” link on any page.</p>
         <div className="grid4 mt7">
           {ORDER.map((id) => (
             <div key={id} className="tile tile--click" onClick={() => nav('/help/' + id)}>

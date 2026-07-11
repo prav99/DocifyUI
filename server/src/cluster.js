@@ -10,7 +10,7 @@ import os from 'node:os';
 const WORKERS = Math.max(1, Number(process.env.WEB_CONCURRENCY) || os.availableParallelism?.() || os.cpus().length);
 
 if (cluster.isPrimary) {
-  console.log('DocGen cluster: starting ' + WORKERS + ' worker' + (WORKERS > 1 ? 's' : '') + ' (' + os.platform() + ', ' + os.cpus().length + ' cores)');
+  console.log('Docify cluster: starting ' + WORKERS + ' worker' + (WORKERS > 1 ? 's' : '') + ' (' + os.platform() + ', ' + os.cpus().length + ' cores)');
   const recentDeaths = [];
   for (let i = 0; i < WORKERS; i++) cluster.fork();
 

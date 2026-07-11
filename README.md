@@ -1,4 +1,4 @@
-# DocGen — documentation automation SaaS
+# Docify — documentation automation SaaS
 
 A full-stack web application: React client, Node.js REST API, and a SQLite database via Prisma.
 Runs identically on **Windows, macOS, and Linux** — the only requirement is Node.js 18+.
@@ -116,7 +116,7 @@ Out of the box the OAuth buttons use a simulated flow (no keys needed). To make
 "Continue with GitHub" perform the real handshake:
 
 1. On GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App**
-   - Application name: `DocGen (dev)`
+   - Application name: `Docify (dev)`
    - Homepage URL: `http://localhost:5173`
    - Authorization callback URL: `http://localhost:4000/api/auth/github/callback`
 2. Copy the **Client ID**, generate a **Client secret**, and paste both into
@@ -128,7 +128,7 @@ the GitHub buttons from simulated to real. After the user clicks Authorize on
 GitHub's consent screen, the callback exchanges the one-time code for an access
 token server-side, stores it on the Source record, signs the user in, and the
 repository picker starts listing their actual repositories. The user never types
-credentials into DocGen.
+credentials into Docify.
 
 Notes for production: request finer scopes via a GitHub App instead of the classic
 `repo` scope for true read-only access to private repos, encrypt stored tokens at

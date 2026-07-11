@@ -79,7 +79,9 @@ function App() {
               <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
               <Route path="/sync" element={<RequireAuth><DocSync /></RequireAuth>} />
               <Route path="/repos" element={<RequireAuth><Repos /></RequireAuth>} />
-              <Route path="/governance" element={<RequireAuth><Governance /></RequireAuth>} />
+              <Route path="/standardize" element={<RequireAuth><Governance /></RequireAuth>} />
+              {/* Old URL keeps working — bookmarks, help links, history */}
+              <Route path="/governance" element={<Navigate to="/standardize" replace />} />
               <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
               <Route path="/founder" element={<RequireAuth><Founder /></RequireAuth>} />
               <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />

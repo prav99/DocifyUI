@@ -1929,7 +1929,7 @@ async function profileRun(profile, event) {
     const wants = (outcome === 'published' && cfg.notifyOn.success)
       || ((outcome === 'held' || outcome === 'awaiting-approval') && cfg.notifyOn.blocked);
     if (to && wants) {
-      sendMail(to, 'DocGen · ' + profile.name + ' — ' + outcome + ' at ' + q.overall + '/100',
+      sendMail(to, 'Docify · ' + profile.name + ' — ' + outcome + ' at ' + q.overall + '/100',
         '<p><b>' + decision.action.toUpperCase() + '</b> — ' + decision.reason + '</p>' +
         '<p>Overall ' + q.overall + ' · ChatGPT ' + (probs.chatgpt ?? '—') + '% · Claude ' + (probs.claude ?? '—') + '% · Gemini ' + (probs.gemini ?? '—') + '%</p>' +
         (holdWhy ? '<p>Held: ' + holdWhy + '</p>' : '<p>Published to ' + cfg.publishTo + '.</p>')
@@ -1942,7 +1942,7 @@ async function profileRun(profile, event) {
     const user = await prisma.user.findUnique({ where: { id: uid } });
     const to = cfg.notifyEmail || (user ? user.email : '');
     if (to && cfg.notifyOn.failure) {
-      sendMail(to, 'DocGen · ' + profile.name + ' — run failed', '<p>' + String(e.message || e) + '</p>').catch(() => {});
+      sendMail(to, 'Docify · ' + profile.name + ' — run failed', '<p>' + String(e.message || e) + '</p>').catch(() => {});
     }
     return { runId, outcome: 'failed' };
   }

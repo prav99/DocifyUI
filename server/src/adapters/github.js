@@ -7,7 +7,7 @@ export async function listRepos(token) {
   const r = await fetch('https://api.github.com/user/repos?per_page=50&sort=pushed', {
     headers: {
       Authorization: 'Bearer ' + token,
-      'User-Agent': 'DocGen',
+      'User-Agent': 'Docify',
       Accept: 'application/vnd.github+json'
     }
   });
@@ -29,7 +29,7 @@ export async function listRepos(token) {
 export async function listOrgRepos(token, org) {
   const headers = {
     ...(token ? { Authorization: 'Bearer ' + token } : {}),
-    'User-Agent': 'DocGen',
+    'User-Agent': 'Docify',
     Accept: 'application/vnd.github+json'
   };
   let r = await fetch('https://api.github.com/orgs/' + encodeURIComponent(org) + '/repos?per_page=50&sort=pushed', { headers });
@@ -54,7 +54,7 @@ export async function listBranches(token, repo) {
   const r = await fetch('https://api.github.com/repos/' + repo + '/branches?per_page=100', {
     headers: {
       Authorization: 'Bearer ' + token,
-      'User-Agent': 'DocGen',
+      'User-Agent': 'Docify',
       Accept: 'application/vnd.github+json'
     }
   });

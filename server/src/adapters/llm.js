@@ -887,7 +887,7 @@ function renderPreviewLayout({ layout, card, title, sections, oc, org, std, date
   return [
     '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>',
     '<meta name="viewport" content="width=device-width, initial-scale=1"/>',
-    '<meta name="generator" content="DocGen"/>',
+    '<meta name="generator" content="Docify"/>',
     (std ? '<meta name="doc-standard" content="' + escX(std) + '"/>' : ''),
     '<title>' + escX(title) + '</title><style>' + css + '</style></head><body>',
     (oc.draftBanner ? '<div class="draftbn">DRAFT — not for distribution</div>' : ''),
@@ -949,15 +949,15 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   if (!oc.includeExamples) sections = sections.map(([h, b]) => [h, stripExamples(b)]);
   if (oc.aboutSection) {
     sections = [['About this document',
-      'Purpose: ' + title + ' for `' + repo + '`, structured to the "' + (tpl ? tpl.standard : 'DocGen default') + '" convention.' +
+      'Purpose: ' + title + ' for `' + repo + '`, structured to the "' + (tpl ? tpl.standard : 'Docify default') + '" convention.' +
       (oc.classification !== 'none' ? ' Classification: **' + String(oc.classification).toUpperCase() + '**.' : '')], ...sections];
   }
   if (oc.revisionHistory) {
     sections = [...sections, ['Revision history',
       table(['Version', 'Date', 'Author', 'Change'], [
-        [oc.version || c.version, fmtDate(oc), oc.author || 'DocGen', 'Generated from `' + repo + '`'],
-        ['2.3.1', '2026-05-18', oc.author || 'DocGen', 'Fix release'],
-        ['2.3.0', '2026-04-02', oc.author || 'DocGen', 'Initial publication']
+        [oc.version || c.version, fmtDate(oc), oc.author || 'Docify', 'Generated from `' + repo + '`'],
+        ['2.3.1', '2026-05-18', oc.author || 'Docify', 'Fix release'],
+        ['2.3.0', '2026-04-02', oc.author || 'Docify', 'Initial publication']
       ])]];
   }
   if (oc.glossary) {
@@ -998,7 +998,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   // Provenance line (standard + source repo). OFF by default — it is
   // authoring metadata, not reader content. Opt in with output.showStandardMeta.
   if (oc.showStandardMeta) {
-    parts.push('> Standard: ' + (tpl ? tpl.standard : 'DocGen default') + ' · Source: `' + repo + '`' + (oc.showDate ? ' · ' + fmtDate(oc) : ''));
+    parts.push('> Standard: ' + (tpl ? tpl.standard : 'Docify default') + ' · Source: `' + repo + '`' + (oc.showDate ? ' · ' + fmtDate(oc) : ''));
   }
   if (!noFurniture) {
     parts.push('', aiDocs
@@ -1060,7 +1060,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
       '  <title>' + title + '</title>',
       '  <shortdesc>Create, capture, and refund charges programmatically.</shortdesc>',
       '  <prolog><metadata>' +
-        '<othermeta name="standard" content="' + (tpl ? tpl.standard : 'DocGen default') + '"/>' +
+        '<othermeta name="standard" content="' + (tpl ? tpl.standard : 'Docify default') + '"/>' +
         '<othermeta name="version" content="' + escX((oc.version && oc.version.trim()) || c.version) + '"/>' +
         (org ? '<othermeta name="organization" content="' + escX(org) + '"/>' : '') +
         (oc.classification !== 'none' ? '<othermeta name="classification" content="' + escX(oc.classification) + '"/>' : '') +
@@ -1101,8 +1101,8 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
       '<head>',
       '<meta charset="utf-8"/>',
       '<meta name="viewport" content="width=device-width, initial-scale=1"/>',
-      '<meta name="generator" content="DocGen"/>',
-      '<meta name="doc-standard" content="' + escX(tpl ? tpl.standard : 'DocGen default') + '"/>',
+      '<meta name="generator" content="Docify"/>',
+      '<meta name="doc-standard" content="' + escX(tpl ? tpl.standard : 'Docify default') + '"/>',
       (oc.classification !== 'none' ? '<meta name="classification" content="' + escX(oc.classification) + '"/>' : ''),
       '<title>' + escX(title) + '</title>',
       '<style>', pageCss, wmCss, '</style>',
@@ -1141,7 +1141,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
       '<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.0">',
       '  <info>',
       '    <title>' + escX(title) + '</title>',
-      ...(oc.showStandardMeta ? ['    <subtitle>Standard: ' + escX(tpl ? tpl.standard : 'DocGen default') + ' · Source: ' + escX(repo) + '</subtitle>'] : []),
+      ...(oc.showStandardMeta ? ['    <subtitle>Standard: ' + escX(tpl ? tpl.standard : 'Docify default') + ' · Source: ' + escX(repo) + '</subtitle>'] : []),
       '  </info>'
     ];
     for (const [h, body] of sections) {
@@ -1157,7 +1157,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   } else if (format === 'htmlsnip') {
     // Self-contained landing-page section, safe to paste into any CMS.
     content = [
-      '<!-- DocGen landing snippet · ' + escX(title) + ' -->',
+      '<!-- Docify landing snippet · ' + escX(title) + ' -->',
       '<section style="font-family:\'IBM Plex Sans\',system-ui,sans-serif;color:#161616;max-width:720px;margin:0 auto;padding:32px 16px;line-height:1.55">',
       mdToHtml(md).replace(/<h1 /g, '<h1 style="font-size:30px;font-weight:400" ').replace(/<h2 /g, '<h2 style="font-size:20px;font-weight:600;margin-top:32px" '),
       '</section>'
@@ -1340,7 +1340,7 @@ export function renderQualityReport(ser, meta) {
     '<table><thead>' + tr(['Check', 'Status', 'Detail'], 'th') + '</thead><tbody>',
     ...ser.style.map((s2) => tr([escX(s2.t), s2.pass ? 'Pass' : 'Review', escX(s2.d)])),
     '</tbody></table>',
-    '<p class="muted">Produced by the DocGen quality auditor — human-in-the-loop: every applied fix above was reviewed and accepted by the author.</p>',
+    '<p class="muted">Produced by the Docify quality auditor — human-in-the-loop: every applied fix above was reviewed and accepted by the author.</p>',
     '</body></html>'
   ];
   return out.join('\n');

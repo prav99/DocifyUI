@@ -92,7 +92,7 @@ const AUTO_SCENES = [
   },
   {
     label: 'Merge → update', dur: 6500, sfx: 'click',
-    vo: 'A pull request merges. DocGen updates the right section of your existing docs — never a duplicate.',
+    vo: 'A pull request merges. Docify updates the right section of your existing docs — never a duplicate.',
     render: () => (
       <div>
         <div className="demo-loop" style={{ paddingBottom: 14 }}>
@@ -251,7 +251,7 @@ const GEN_SCENES = [
     render: () => (
       <TitleSlate kicker="GENERATE ON DEMAND"
         title="Complex source content → professional documentation, in minutes."
-        sub="Pick a source, a document, a format — DocGen writes it from the truth, then proves its quality." />
+        sub="Pick a source, a document, a format — Docify writes it from the truth, then proves its quality." />
     )
   },
   {
@@ -290,7 +290,7 @@ const GEN_SCENES = [
   },
   {
     label: 'Generate & verify', dur: 7000, sfx: 'success',
-    vo: 'DocGen writes every section from the real source, previews it, and proves its quality — ninety-four.',
+    vo: 'Docify writes every section from the real source, previews it, and proves its quality — ninety-four.',
     render: () => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div className="score score--good" style={{ minWidth: 170 }}>

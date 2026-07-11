@@ -4,7 +4,7 @@
 export async function listProjects(token) {
   if (!token) return [];
   const r = await fetch('https://gitlab.com/api/v4/projects?membership=true&order_by=last_activity_at&per_page=50', {
-    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'DocGen' }
+    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'Docify' }
   });
   if (!r.ok) throw new Error('GitLab: HTTP ' + r.status + (r.status === 401 ? ' — token expired or revoked' : ''));
   const rows = await r.json();
@@ -20,7 +20,7 @@ export async function listProjects(token) {
 // Public projects of any group or user — powers "browse another
 // organisation" in the pickers. Works without a token (public data only).
 export async function listGroupProjects(token, org) {
-  const headers = { ...(token ? { Authorization: 'Bearer ' + token } : {}), 'User-Agent': 'DocGen' };
+  const headers = { ...(token ? { Authorization: 'Bearer ' + token } : {}), 'User-Agent': 'Docify' };
   let r = await fetch('https://gitlab.com/api/v4/groups/' + encodeURIComponent(org) + '/projects?per_page=50&order_by=last_activity_at', { headers });
   if (r.status === 404) {
     r = await fetch('https://gitlab.com/api/v4/users/' + encodeURIComponent(org) + '/projects?per_page=50&order_by=last_activity_at', { headers });
@@ -40,7 +40,7 @@ export async function listGroupProjects(token, org) {
 // Real branches for a project path ("group/name"). Throws on failure.
 export async function listBranches(token, repo) {
   const r = await fetch('https://gitlab.com/api/v4/projects/' + encodeURIComponent(repo) + '/repository/branches?per_page=100', {
-    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'DocGen' }
+    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'Docify' }
   });
   if (!r.ok) throw new Error('GitLab branches: HTTP ' + r.status);
   const rows = await r.json();

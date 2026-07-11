@@ -606,7 +606,7 @@ function PlacementStudio({ profile, onEdit }) {
         <span className="tag tag--outline">no standalone duplicates</span>
       </div>
       <p className="helper mt2" style={{ maxWidth: 720 }}>
-        On each merge, DocGen documents only the change and splices it into the best-matching section of your uploaded
+        On each merge, Docify documents only the change and splices it into the best-matching section of your uploaded
         document — you review one location instead of scrolling a long file. Preview a placement below.
       </p>
 
@@ -939,7 +939,7 @@ export default function Automation() {
                 </div>
                 <p className="body01 t2 mt3" style={{ maxWidth: 720 }}>
                   Reusable automation pipelines: a merge lands, its Jira issue is resolved to the exact commit,
-                  and DocGen documents only that change — then finds where it belongs in your existing
+                  and Docify documents only that change — then finds where it belongs in your existing
                   documentation and splices it into the right section. No standalone duplicates. Every update is
                   judged, ranked against ChatGPT, Claude, and Gemini, then published or held. Configure once; it runs forever.
                 </p>

@@ -24,7 +24,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 // generation to template content.
 async function jfetch(url, token, attempt = 0) {
   const MAX_RETRIES = 3;
-  const headers = { 'User-Agent': 'DocGen' };
+  const headers = { 'User-Agent': 'Docify' };
   if (token) headers.Authorization = 'Bearer ' + token;
   const r = await fetch(url, { headers });
   if (r.ok) return r;

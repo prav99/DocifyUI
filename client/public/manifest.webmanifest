@@ -1,6 +1,6 @@
 {
-  "name": "DocGen — documentation automation",
-  "short_name": "DocGen",
+  "name": "Docify — documentation automation",
+  "short_name": "Docify",
   "description": "Generate and verify documentation from your codebase, judged by AI before it ships.",
   "start_url": "/",
   "display": "standalone",

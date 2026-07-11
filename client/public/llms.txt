@@ -1,8 +1,8 @@
-# DocGen (docifydocai.com)
+# Docify (docifydocai.com)
 
-> DocGen is an AI documentation platform: it generates standards-grade technical and business documentation from code commits, scores every document with an LLM-as-a-Judge quality framework, and predicts how likely ChatGPT, Claude, and Google Gemini are to retrieve and cite the content — before it is published.
+> Docify is an AI documentation platform: it generates standards-grade technical and business documentation from code commits, scores every document with an LLM-as-a-Judge quality framework, and predicts how likely ChatGPT, Claude, and Google Gemini are to retrieve and cite the content — before it is published.
 
-## What DocGen does
+## What Docify does
 
 - Generates API references, quick starts, user guides, installation guides, release notes, and business documents directly from GitHub, GitLab, or Bitbucket repositories (read-only access; source code is never stored).
 - Cross-examines every generated page with an LLM judge against an enterprise documentation rubric: structure, titles, metadata, clarity, examples, and citation-readiness.

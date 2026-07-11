@@ -1027,7 +1027,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 }
 @media print{.asst-launcher,.asst-panel{display:none}}
 
-/* ---- relief line: the animated "DocGen ends that pain" moment ---- */
+/* ---- relief line: the animated "Docify ends that pain" moment ---- */
 .relief{padding:8px 0 4px}
 .relief-main{margin:0;font-size:32px;line-height:1.25;font-weight:600;letter-spacing:-.01em;color:var(--text-primary);display:inline-block;position:relative;opacity:0;transform:translateY(18px)}
 .relief-blue{color:var(--link-primary)}

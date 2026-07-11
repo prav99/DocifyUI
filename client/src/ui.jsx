@@ -192,7 +192,7 @@ export function TopBar() {
           landing page. */}
       <span className="logo" onClick={() => nav(user ? '/source' : '/')}>
         <LogoMark size={22} />
-        <span className="logotext">Doc<span className="logogen">Gen</span></span>
+        <span className="logotext">Doc<span className="logogen">ify</span></span>
       </span>
       <nav className="topnav">
         {marketing.map((m) => (
@@ -216,7 +216,7 @@ export function TopBar() {
           </a>
         )}
         {user && (
-          <a className={path === '/governance' ? 'on' : ''} onClick={() => nav('/governance')}>
+          <a className={path === '/standardize' ? 'on' : ''} onClick={() => nav('/standardize')}>
             Standardize
           </a>
         )}

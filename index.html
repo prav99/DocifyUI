@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DocGen — Docs that update themselves</title>
+<title>Docify — Docs that update themselves</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -529,7 +529,7 @@ function fmtDef(){
 function topbarHTML(){
   var s = state.screen;
   var idx = SEQ.indexOf(s);
-  var h = '<span class="logo" onclick="go(\'landing\')"><span class="mark">D</span>DocGen</span>';
+  var h = '<span class="logo" onclick="go(\'landing\')"><span class="mark">D</span>Docify</span>';
   h += '<span class="crumb">' + esc(CRUMBS[s] || 'docgen') + '</span>';
   h += '<nav class="topnav">' +
     '<a class="' + (s==='features'?'on':'') + '" onclick="go(\'features\')">Features</a>' +
@@ -585,7 +585,7 @@ SCREENS.landing = function(){
   h += '<div class="hero">';
   h += '<p class="label01 t2 mono mb3">DOCUMENTATION AUTOMATION FOR SOFTWARE TEAMS</p>';
   h += '<h1 class="h06" style="max-width:760px">Docs that update themselves, and pass quality review before you do.</h1>';
-  h += '<p class="body02 t2 mt5" style="max-width:640px">DocGen generates API references, user guides, and release content directly from your repositories and issue trackers — then verifies every output for broken links, style compliance, and AI consumability before it ships.</p>';
+  h += '<p class="body02 t2 mt5" style="max-width:640px">Docify generates API references, user guides, and release content directly from your repositories and issue trackers — then verifies every output for broken links, style compliance, and AI consumability before it ships.</p>';
   h += '<div class="row mt7"><button class="btn btn--primary" onclick="go(\'signup\')">Start free<span class="ico">&#8594;</span></button>' +
        '<button class="btn btn--tertiary" onclick="go(\'features\')">See how it works</button></div>';
   h += '</div>';
@@ -689,7 +689,7 @@ function doLogin(){
 SCREENS.source = function(){
   var h = '<div class="page">';
   h += '<h1 class="h04">Where does your source of truth live?</h1>';
-  h += '<p class="body01 t2 mt3">DocGen reads structure, comments, and history from your source to draft documentation. Pick one to start — you can add more later in Settings.</p>';
+  h += '<p class="body01 t2 mt3">Docify reads structure, comments, and history from your source to draft documentation. Pick one to start — you can add more later in Settings.</p>';
   h += '<div class="grid4 mt7">';
   SOURCES.forEach(function(s){
     var sel = state.source === s.id;
@@ -788,7 +788,7 @@ function joinWaitlist(id){
 /* ================= 4. Document type ================= */
 SCREENS.doctype = function(){
   var h = '<div class="page">';
-  h += '<h1 class="h04">What should DocGen produce?</h1>';
+  h += '<h1 class="h04">What should Docify produce?</h1>';
   h += '<p class="body01 t2 mt3">Pick a track, then select one or more document types. Selections generate together as a set.</p>';
 
   h += '<div class="row mt7" style="gap:0">';
@@ -1370,7 +1370,7 @@ function placementPanelHTML(){
   h += '<div class="row row--between" style="flex-wrap:wrap;gap:12px">';
   h += '<h2 class="h02">Contextual placement &#183; one change, the right section</h2>';
   h += '<span class="tag tag--blue">no standalone duplicates</span></div>';
-  h += '<p class="body01 t2 mt3" style="max-width:760px">A 50k-line product already has complete documentation. When a small feature merges, DocGen documents <b>only that change</b>, then searches the existing document and splices it into the single best-matching location &#8212; updating that section in place, or inserting a new sub-section under the closest parent.</p>';
+  h += '<p class="body01 t2 mt3" style="max-width:760px">A 50k-line product already has complete documentation. When a small feature merges, Docify documents <b>only that change</b>, then searches the existing document and splices it into the single best-matching location &#8212; updating that section in place, or inserting a new sub-section under the closest parent.</p>';
 
   h += '<div class="grid3 mt6" style="align-items:stretch">';
 
@@ -1498,7 +1498,7 @@ function inviteMember(){
 SCREENS.features = function(){
   var blocks = [
     {tag:'SOURCE', title:'Connect once, read forever', body:'OAuth to GitHub, GitLab, or Bitbucket at signup — the same grant powers generation. Jira connects with an API token for changelog and release-note pipelines. Access is read-only: repository contents and commit history, nothing more, and your source code is never stored.'},
-    {tag:'GENERATE', title:'From repo to draft in minutes', body:'DocGen parses repo structure, extracts code comments and OpenAPI-style annotations, and drafts topic-based sections. Choose technical documentation — API references, user guides, installation guides — or marketing material like release announcements and feature one-pagers. Output in DITA, PDF, Word, or Markdown.'},
+    {tag:'GENERATE', title:'From repo to draft in minutes', body:'Docify parses repo structure, extracts code comments and OpenAPI-style annotations, and drafts topic-based sections. Choose technical documentation — API references, user guides, installation guides — or marketing material like release announcements and feature one-pagers. Output in DITA, PDF, Word, or Markdown.'},
     {tag:'VERIFY', title:'A quality gate, not a spellcheck', body:'Every generation runs through link verification, style-guide compliance derived from established enterprise style conventions, and an LLM-judge AI-consumability review: short descriptions, search-optimized titles, metadata keywords, unambiguous references, and example coverage. Each finding ships with a concrete one-click fix.'},
     {tag:'AUTOMATE', title:'Docs that never go stale', body:'A GitHub Actions snippet regenerates documentation on every merge to main and blocks publishing when the quality score drops below your gate. Writers review diffs instead of rewriting pages.'}
   ];
@@ -1548,7 +1548,7 @@ SCREENS.customers = function(){
   var quotes = [
     {q:'We regenerate the API reference on every merge now. What used to be a 3-day post-release scramble is a 4-minute pipeline step, and the quality gate catches broken links before customers do.', n:'Head of Documentation', c:'Series C fintech, 40-person eng team', s:'11 hours saved per release'},
     {q:'The AI-consumability check was the surprise. Our docs now answer correctly inside our customers&#39; AI assistants because every section is self-contained and titled for real queries.', n:'Platform Engineering Lead', c:'Developer tools company', s:'AI-readiness 71 to 96 in one sprint'},
-    {q:'Two writers support nine product teams. DocGen drafts, we edit. The style-guide findings alone replaced our entire manual review checklist.', n:'Technical Writing Manager', c:'Enterprise SaaS, 300 employees', s:'2.3 hours saved per document'}
+    {q:'Two writers support nine product teams. Docify drafts, we edit. The style-guide findings alone replaced our entire manual review checklist.', n:'Technical Writing Manager', c:'Enterprise SaaS, 300 employees', s:'2.3 hours saved per document'}
   ];
   var h = '<div class="page">';
   h += '<h1 class="h04">Customer proof</h1>';

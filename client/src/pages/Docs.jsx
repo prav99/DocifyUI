@@ -62,25 +62,25 @@ const PILLARS = [
     desc: 'High-quality technical and business documentation generated from commits, pull requests, and repository activity.',
     topics: [
       { slug: 'docs-from-commits', name: 'Documentation from code commits', sum: 'Turn development activity into standards-aligned documentation automatically.', body: [
-        { p: 'Connect a repository and DocGen\'s pipeline parses the repo structure, extracts code comments, drafts sections against an open documentation standard, and runs quality checks — producing a publish-ready draft in minutes instead of sprint-ends.' },
+        { p: 'Connect a repository and Docify\'s pipeline parses the repo structure, extracts code comments, drafts sections against an open documentation standard, and runs quality checks — producing a publish-ready draft in minutes instead of sprint-ends.' },
         { h: 'The unified generation framework' },
         { p: 'Every document type — technical and marketing — is driven by a declarative blueprint: purpose, audience, tone, a standardized section outline, and content rules. One composition engine renders them all, so tone and structure stay uniform across your entire library.' },
         { ul: ['11 document types across two tracks, each tied to an open standard (Diátaxis, OpenAPI 3.1, Keep a Changelog, Google dev-docs)', 'Structure validation against the blueprint appears in every quality report', 'New types are added by configuration — no pipeline changes'] }
       ]},
       { slug: 'github-integration', name: 'GitHub integration', sum: 'OAuth in one click; accounts plus any number of organisations feed one catalogue.', body: [
-        { p: 'Sign up with GitHub and DocGen requests read-only repository access via OAuth. Your repositories appear in the unified catalogue immediately — and on the Repository Connections page you can add any number of GitHub organisations, whose repositories aggregate into the same catalogue. Tokens are stored server-side and never exposed to the browser.' },
+        { p: 'Sign up with GitHub and Docify requests read-only repository access via OAuth. Your repositories appear in the unified catalogue immediately — and on the Repository Connections page you can add any number of GitHub organisations, whose repositories aggregate into the same catalogue. Tokens are stored server-side and never exposed to the browser.' },
         { p: 'GitLab (including nested subgroups) and Bitbucket workspaces work identically. Jira, Confluence, Notion, and OpenAPI specs connect on the Source step with their own panels, and you can attach multiple sources to a single generation with one primary source.' }
       ]},
       { slug: 'bitbucket-integration', name: 'Bitbucket integration', sum: 'Full OAuth flow with automatic token renewal.', body: [
-        { p: 'Bitbucket access tokens expire after roughly two hours; DocGen stores the refresh token and silently renews access on every request, so customers never see an expired-session failure mid-generation.' },
-        { p: 'Configuration mirrors GitHub: an OAuth consumer in your workspace with a callback to the DocGen API, and read-only repository scope.' }
+        { p: 'Bitbucket access tokens expire after roughly two hours; Docify stores the refresh token and silently renews access on every request, so customers never see an expired-session failure mid-generation.' },
+        { p: 'Configuration mirrors GitHub: an OAuth consumer in your workspace with a callback to the Docify API, and read-only repository scope.' }
       ]},
       { slug: 'pull-request-analysis', name: 'Pull request analysis', sum: 'Regenerate exactly the documents a change affects, on every merge.', body: [
         { p: 'With automation enabled, every merge to main triggers regeneration: the pipeline re-reads the changed sources, re-drafts affected sections, and re-runs the quality gate before anything publishes.' },
         { p: 'The included CI workflow uploads the quality report as a build artifact and fails the job if the score drops below your gate — documentation drift becomes a failed check, not a surprise.' }
       ]},
       { slug: 'change-impact-analysis', name: 'Change impact analysis', sum: 'Know which documents a commit touches before you publish.', body: [
-        { p: 'Because every document records its sources and repository, DocGen maps development activity to the documents built from it. A change to your authentication module flags the API reference, the quick start, and the troubleshooting guide that cite it.' },
+        { p: 'Because every document records its sources and repository, Docify maps development activity to the documents built from it. A change to your authentication module flags the API reference, the quick start, and the troubleshooting guide that cite it.' },
         { p: 'Combined with the quality gate, this gives a safe default: regenerate what changed, re-judge it, and hold anything that no longer clears the bar for human review.' }
       ]},
       { slug: 'technical-doc-generation', name: 'Technical documentation generation', sum: 'API references, guides, runbooks — in DITA, Markdown, HTML, DocBook, ePub, PDF, and Word.', body: [
@@ -166,7 +166,7 @@ const SUPPORTING = [
       { h: 'More than one repository' },
       { p: 'After the first pick, “＋ Add another repository” lets you select more. Every additional repository gets its OWN generation with identical settings (document types, formats, instructions) — they run in parallel and land on your Dashboard side by side. Selecting repositories on two different hosts works the same way: each host’s pick is documented separately.' },
       { h: 'Public repositories' },
-      { p: '“Use a public repository” accepts any owner/name (for example expressjs/express) with no connection required — DocGen reads public repositories anonymously. This is also the fastest way to try the product.' },
+      { p: '“Use a public repository” accepts any owner/name (for example expressjs/express) with no connection required — Docify reads public repositories anonymously. This is also the fastest way to try the product.' },
       { p: 'Selections are guarded for trust: if a provider is disconnected, a token expires, or you lose access to a repository, the stale selection is cleared automatically with a notice — you can never generate from a repository you no longer have.' }
     ]},
     { slug: 'jira-source', name: 'Jira as a source', sum: 'Issues — not repositories. Six ways to select them; full content grounds the document.', body: [
@@ -174,7 +174,7 @@ const SUPPORTING = [
       { h: 'Six selection modes' },
       { ul: ['Issue keys — type or paste keys (DOC-101, DOC-102), comma- or line-separated; each key is validated live, and invalid or inaccessible keys are listed in red with the exact reason', 'Search — by key, title, label, or assignee; multi-select from the results', 'Epic — pick an epic from the dropdown and pull in its child issues', 'Sprint — a sprint by name, or leave empty for the active sprint', 'Release — pick a fix version and select its issues', 'JQL — any query, e.g. project = DOC AND status = Done AND updated >= -14d'] },
       { p: 'Selected issues appear as removable chips with their summaries. Duplicates are detected and skipped automatically.' },
-      { h: 'What DocGen reads' },
+      { h: 'What Docify reads' },
       { p: 'At generation time the FULL content of every selected issue is fetched: summary, description, type, status, priority, assignee and reporter, labels, components, fix versions, parent and linked issues, and recent comments. That content becomes real source material — you can generate release notes from an epic with no repository involved at all.' }
     ]},
     { slug: 'openapi-swagger-source', name: 'OpenAPI & Swagger sources', sum: 'Multiple specs, an endpoint tree, real validation — and generation grounded in the spec.', body: [
@@ -188,19 +188,19 @@ const SUPPORTING = [
     { slug: 'notion-source', name: 'Notion as a source', sum: 'Pages and databases, searched and multi-selected; child pages optional.', body: [
       { p: 'Create an internal integration at notion.so/profile/integrations, share the pages it should read (Page → ⋯ → Connections), and paste the token on the Source step. Only shared pages are ever visible.' },
       { p: 'Search by title — or browse recent pages with an empty search — and multi-select from the results. Selected pages and databases appear as chips; tick “Include child pages” to pull entire hierarchies in at generation time.' },
-      { h: 'What DocGen reads' },
+      { h: 'What Docify reads' },
       { ul: ['Headings, paragraphs, lists, to-dos, quotes, callouts, and code blocks — flattened to clean markdown', 'Tables row by row', 'Databases: each row’s title and properties (status, select, dates, numbers) as a compact table', 'Nested content follows list items and toggles; unreadable or unshared pages are skipped without failing the run'] }
     ]},
     { slug: 'confluence-source', name: 'Confluence as a source', sum: 'Spaces, page trees, and CQL — combine pages from multiple spaces.', body: [
       { p: 'Connect with your site URL, account email, and API token. Pick a space to scope browsing, then select pages three ways: Browse space (latest pages), Search (title or full text), or CQL for anything advanced — space = ENG AND label = "api" order by lastmodified desc.' },
       { p: 'Multi-select from any mix of spaces; selections show as chips with their space keys. “Include child pages” pulls each selected page’s descendants at generation time. Pages you cannot access are never listed, and restricted pages encountered during fetching are skipped silently — the rest of the run continues.' },
-      { h: 'What DocGen reads' },
+      { h: 'What Docify reads' },
       { p: 'The full page body — headings, paragraphs, tables, and code macros — plus labels, space, and last-updated metadata. Content is normalized before generation, so a Confluence architecture page and a repository can ground the same document together.' }
     ]}
   ]},
   { t: 'Writing style & governance', items: [
     { slug: 'writing-profiles', name: 'Writing profiles', sum: 'Why every document sounds like the same careful writer — and how to make it sound like yours.', body: [
-      { p: 'Documents generated on different days by different prompts usually read like different people wrote them. DocGen prevents that with layered writing profiles that resolve into ONE policy before any content is generated.' },
+      { p: 'Documents generated on different days by different prompts usually read like different people wrote them. Docify prevents that with layered writing profiles that resolve into ONE policy before any content is generated.' },
       { h: 'The layers, in order' },
       { ul: ['Docify Professional Style — the base: active voice, short sentences, second person, sentence-case headings, global readability, no marketing fluff (a separate marketing base applies on the marketing track)', 'A document-type profile — a User guide is instructional with mandatory Prerequisites and Troubleshooting; Release notes are one-line, past-tense, factual; an API reference is precise with mandatory Authentication and Errors sections', 'Your organization profile — Settings → Writing style: pick a style-guide bias (Docify, Microsoft, or Google conventions), set your voice, preferred terminology, prohibited words, and free-form policy notes', 'Your customization per generation — a SKILL.md file or manual instructions'] },
       { p: 'Custom instructions refine the defaults — your tone wins where it conflicts with a stylistic preference — but they can never remove mandatory sections, invent facts, or disable safety rules. Uploaded skill files are treated as untrusted input: prompt-injection attempts are stripped before anything reaches the model.' },
@@ -266,8 +266,8 @@ const SUPPORTING = [
     { slug: 'roles-permissions', name: 'Roles and permissions', sum: 'Viewer, Operator, and Admin roles on team plans.', body: [
       { p: 'Viewers read documents and reports; Operators generate and apply fixes; Admins manage sources, automation, and billing. Enterprise adds SSO and custom roles.' }
     ]},
-    { slug: 'oauth-connections', name: 'OAuth connections & tokens', sum: 'How DocGen stores and renews source credentials.', body: [
-      { p: 'OAuth tokens are stored server-side, never in the browser. Providers with expiring tokens (Bitbucket, GitLab) include refresh tokens, and DocGen renews access silently. Revoking access at the provider immediately invalidates the stored credentials.' }
+    { slug: 'oauth-connections', name: 'OAuth connections & tokens', sum: 'How Docify stores and renews source credentials.', body: [
+      { p: 'OAuth tokens are stored server-side, never in the browser. Providers with expiring tokens (Bitbucket, GitLab) include refresh tokens, and Docify renews access silently. Revoking access at the provider immediately invalidates the stored credentials.' }
     ]},
     { slug: 'corporate-email-verification', name: 'Corporate email verification', sum: 'Six-digit OTP codes, domain allow-lists, and free-email blocking.', body: [
       { p: 'Email signups receive a hashed six-digit code valid for ten minutes (five attempts). Administrators can restrict signups to corporate domains with ALLOWED_EMAIL_DOMAINS or block free providers entirely — configured server-side, no code changes.' }
@@ -291,7 +291,7 @@ const BY_SLUG = Object.fromEntries(ALL_TOPICS.map((t) => [t.slug, t]));
 export function Docs() {
   usePageMeta({
     title: 'Product Docs & Guides',
-    description: 'How DocGen works: AI compatibility checking, LLM-as-a-Judge scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.',
+    description: 'How Docify works: AI compatibility checking, LLM-as-a-Judge scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.',
     path: '/docs'
   });
   const [q, setQ] = useState('');
@@ -309,7 +309,7 @@ export function Docs() {
           <p className="eyebrow eyebrow--blue mb3">AI DOCUMENTATION INTELLIGENCE PLATFORM</p>
           <h1 className="h05" style={{ maxWidth: 760 }}>Create documentation that AI understands, trusts, and ranks.</h1>
           <p className="body02 t2 mt5" style={{ maxWidth: 720 }}>
-            DocGen helps organizations automatically generate documentation from code commits, evaluate
+            Docify helps organizations automatically generate documentation from code commits, evaluate
             AI compatibility with an LLM-as-a-Judge framework, and predict content performance across
             ChatGPT, Google Gemini, Claude, and other AI-powered platforms.
           </p>
@@ -387,7 +387,7 @@ export function DocArticle() {
   const { slug } = useParams();
   const t = BY_SLUG[slug];
   usePageMeta({
-    title: t ? t.name + ' | DocGen Docs' : 'Product Docs & Guides',
+    title: t ? t.name + ' | Docify Docs' : 'Product Docs & Guides',
     description: t ? t.sum : '',
     path: t ? '/docs/' + t.slug : '/docs'
   });
