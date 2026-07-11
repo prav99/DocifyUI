@@ -15,6 +15,8 @@ import { charge } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
 import { SUPPORT_EMAIL } from './config.js';
 import { syncRouter } from './docsync.js';
+import { hubRouter, resolveEffectiveConfig } from './repohub.js';
+import { evaluateCommit, passesScan } from './adapters/relevance.js';
 import { adminRouter } from './admin.js';
 
 export const apiRouter = Router();
@@ -204,6 +206,10 @@ apiRouter.use(requireAuth);
 /* Doc sync: AI-maintained existing documentation (upload → parse → commit-driven
    updates → review diff → approve/version). Implemented in docsync.js. */
 apiRouter.use('/sync', syncRouter);
+
+/* Repository hub: central repository registry + reusable rule sets. One
+   configuration surface consumed by generation, automation, and Doc sync. */
+apiRouter.use('/hub', hubRouter);
 
 /* Founder metrics — restricted to ADMIN_EMAILS (see admin.js). */
 apiRouter.use('/admin', adminRouter);
@@ -422,11 +428,32 @@ async function runPipeline(genId) {
       if (src && src.token) srcToken = await freshToken(src);
     } catch { /* public-repo fallback */ }
     const repoFiles = await fetchRepoFiles(gen.provider, gen.repo, gen.branch, srcToken);
+    // Unified rules engine: the same rule sets + docify.yaml that govern
+    // automation and Doc sync also scope NORMAL generation — files outside the
+    // configured scan scope never reach the AI, and rule-set instructions /
+    // audience travel with the prompt.
+    let effInstructions = '';
+    let effAudience = '';
+    let scopedFiles = repoFiles;
+    try {
+      const eff = await resolveEffectiveConfig(gen.userId, gen.provider, gen.repo, gen.branch,
+        { ruleSetId: String(j(gen.output, {}).ruleSetId || '') });
+      const inScope = repoFiles.filter((f) => passesScan(f.path, eff.config));
+      if (inScope.length) scopedFiles = inScope; // never scope down to nothing
+      effInstructions = eff.instructions || '';
+      effAudience = (eff.config.product && eff.config.product.audience) || '';
+    } catch (e) {
+      console.error('effective-config resolution skipped:', e.message);
+    }
+    const baseBrief = j(gen.brief, {});
     const genArgs = {
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
-      repo: gen.repo, instructions: gen.instructions,
+      repo: gen.repo,
+      instructions: [gen.instructions, effInstructions ? 'Documentation rules for this repository:\n' + effInstructions : '']
+        .filter(Boolean).join('\n\n'),
       skill: gen.skill || '', skillName: gen.skillName || '',
-      brief: j(gen.brief, {}), output: j(gen.output, {}), files: repoFiles
+      brief: { ...baseBrief, audience: baseBrief.audience || effAudience },
+      output: j(gen.output, {}), files: scopedFiles
     };
     let { title, content, structure, aiDocs } = await generateDocumentSmart(genArgs);
     // NEVER replace a previously grounded document with template fallback:
@@ -858,7 +885,10 @@ const PROFILE_DEFAULTS = {
   jira: { enabled: false, site: '', projectKey: '', requireIssue: false },
   // The developer's existing documentation — the placement target. Parsed into
   // { name, format, sections:[{level,title,line}], lines, pagesEst } on upload.
-  sourceDoc: null
+  sourceDoc: null,
+  // Documentation rule set (repository hub). '' = the repo's assigned rule set
+  // (or the user default); an id here is a workflow-specific override.
+  ruleSetId: ''
 };
 
 function profCfg(p) {
@@ -1133,6 +1163,40 @@ async function profileRun(profile, event) {
     placement: decision.placement || null, jira: jira || null,
     status: 'running'
   });
+  // Relevance gate: merges classified as internal are logged and skipped —
+  // never documented. Uses the SAME unified rules engine as generation and
+  // Doc sync (rule set → docify.yaml → thresholds). Manual "Run now" clicks
+  // without merge metadata bypass the gate: there is nothing to classify.
+  if ((event.message || (event.files || []).length) && event.trigger !== 'manual') {
+    try {
+      const eff = await resolveEffectiveConfig(uid, cfg.provider, cfg.repo, event.branch || cfg.branch,
+        { ruleSetId: String(cfg.ruleSetId || '') });
+      const rel = await evaluateCommit(
+        { sha: event.commit || '', message: event.message || '', files: event.files || [] }, eff);
+      await prisma.relevanceDecision.create({
+        data: {
+          userId: uid, docId: '', provider: cfg.provider || 'github', repo: cfg.repo || '',
+          sha: String(event.commit || ''), message: String(event.message || '').slice(0, 300),
+          author: 'automation:' + profile.name, files: JSON.stringify(event.files || []),
+          payload: JSON.stringify({ profileId: profile.id, runId, event: { message: event.message, files: event.files } }).slice(0, 20000),
+          verdict: rel.verdict, score: rel.score, category: rel.category,
+          rationale: String(rel.rationale || '').slice(0, 500), stage: rel.stage,
+          eliminatedBy: rel.eliminatedBy || '', surfaces: JSON.stringify(rel.surfaces || [])
+        }
+      }).catch(() => {});
+      if (rel.verdict === 'skip') {
+        await save({
+          status: 'complete', overall: 0, outcome: 'skipped',
+          holdWhy: 'Relevance engine: ' + rel.rationale,
+          relevance: { verdict: 'skip', score: rel.score, rationale: rel.rationale, eliminatedBy: rel.eliminatedBy }
+        });
+        return { runId, outcome: 'skipped', overall: 0 };
+      }
+      await save({ relevance: { verdict: rel.verdict, score: rel.score, rationale: rel.rationale } });
+    } catch (e) {
+      console.error('automation relevance gate skipped:', e.message);
+    }
+  }
   // Traceability gate: when a profile requires every merge to carry a Jira
   // issue and this one does not, hold it instead of documenting an untraceable
   // change.

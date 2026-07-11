@@ -26,7 +26,8 @@ const DEFAULT_CFG = {
 const OUTCOME_TAG = {
   published: ['tag--green', 'Published'],
   held: ['tag--red', 'Gate blocked'],
-  'awaiting-approval': ['tag--amber', 'Awaiting approval']
+  'awaiting-approval': ['tag--amber', 'Awaiting approval'],
+  skipped: ['tag--gray', 'Filtered out']
 };
 
 const TRIGGER_LABEL = { webhook: 'Merge (webhook)', simulate: 'Simulated merge', manual: 'Manual run' };
@@ -193,6 +194,12 @@ function Wizard({ existing, catalog, onDone }) {
     api('/repos?provider=' + cfg.provider).then((d) => setRepos(d.repos || [])).catch(() => setRepos([]));
   }, [cfg.provider]);
 
+  // Reusable documentation rule sets (repository hub) — pipeline override.
+  const [ruleSets, setRuleSets] = useState(null);
+  useEffect(() => {
+    api('/hub/rulesets').then((d) => setRuleSets(d.ruleSets)).catch(() => setRuleSets([]));
+  }, []);
+
   useEffect(() => {
     if (step !== 1 || !cfg.repo) return;
     setBranches(null);
@@ -267,6 +274,20 @@ function Wizard({ existing, catalog, onDone }) {
                 value={repos && repos.some((r) => r.name === cfg.repo) ? '' : cfg.repo}
                 onChange={(e) => set({ repo: e.target.value.trim() })} />
               <p className="helper">Public repositories work without connecting an account — documentation is generated from their real source files.</p>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="wzrules">Documentation rule set</label>
+              {ruleSets === null ? <p className="helper">Loading rule sets…</p> : (
+                <select id="wzrules" className="select" value={cfg.ruleSetId || ''}
+                  onChange={(e) => set({ ruleSetId: e.target.value })}>
+                  <option value="">Repository default (from the hub, or your default rule set)</option>
+                  {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
+                </select>
+              )}
+              <p className="helper">
+                The relevance engine gates every merge with these rules — internal-only changes are
+                filtered before any documentation is generated. Manage rule sets on the Repositories page.
+              </p>
             </div>
           </>
         )}

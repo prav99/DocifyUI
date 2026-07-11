@@ -36,11 +36,17 @@ export default function Source() {
   const [waitlistFor, setWaitlistFor] = useState(null);
   const [wlEmail, setWlEmail] = useState(user ? user.email : '');
   const [busy, setBusy] = useState(false);
+  const [hubRepos, setHubRepos] = useState(null); // Repository hub: connect once, use everywhere
 
   const sources = flow.sources || [];
   const cfg = flow.srcCfg || {};
 
   useEffect(() => { getCatalog().then(setCatalog); }, []);
+  useEffect(() => {
+    api('/hub/repositories?per=100&enabled=true')
+      .then((d) => setHubRepos(d.repositories))
+      .catch(() => setHubRepos([]));
+  }, []);
 
   // The provider chosen at sign-in is already authorized — pre-select it once,
   // so the user lands here with only the repository dropdown left to fill.
@@ -286,6 +292,21 @@ export default function Source() {
                               ))}
                             </select>
                           </div>
+                          {hubRepos && hubRepos.filter((r) => r.provider === id).length > 0 && (
+                            <div className="field mt3" style={{ marginBottom: 0 }}>
+                              <label htmlFor={'hub-' + id}>From your Repository hub</label>
+                              <select id={'hub-' + id} className="select" value={c.fromHub ? (c.sel || '') : ''}
+                                onChange={(e) => setCfg(id, { sel: e.target.value, custom: false, fromHub: true })}>
+                                <option value="" disabled>Choose a connected repository…</option>
+                                {hubRepos.filter((r) => r.provider === id).map((r) => (
+                                  <option key={r.id} value={r.repo}>
+                                    {r.repo + ' · ' + (r.ruleSetName || 'Default rules')}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="helper">Rule sets assigned in the hub apply automatically to this generation.</span>
+                            </div>
+                          )}
                           <div className="field mt3" style={{ marginBottom: 0 }}>
                             <label htmlFor={'custom-' + id}>Or any public {PICKER_LABEL[id].toLowerCase()} (owner/name)</label>
                             <input id={'custom-' + id} className="input" placeholder="e.g. expressjs/express"

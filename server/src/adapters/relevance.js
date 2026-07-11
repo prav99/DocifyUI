@@ -143,6 +143,15 @@ function matchesAny(path, globs) {
   });
 }
 
+// Does a file path fall inside the configured documentation scope?
+// Used by generation to scope which repository files feed the AI.
+export function passesScan(path, cfg) {
+  const c = cfg || DEFAULT_CONFIG;
+  if (c.scan.exclude.length && matchesAny(path, c.scan.exclude)) return false;
+  if (c.scan.include.length && !matchesAny(path, c.scan.include)) return false;
+  return true;
+}
+
 /* -------------------------- Stage 1: hard filters ------------------------- */
 const LOCKFILES = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|cargo\.lock|poetry\.lock|gemfile\.lock|composer\.lock)$/i;
 const MANIFESTS = /(^|\/)(package\.json|go\.mod|cargo\.toml|pyproject\.toml|requirements[^/]*\.txt|gemfile|composer\.json)$/i;

@@ -185,7 +185,12 @@ export function TopBar() {
         )}
         {user && (
           <a className={path === '/sync' ? 'on' : ''} onClick={() => nav('/sync')}>
-            Doc sync<span className="navnew">●</span>
+            Doc sync
+          </a>
+        )}
+        {user && (
+          <a className={path === '/repos' ? 'on' : ''} onClick={() => nav('/repos')}>
+            Repositories<span className="navnew">●</span>
           </a>
         )}
       </nav>

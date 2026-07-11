@@ -590,6 +590,15 @@ syncRouter.delete('/documents/:id', async (req, res) => {
    .docify/instructions.md from the repository, everything else uses defaults.
    Never throws — filtering must degrade gracefully, not block syncing. */
 async function relevanceContext(userId, repo, branch, provider = 'github') {
+  // Unified rules engine: rule sets from the repository hub + repo docify.yaml,
+  // resolved through the same path generation and automation use.
+  try {
+    const { resolveEffectiveConfig } = await import('./repohub.js');
+    return await resolveEffectiveConfig(userId, provider, repo || '', branch || 'main', {});
+  } catch (e) {
+    console.error('relevanceContext:', e.message);
+  }
+  // Legacy fallback: repo files only.
   try {
     if (repo && repo.includes('/')) {
       let token = '';
@@ -600,7 +609,7 @@ async function relevanceContext(userId, repo, branch, provider = 'github') {
       return await loadRepoConfig(provider, repo, branch || 'main', token);
     }
   } catch (e) {
-    console.error('relevanceContext:', e.message);
+    console.error('relevanceContext fallback:', e.message);
   }
   return { config: DEFAULT_CONFIG, instructions: '', sources: { yaml: false, ignoreFile: false, instructions: false }, errors: [] };
 }

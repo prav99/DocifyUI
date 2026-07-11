@@ -1140,3 +1140,38 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .trusttile{background:#ffffff;border:1px solid var(--border-subtle,#e0e0e0);border-top:2px solid #24a148;padding:22px;height:100%}
 @media(max-width:1000px){.trustgrid{grid-template-columns:1fr 1fr}}
 @media(max-width:520px){.trustgrid{grid-template-columns:1fr}}
+
+/* ==== Repository hub: enterprise data table + side panels ==== */
+.hubbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.hubsearch{max-width:320px;flex:1 1 220px}
+.hubbar .select{max-width:200px}
+.hubbulk{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#edf5ff;border:1px solid #d0e2ff;border-left:3px solid #0f62fe;padding:10px 14px;margin-top:12px}
+.hubtable-wrap{overflow-x:auto;border:1px solid var(--border-subtle)}
+.hubtable{width:100%;border-collapse:collapse;font-size:13.5px;min-width:900px}
+.hubtable th{background:var(--layer-01);text-align:left;font-weight:600;font-size:12px;letter-spacing:.03em;color:var(--text-secondary);padding:10px 12px;border-bottom:1px solid var(--border-subtle);white-space:nowrap}
+.hubtable td{padding:9px 12px;border-bottom:1px solid var(--border-subtle);vertical-align:middle}
+.hubtable tr:hover td{background:#f6f8fb}
+.hubtable tr.muted td{opacity:.55}
+.provtag{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:2px 7px;border:1px solid var(--border-subtle);background:var(--layer-01)}
+.prov--github{border-color:#8d8d8d}
+.prov--gitlab{border-color:#fc6d26;color:#c74e14}
+.prov--bitbucket{border-color:#2684ff;color:#1759bb}
+.repostatus{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px;color:var(--text-secondary)}
+.repostatus span{width:8px;height:8px;border-radius:50%;display:inline-block}
+.select--slim{height:30px;font-size:12.5px;padding:0 26px 0 8px;max-width:190px}
+.hubtable .linkbtn{font-size:12.5px;padding:2px 6px;white-space:nowrap}
+.linkbtn:disabled{color:#8d8d8d;cursor:default;text-decoration:none}
+/* Side panels (progressive disclosure instead of modals-on-modals) */
+.hubpanel-wrap{position:fixed;inset:0;background:rgba(22,22,22,.4);z-index:90;display:flex;justify-content:flex-end}
+.hubpanel{background:#fff;width:min(480px,100%);height:100%;overflow-y:auto;box-shadow:-4px 0 16px rgba(0,0,0,.15);animation:hubslide .18s ease-out}
+.hubpanel--wide{width:min(620px,100%)}
+@keyframes hubslide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}
+.hubpanel-head{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid var(--border-subtle);position:sticky;top:0;background:#fff;z-index:1}
+.hubpanel-body{padding:20px 24px 32px}
+.chipbtn{border:1px solid #d0d0d0;background:#fff;padding:4px 12px;border-radius:13px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#525252;cursor:pointer}
+.chipbtn.on{background:#0f62fe;border-color:#0f62fe;color:#fff}
+.chipbtn:focus-visible{outline:2px solid #0f62fe;outline-offset:1px}
+.efflayer{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border-subtle);background:var(--layer-01)}
+.effpre{background:#161616;color:#f4f4f4;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.55;padding:14px;overflow-x:auto;white-space:pre-wrap}
+.ruleset-row{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;border:1px solid var(--border-subtle);border-left:3px solid #0f62fe;background:#fff;padding:16px 20px}
+@media(max-width:700px){.hubbar .select{max-width:100%}.hubsearch{max-width:100%}.ruleset-row{align-items:flex-start;flex-direction:column}}
