@@ -208,8 +208,19 @@ export function resolveWritingPolicy({ track = 'technical', docType = '', format
     docTypeRules: dt.rules,
     requiredSections: dt.requiredSections,
     preferredTerms: [
-      // Tenant terms take precedence over the defaults they duplicate.
-      ...tenantTerms.map((x) => ({ use: x.use, not: Array.isArray(x.not) ? x.not : String(x.not || '').split(',').map((s) => s.trim()).filter(Boolean), safe: false })),
+      // Tenant terms take precedence over the defaults they duplicate — and
+      // they are SAFE to auto-correct: the organization explicitly declared
+      // the standard, so it outranks whatever any document currently does.
+      ...tenantTerms.map((x) => {
+        const notList = (Array.isArray(x.not) ? x.not : String(x.not || '').split(',')).map((s) => String(s).trim()).filter(Boolean);
+        const esc = notList.map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        return {
+          use: x.use, not: notList,
+          match: esc.length ? new RegExp('\\b(?:' + esc.join('|') + ')\\b', 'gi') : null,
+          replace: x.use,
+          safe: true
+        };
+      }),
       ...DEFAULT_TERMS.filter((d) => !tenantTerms.some((x) => x.use.toLowerCase() === d.use.toLowerCase()))
     ],
     prohibited: Array.isArray(tcfg.prohibited) ? tcfg.prohibited.filter(Boolean).slice(0, 50) : [],

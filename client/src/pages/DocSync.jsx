@@ -319,6 +319,9 @@ function DocCard({ doc, onChanged, onSynced }) {
   const [simOpen, setSimOpen] = useState(false);
   const [delOpen, setDelOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stdOpen, setStdOpen] = useState(false);
+  const [stdType, setStdType] = useState('userguide');
+  const [stdBusy, setStdBusy] = useState(false);
   const busyParsing = doc.status === 'parsing' || doc.status === 'indexing';
   const p = doc.profile || {};
 
@@ -351,6 +354,23 @@ function DocCard({ doc, onChanged, onSynced }) {
       setDelOpen(false);
       onChanged();
     } catch (e) { toast('error', 'Delete failed', e.message); }
+  }
+
+  // Full-document standardization: one voice, blueprint structure — proposed
+  // as a review-queue diff, never applied silently.
+  async function standardize() {
+    setStdBusy(true);
+    try {
+      const d = await api('/sync/documents/' + doc.id + '/standardize', { method: 'POST', body: { docType: stdType } });
+      const s = d.scores || {};
+      toast('success', 'Standardization proposal ready',
+        (s.before && s.after ? 'Writing consistency ' + s.before.overall + ' → ' + s.after.overall + '. ' : '') +
+        'Review the full-document diff in the queue — nothing changes until you approve.');
+      setStdOpen(false);
+      onSynced();
+      onChanged();
+    } catch (e) { toast('error', 'Standardization failed', e.message); }
+    finally { setStdBusy(false); }
   }
 
   return (
@@ -391,6 +411,7 @@ function DocCard({ doc, onChanged, onSynced }) {
               {busy ? 'Checking…' : 'Check for new commits'}
             </button>
             <button className="btn btn--tertiary btn--sm btn--center" onClick={() => setOutlineOpen(true)}>Structure &amp; understanding</button>
+            <button className="btn btn--tertiary btn--sm btn--center" onClick={() => setStdOpen(true)}>Standardize document</button>
             <button className="btn btn--ghost btn--sm btn--center" onClick={() => setSimOpen(true)}>Simulate a commit</button>
             <button className="btn btn--ghost btn--sm btn--center" style={{ color: 'var(--support-error)' }} onClick={() => setDelOpen(true)}>Remove</button>
           </div>
@@ -430,6 +451,45 @@ function DocCard({ doc, onChanged, onSynced }) {
       </Modal>
 
       <SimulateModal open={simOpen} onClose={() => setSimOpen(false)} doc={doc} onCreated={() => { setSimOpen(false); onSynced(); onChanged(); }} />
+
+      {/* Standardize: full-document cleanup as a reviewable proposal */}
+      <Modal open={stdOpen} onClose={() => setStdOpen(false)}>
+        <div className="mhead">
+          <div>
+            <p className="label01 t2">STANDARDIZE DOCUMENT</p>
+            <h3 className="h02 mt2">One voice, one structure — with your approval</h3>
+          </div>
+          <button className="mclose" aria-label="Close" onClick={() => setStdOpen(false)}>✕</button>
+        </div>
+        <div className="mbody">
+          <p className="body01 t2">
+            Built for documents written by many people with no standard: the AI rebuilds
+            <b> {doc.name}</b> against a document-type blueprint in one consistent voice —
+            every fact kept, duplicated passages merged, terminology and formatting normalized
+            to your writing profile. The result lands in the review queue as a full-document
+            diff with before/after consistency scores. Nothing changes until you approve it.
+          </p>
+          <div className="field mt6">
+            <label htmlFor="stdtype">Structure it as</label>
+            <select id="stdtype" className="select" value={stdType} onChange={(e) => setStdType(e.target.value)}>
+              <option value="userguide">User guide</option>
+              <option value="api">API reference</option>
+              <option value="install">Installation &amp; setup guide</option>
+              <option value="quickstart">Quick start</option>
+              <option value="troubleshoot">Troubleshooting &amp; FAQ</option>
+              <option value="relnotes">Release notes / changelog</option>
+              <option value="admin">Admin &amp; configuration guide</option>
+            </select>
+            <span className="helper">The blueprint that decides the target section outline. Mandatory sections are kept; empty ones are omitted.</span>
+          </div>
+        </div>
+        <div className="mfoot">
+          <button className="btn btn--ghost btn--center" onClick={() => setStdOpen(false)}>Cancel</button>
+          <button className="btn btn--primary" disabled={stdBusy} onClick={standardize}>
+            {stdBusy ? 'Rebuilding… (30–60s)' : 'Create standardization proposal'}
+          </button>
+        </div>
+      </Modal>
 
       {/* Delete confirm */}
       <Modal open={delOpen} onClose={() => setDelOpen(false)}>

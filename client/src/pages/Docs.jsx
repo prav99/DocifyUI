@@ -217,7 +217,9 @@ const SUPPORTING = [
       { h: 'What about documents that are already inconsistent?' },
       { p: 'A document edited by five people over two years rarely has one style. Doc sync computes each convention as a WHOLE-DOCUMENT majority: if 70% of your bullets use dashes, new content uses dashes — even when the specific section being touched happens to use asterisks. The local neighborhood only breaks the tie when the document is genuinely split (no convention reaches a clear majority).' },
       { p: 'The effect over time: every update nudges an inconsistent document toward its own prevailing style, one touched section at a time. Untouched sections are never rewritten — convergence happens only where the pipeline already writes, so nothing changes without appearing in your review queue.' },
-      { p: 'The reasoning panel on each proposal states exactly which conventions were applied, and the diff you approve shows the already-conformed text.' }
+      { p: 'The reasoning panel on each proposal states exactly which conventions were applied, and the diff you approve shows the already-conformed text.' },
+      { h: 'When the whole document needs the cleanup' },
+      { p: 'For documents with no standard at all — ten developers, no technical writer, two years of ad-hoc edits — use "Standardize document" on the document card in Doc sync. The AI rebuilds the entire document against the blueprint of a type you choose (user guide, API reference, installation guide…), in one consistent voice: every fact preserved, duplicated passages merged, terminology and formatting normalized to your organization profile. The result is a full-document diff in the review queue with before/after writing-consistency scores — approve it and the clean version becomes the new baseline that future updates keep current.' }
     ]}
   ]},
   { t: 'Automation & CI', items: [

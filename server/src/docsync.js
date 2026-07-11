@@ -19,7 +19,8 @@ import { Router } from 'express';
 import { prisma } from './db.js';
 import { evaluateCommit, loadRepoConfig, DEFAULT_CONFIG, SAMPLE_YAML, SAMPLE_INSTRUCTIONS } from './adapters/relevance.js';
 import { fetchRepoFile } from './adapters/repofiles.js';
-import { matchSurroundingStyle } from './adapters/styleguide.js';
+import { matchSurroundingStyle, resolveWritingPolicy, compileStylePrompt, styleAudit, autofixText } from './adapters/styleguide.js';
+import { aiRestructureDocument } from './adapters/llm.js';
 import { freshToken } from './auth.js';
 
 export const syncRouter = Router();
@@ -276,7 +277,18 @@ function sectionRange(sections, idx, totalLines) {
   return { start: s.line, end }; // 1-based inclusive heading line … last line of section body
 }
 
-export function buildUpdate(doc, commit) {
+// The organization's writing profile OUTRANKS the document's majority style:
+// terminology standards apply to every insert even when the old document
+// consistently uses the "wrong" term. Precedence: org standard → document
+// majority → local neighborhood.
+export async function tenantWritingPolicy(userId) {
+  try {
+    const tenant = await prisma.writingProfile.findUnique({ where: { userId } });
+    return tenant ? resolveWritingPolicy({ tenant }) : null;
+  } catch { return null; }
+}
+
+export function buildUpdate(doc, commit, policy = null) {
   const sections = j(doc.sections, []);
   if (!sections.length) return null;
   const lines = String(doc.content || '').split(/\r?\n/);
@@ -307,7 +319,7 @@ export function buildUpdate(doc, commit) {
   // update converges the document toward its own prevailing style instead of
   // imitating whichever author happens to own the neighboring section.
   const surrounding = lines.slice(Math.max(0, range.start - 1), Math.min(lines.length, range.end));
-  const styledBody = matchSurroundingStyle(commit.body, surrounding, null, lines);
+  const styledBody = matchSurroundingStyle(commit.body, surrounding, policy, lines);
 
   const snippet = styledBody.join('\n');
   let diff;
@@ -373,6 +385,12 @@ export function buildUpdate(doc, commit) {
 /* ---------------- Apply an approved update to the live document ---------------- */
 export function applyUpdate(doc, upd, snippetOverride) {
   const lines = String(doc.content || '').split(/\r?\n/);
+  // Full-document standardization: the approved diff IS the new document.
+  if (upd.kind === 'restructure') {
+    const stored = j(upd.diff, {});
+    const body = snippetOverride != null && snippetOverride.trim() !== '' ? snippetOverride.split(/\r?\n/) : null;
+    return (body || stored.after || lines).join('\n');
+  }
   const sections = parseOutline(doc.content).sections;
   const anchor = j(upd.anchor, {});
   const diff = j(upd.diff, {});
@@ -663,7 +681,7 @@ syncRouter.post('/documents/:id/sync', async (req, res) => {
       filtered.push({ sha: commit.sha, message: commit.message, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy });
       continue;
     }
-    const built = buildUpdate(row, commit);
+    const built = buildUpdate(row, commit, await tenantWritingPolicy(req.uid));
     if (!built) continue;
     // Borderline relevance travels with the update so the review queue can flag it.
     const reasoning = j(built.reasoning, {});
@@ -710,13 +728,67 @@ syncRouter.post('/documents/:id/simulate', async (req, res) => {
       message: 'The relevance engine classified this change as internal — it was logged in Filtered out instead of the review queue.'
     });
   }
-  const built = buildUpdate(row, commit);
+  const built = buildUpdate(row, commit, await tenantWritingPolicy(req.uid));
   if (!built) return res.status(400).json({ error: 'The document has no sections to place into' });
   const reasoning = j(built.reasoning, {});
   reasoning.relevance = { verdict: decision.verdict, score: decision.score, rationale: decision.rationale, engine: decision.engine };
   built.reasoning = JSON.stringify(reasoning);
   const u = await prisma.syncUpdate.create({ data: { userId: req.uid, docId: row.id, ...built } });
   res.status(201).json({ update: serializeUpdate(u, row.name) });
+});
+
+/* ---------------- Full-document standardization ----------------
+   For documents written by many hands with no standard: rebuild the WHOLE
+   document against a type blueprint in one voice — facts preserved,
+   duplicates merged, terminology normalized to the organization profile.
+   Ships as a review-queue proposal with before/after consistency scores;
+   nothing changes until the full diff is approved. */
+syncRouter.post('/documents/:id/standardize', async (req, res) => {
+  const row = await ownDoc(req, res);
+  if (!row) return;
+  if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
+  const docType = ['userguide', 'api', 'install', 'quickstart', 'troubleshoot', 'relnotes', 'admin']
+    .includes(String((req.body || {}).docType)) ? String(req.body.docType) : 'userguide';
+  try {
+    const tenant = await prisma.writingProfile.findUnique({ where: { userId: req.uid } }).catch(() => null);
+    const policy = resolveWritingPolicy({ track: 'technical', docType, tenant });
+    const before = String(row.content || '');
+    if (before.trim().length < 40) return res.status(400).json({ error: 'The document is too short to standardize' });
+    const auditBefore = styleAudit(before, policy);
+    const pairs = await aiRestructureDocument({
+      title: row.name, content: before, docType, styleSys: compileStylePrompt(policy)
+    });
+    let md = '# ' + row.name.replace(/\.[a-z]+$/i, '') + '\n\n' +
+      pairs.map(([h, b]) => '## ' + h + '\n\n' + b).join('\n\n');
+    md = autofixText(md, policy).text;
+    const auditAfter = styleAudit(md, policy);
+    const reasoning = {
+      why: 'Full standardization pass: the document was rebuilt against the ' + docType + ' blueprint in one consistent voice — every fact kept, duplicated passages merged, terminology and formatting normalized to your writing profile' + (tenant ? ' (v' + tenant.version + ')' : '') + '.',
+      style: 'Writing consistency ' + auditBefore.scores.overall + ' → ' + auditAfter.scores.overall +
+        ' · voice ' + auditBefore.scores.voice + '→' + auditAfter.scores.voice +
+        ' · terminology ' + auditBefore.scores.terminology + '→' + auditAfter.scores.terminology +
+        ' · structure ' + auditBefore.scores.structure + '→' + auditAfter.scores.structure + '.',
+      scores: { before: auditBefore.scores, after: auditAfter.scores },
+      semantic: pairs.length + ' sections produced from ' + j(row.sections, []).length + ' original sections. The full-document diff below replaces everything at once — approve it, or dismiss and nothing changes.'
+    };
+    const u = await prisma.syncUpdate.create({
+      data: {
+        userId: req.uid, docId: row.id,
+        commit: 'std-' + Date.now().toString(36), message: 'Standardize: one voice, ' + docType + ' structure',
+        author: 'Docify standardization', branch: row.branch || 'main', files: '[]',
+        kind: 'restructure',
+        anchor: JSON.stringify({ title: 'Entire document', anchorPath: 'Entire document', line: 1, page: 1, level: 1 }),
+        confidence: Math.max(70, Math.min(97, 70 + (auditAfter.scores.overall - auditBefore.scores.overall))),
+        reasoning: JSON.stringify(reasoning),
+        diff: JSON.stringify({ startLine: 1, before: before.split(/\r?\n/), after: md.split('\n') }),
+        snippet: md.slice(0, 4000)
+      }
+    });
+    res.status(201).json({
+      update: serializeUpdate(u, row.name),
+      scores: { before: auditBefore.scores, after: auditAfter.scores }
+    });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 /* ---------------- Relevance: decisions audit + overrides + config ---------- */
@@ -753,7 +825,7 @@ syncRouter.post('/relevance/decisions/:id/override', async (req, res) => {
   if (!Array.isArray(commit.body) || !commit.body.length) {
     commit.body = ['Documented by reviewer override: ' + titleFromMessage(commit.message) + '.'];
   }
-  const built = buildUpdate(doc, commit);
+  const built = buildUpdate(doc, commit, await tenantWritingPolicy(req.uid));
   if (!built) return res.status(400).json({ error: 'The document has no sections to place into' });
   const reasoning = j(built.reasoning, {});
   reasoning.relevance = { verdict: 'override', score: d.score, rationale: 'Reviewer overrode the filter: ' + d.rationale, engine: d.stage };

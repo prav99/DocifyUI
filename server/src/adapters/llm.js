@@ -1625,6 +1625,41 @@ function parseSectionsArray(raw) {
   throw new Error('Unparseable sections array from model');
 }
 
+/* ---------------- Full-document standardization ----------------
+   For the startup whose docs were written by ten developers with ten styles:
+   rebuild an EXISTING document against a type blueprint in ONE voice — every
+   fact preserved, duplicates merged, terminology normalized. The result is a
+   review-queue proposal, never an automatic overwrite. */
+export async function aiRestructureDocument({ title, content, docType = 'userguide', track = 'technical', styleSys = '' }) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('Standardization needs the AI engine — it is not configured on this deployment');
+  const tpl = TEMPLATES[docType];
+  const outline = tpl ? tpl.sections({ product: 'X', version: '', date: '', repo: '', brief: {} }).map(([h]) => h) : ['Overview'];
+  const sys = 'You are a senior technical writer performing a full standardization pass on an EXISTING document. ' +
+    'Preserve every fact, command, parameter, value, and warning — never invent content and never drop substance. ' +
+    'Merge duplicated passages into the better version; resolve contradictions by keeping the more specific statement. ' +
+    'Rewrite everything in ONE consistent voice from the first line to the last. ' +
+    'Respond with ONLY a JSON array of [heading, markdownBody] pairs — no prose around it.' +
+    (styleSys ? '\n\n' + String(styleSys).slice(0, 12000) : '');
+  const user = 'Document title: ' + (title || 'Untitled') +
+    '\nTarget document type: ' + docTypeName(track, docType) +
+    '\nTarget outline (adapt to the real content — omit sections with nothing to say, keep mandatory ones): ' + outline.join(' · ') +
+    '\n\nEXISTING DOCUMENT TO STANDARDIZE:\n\n' + String(content).slice(0, 90000);
+  await acquireSlot();
+  let d;
+  try {
+    d = await anthropicRequest(key, { model: AI_MODEL(), max_tokens: 8192, system: sys, messages: [{ role: 'user', content: user }] });
+  } finally {
+    releaseSlot();
+  }
+  const text = (d.content || []).map((c) => c.text || '').join('');
+  const m = text.match(/\[[\s\S]*\]?/);
+  if (!m) throw new Error('No JSON array in model response');
+  const arr = parseSectionsArray(m[0]);
+  if (!Array.isArray(arr) || !arr.length) throw new Error('Empty sections from model');
+  return arr.filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [String(p[0]), String(p[1])]);
+}
+
 // Drop-in async wrapper: real AI when possible, template engine otherwise.
 // Also returns aiDocs so callers can persist them for fix-regeneration and
 // HTML preview rendering without re-calling the API.

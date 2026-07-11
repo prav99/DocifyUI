@@ -179,7 +179,8 @@ const TOPICS = {
       'Connect the repository whose changes should drive updates. Each merge runs through the relevance engine first — refactors, test-only changes, and dependency bumps are filtered out (see the "Filtered out" tab for every skip, with the reason and a one-click "Document anyway" override).',
       'Relevant changes produce an update proposal: the AI picks the best-matching section (the reasoning panel explains why, with candidate sections and confidence), rewrites it in place or splices a new sub-section under the right parent, and conforms the insert to your document’s own conventions — bullet style, heading case — so it reads like the same author.',
       'Review each proposal as a side-by-side diff and approve or dismiss. Nothing touches your document without approval; approved versions are kept, so you can roll back.',
-      'Tune what counts as documentation-worthy with docify.yaml and .docify/instructions.md in your repository, or a rule set from Repository Connections.'
+      'Tune what counts as documentation-worthy with docify.yaml and .docify/instructions.md in your repository, or a rule set from Repository Connections.',
+      'Inherited a messy document written by many people with no standard? Click "Standardize document": the AI rebuilds the whole document against a type blueprint in one consistent voice — facts kept, duplicates merged, terminology normalized — and proposes it as a full-document diff with before/after consistency scores. Approve it or dismiss it; nothing changes silently.'
     ],
     issues: [
       ['Entries marked SAMPLE', 'Rows tagged “Sample data” with fictional authors are built-in demo material so the page is understandable before your first sync — they disappear as your real activity arrives.'],
