@@ -129,9 +129,10 @@ const PILLARS = [
 
 const SUPPORTING = [
   { t: 'Getting started', items: [
-    { slug: 'connect-first-source', name: 'Connect your first source', sum: 'OAuth for code hosts; API tokens for Jira, Confluence, and Notion; URL for OpenAPI specs.', body: [
-      { p: 'Pick a source on the Source step. GitHub, GitLab, and Bitbucket connect via one-click OAuth. Jira and Confluence take your site URL, account email, and an API token — verified live before you continue. Notion uses an integration token; OpenAPI takes a spec URL and validates it, showing the title and endpoint count.' },
-      { p: 'You can select several sources for one generation and mark one as primary.' }
+    { slug: 'connect-first-source', name: 'Connect your first source', sum: 'One place for connections; every workflow reuses them.', body: [
+      { p: 'All provider connections live on ONE page: Repository Connections (the Repositories item in the top navigation). Connect your GitHub, GitLab, or Bitbucket account there once — plus any organisations, groups, or workspaces — and every workflow in the product reuses that configuration automatically. You never reconnect the same provider twice.' },
+      { p: 'On the Source step you simply pick from your unified repository catalogue. Jira, Confluence, and Notion connect directly on the Source step with their own dedicated panels — site URL, account email, and an API token for the Atlassian products (verified live before you continue), an internal integration token for Notion. OpenAPI and Swagger specs are added from a URL, pasted text, or a file inside a connected repository.' },
+      { p: 'You can combine several sources in one generation — a repository plus Jira issues plus an API spec, for example. Each source contributes its real content; the first code source becomes the primary.' }
     ]},
     { slug: 'generate-api-reference', name: 'Generate an API reference', sum: 'Source → doc type → format → generate: four steps to a scored draft.', body: [
       { p: 'Choose the API reference type (OpenAPI 3.1-aligned), pick a format, optionally set output options, and generate. The pipeline drafts endpoint tables, auth, errors, and rate limits, then scores the result. The preview honors every option you set — toggle Rendered/Source to inspect the exact markup.' }
@@ -151,7 +152,77 @@ const SUPPORTING = [
       { p: 'Attach a SKILL.md on the doc-type step. Its Sections list replaces the blueprint outline; tone, audience, and Rules reshape the writing. The pipeline shows "Applying skill" as a step, and the quality report notes that the skill governs structure. A downloadable template gets you started.' }
     ]}
   ]},
+  { t: 'Sources & connections', items: [
+    { slug: 'repository-connections', name: 'Repository Connections hub', sum: 'Accounts, organisations, groups, and workspaces — configured once, used everywhere.', body: [
+      { p: 'Repository Connections (Repositories in the top navigation) is the single source of truth for every code-host integration. It has three tabs: Connections, Managed repositories, and Rule sets.' },
+      { h: 'Connections' },
+      { p: 'Each provider — GitHub, GitLab, Bitbucket — has a card showing your account status (Connected as <you>, Session expired, or Not connected) with Connect, Reauthenticate, and Disconnect actions. Below the account, connect any number of organisations, GitLab groups (nested subgroups like my-group/backend work), or Bitbucket workspaces by name. Each one is validated against the provider before saving and shows its repository count, last sync time, and Sync / Remove actions. Public organisations need no account at all; with a member account connected, organisation-private repositories you can access are included too.' },
+      { h: 'The unified catalogue' },
+      { p: 'Everything connected here aggregates into one repository catalogue: your account’s repositories, every connected organisation’s repositories, and individually added repositories — deduplicated, grouped by organisation, with assigned rule sets attached. The Source step, the Automation wizard, and Doc sync all read this same catalogue, so a repository connected once is available everywhere instantly.' },
+      { ul: ['Managed repositories: bulk-paste up to 200 owner/name lines or URLs, verify access, assign documentation rule sets, enable/disable, health-check', 'Removing an organisation removes its repositories from every workflow immediately', 'Arriving from a workflow? A blue return bar keeps your place — connect what you need, click “Return to workflow”, and your progress (and the new repository, auto-selected) is waiting'] }
+    ]},
+    { slug: 'multi-repo-selection', name: 'Selecting repositories', sum: 'Organisation-grouped dropdowns, add-another, and public repositories.', body: [
+      { p: 'On the Source step, each connected code host shows one compact row: a dropdown grouped by organisation. Pick a repository and the row collapses to a confirmation — name, branch, visibility — with Change to swap it.' },
+      { h: 'More than one repository' },
+      { p: 'After the first pick, “＋ Add another repository” lets you select more. Every additional repository gets its OWN generation with identical settings (document types, formats, instructions) — they run in parallel and land on your Dashboard side by side. Selecting repositories on two different hosts works the same way: each host’s pick is documented separately.' },
+      { h: 'Public repositories' },
+      { p: '“Use a public repository” accepts any owner/name (for example expressjs/express) with no connection required — DocGen reads public repositories anonymously. This is also the fastest way to try the product.' },
+      { p: 'Selections are guarded for trust: if a provider is disconnected, a token expires, or you lose access to a repository, the stale selection is cleared automatically with a notice — you can never generate from a repository you no longer have.' }
+    ]},
+    { slug: 'jira-source', name: 'Jira as a source', sum: 'Issues — not repositories. Six ways to select them; full content grounds the document.', body: [
+      { p: 'Jira is issue-based, not repository-based. Connect it on the Source step with your site URL (yourteam.atlassian.net), account email, and an API token from id.atlassian.com → Security → API tokens. Optionally pick a project to scope everything below.' },
+      { h: 'Six selection modes' },
+      { ul: ['Issue keys — type or paste keys (DOC-101, DOC-102), comma- or line-separated; each key is validated live, and invalid or inaccessible keys are listed in red with the exact reason', 'Search — by key, title, label, or assignee; multi-select from the results', 'Epic — pick an epic from the dropdown and pull in its child issues', 'Sprint — a sprint by name, or leave empty for the active sprint', 'Release — pick a fix version and select its issues', 'JQL — any query, e.g. project = DOC AND status = Done AND updated >= -14d'] },
+      { p: 'Selected issues appear as removable chips with their summaries. Duplicates are detected and skipped automatically.' },
+      { h: 'What DocGen reads' },
+      { p: 'At generation time the FULL content of every selected issue is fetched: summary, description, type, status, priority, assignee and reporter, labels, components, fix versions, parent and linked issues, and recent comments. That content becomes real source material — you can generate release notes from an epic with no repository involved at all.' }
+    ]},
+    { slug: 'openapi-swagger-source', name: 'OpenAPI & Swagger sources', sum: 'Multiple specs, an endpoint tree, real validation — and generation grounded in the spec.', body: [
+      { p: 'API specifications are first-class sources with their own panel. Add a spec three ways: From URL (any public JSON or YAML spec address), Paste spec (drop the raw document in), or From repository (host + owner/name + file path + branch — private repositories use your connected account).' },
+      { h: 'Inspect before you commit' },
+      { p: 'Every spec is parsed and analysed on the spot: title, version, OpenAPI/Swagger version (3.x and 2.0 both supported), endpoint count, schemas, and authentication schemes. Validation findings are listed — broken $ref references, duplicate operationIds, operations without responses or descriptions, missing authentication — with errors and warnings separated.' },
+      { h: 'Choose exactly what to document' },
+      { p: 'A checkbox tree groups every operation by tag. Select all, none, all-except-deprecated, whole tag groups, or individual operations. Add several specs — from different URLs, repositories, and folders — to one documentation project; each shows as a labelled card with its endpoint selection and validation badge.' },
+      { p: 'Generation is grounded in a digest of exactly the selected operations: parameters, request bodies, response codes with resolved schemas, and auth requirements. The API reference documents your real API, never a template.' }
+    ]},
+    { slug: 'notion-source', name: 'Notion as a source', sum: 'Pages and databases, searched and multi-selected; child pages optional.', body: [
+      { p: 'Create an internal integration at notion.so/profile/integrations, share the pages it should read (Page → ⋯ → Connections), and paste the token on the Source step. Only shared pages are ever visible.' },
+      { p: 'Search by title — or browse recent pages with an empty search — and multi-select from the results. Selected pages and databases appear as chips; tick “Include child pages” to pull entire hierarchies in at generation time.' },
+      { h: 'What DocGen reads' },
+      { ul: ['Headings, paragraphs, lists, to-dos, quotes, callouts, and code blocks — flattened to clean markdown', 'Tables row by row', 'Databases: each row’s title and properties (status, select, dates, numbers) as a compact table', 'Nested content follows list items and toggles; unreadable or unshared pages are skipped without failing the run'] }
+    ]},
+    { slug: 'confluence-source', name: 'Confluence as a source', sum: 'Spaces, page trees, and CQL — combine pages from multiple spaces.', body: [
+      { p: 'Connect with your site URL, account email, and API token. Pick a space to scope browsing, then select pages three ways: Browse space (latest pages), Search (title or full text), or CQL for anything advanced — space = ENG AND label = "api" order by lastmodified desc.' },
+      { p: 'Multi-select from any mix of spaces; selections show as chips with their space keys. “Include child pages” pulls each selected page’s descendants at generation time. Pages you cannot access are never listed, and restricted pages encountered during fetching are skipped silently — the rest of the run continues.' },
+      { h: 'What DocGen reads' },
+      { p: 'The full page body — headings, paragraphs, tables, and code macros — plus labels, space, and last-updated metadata. Content is normalized before generation, so a Confluence architecture page and a repository can ground the same document together.' }
+    ]}
+  ]},
+  { t: 'Writing style & governance', items: [
+    { slug: 'writing-profiles', name: 'Writing profiles', sum: 'Why every document sounds like the same careful writer — and how to make it sound like yours.', body: [
+      { p: 'Documents generated on different days by different prompts usually read like different people wrote them. DocGen prevents that with layered writing profiles that resolve into ONE policy before any content is generated.' },
+      { h: 'The layers, in order' },
+      { ul: ['Docify Professional Style — the base: active voice, short sentences, second person, sentence-case headings, global readability, no marketing fluff (a separate marketing base applies on the marketing track)', 'A document-type profile — a User guide is instructional with mandatory Prerequisites and Troubleshooting; Release notes are one-line, past-tense, factual; an API reference is precise with mandatory Authentication and Errors sections', 'Your organization profile — Settings → Writing style: pick a style-guide bias (Docify, Microsoft, or Google conventions), set your voice, preferred terminology, prohibited words, and free-form policy notes', 'Your customization per generation — a SKILL.md file or manual instructions'] },
+      { p: 'Custom instructions refine the defaults — your tone wins where it conflicts with a stylistic preference — but they can never remove mandatory sections, invent facts, or disable safety rules. Uploaded skill files are treated as untrusted input: prompt-injection attempts are stripped before anything reaches the model.' },
+      { p: 'The resolved policy is stored with every generation, including which version of your organization profile shaped it — auditable and reproducible.' }
+    ]},
+    { slug: 'terminology-consistency', name: 'Terminology & consistency scores', sum: '“Sign in” or “log in” — pick one, and the whole library follows.', body: [
+      { p: 'In Settings → Writing style, define preferred terms one per line: sign in => log in, login. The chosen term is used everywhere — headings, steps, tables, notes — across every document you generate from then on. Prohibited words (simply, obviously, leverage…) are flagged wherever they appear.' },
+      { h: 'Checked after generation, not just requested' },
+      { p: 'Every finished document runs through a deterministic writing audit. The Quality page’s Style tab shows consistency scores — Voice, Terminology, Structure, Formatting, and an overall Writing consistency number — plus concrete findings: “Preferred term: sign in · Detected: log in · 4 occurrences · Replace”. Unambiguous violations (e-mail → email, utilize → use) are corrected automatically before you ever see the document; everything else stays a finding for you to decide.' },
+      { ul: ['Structure findings flag missing mandatory sections and skipped heading levels', 'Voice findings flag passive-voice density and over-long sentences', 'Safe auto-corrections never touch code blocks'] }
+    ]},
+    { slug: 'doc-sync-style-matching', name: 'Doc sync style matching', sum: 'Updates spliced into your document dress like their neighbours.', body: [
+      { p: 'When Doc sync updates a section of YOUR existing document, the new content is conformed to the conventions of the section it lands in: the surrounding text is sampled for its list markers (- versus *), heading capitalization, and bold-lead bullet patterns, and the insert is adjusted to match before you review it.' },
+      { p: 'The review queue’s reasoning panel notes exactly this — so “one paragraph suddenly reads like a different person wrote it” is the failure mode the pipeline is built to avoid, and the diff you approve shows the already-conformed text.' }
+    ]}
+  ]},
   { t: 'Automation & CI', items: [
+    { slug: 'jira-automation-triggers', name: 'Jira event triggers', sum: 'Run a pipeline when an issue closes — no merge required.', body: [
+      { p: 'Automation pipelines can be triggered directly from Jira. In the pipeline wizard’s Triggers step, open Advanced, enable Jira, and pick the events: issue moves to Done/Closed/Resolved (the most common trigger), issue created, issue updated, or comment added.' },
+      { p: 'Point a Jira webhook (Jira Settings → System → Webhooks) at your pipeline’s endpoint with ?token=<secret> appended — the URL and secret are shown after the pipeline is created. The issue key rides through the whole run, so traceability, placement, and run history all show which issue caused which documentation change.' },
+      { p: 'Jira-triggered runs skip the merge-relevance gate — your choice of events IS the intent filter, and there is no code diff to classify.' }
+    ]},
     { slug: 'relevance-filtering', name: 'Relevance filtering & docify.yaml', sum: 'Why refactors, test changes, and dependency bumps never pollute your docs — and how to tune it.', body: [
       { p: 'Not every merge deserves customer documentation. Docify runs every change through a relevance funnel: deterministic rules first (commit types like chore/refactor/test, dependency-only diffs, test-only changes, excluded paths), then surface detection (did the change touch a public API, CLI, configuration, error messages, webhooks, or UI?), then an AI impact score from 0–100. Changes at or above the documentation threshold are queued; borderline ones are flagged "low confidence" for review; internal-only ones are skipped — and every skip is logged in Doc sync’s Filtered out tab with the exact reason and a one-click "Document anyway" override.' },
       { p: 'Control it from your repository with two optional files. docify.yaml holds machine-enforceable rules: scan.include/exclude path globs, rules.ignore_commit_types, ignore_dependency_updates, document_only surfaces, always_document_paths, and the thresholds (auto_document, discard_below). A .docifyignore file with gitignore syntax works too. Both are versioned with your code and picked up automatically on the next sync — no Docify settings to change. Starter files are one click away under Doc sync → Relevance rules.' },
@@ -173,6 +244,11 @@ const SUPPORTING = [
     ]},
     { slug: 'corporate-email-verification', name: 'Corporate email verification', sum: 'Six-digit OTP codes, domain allow-lists, and free-email blocking.', body: [
       { p: 'Email signups receive a hashed six-digit code valid for ten minutes (five attempts). Administrators can restrict signups to corporate domains with ALLOWED_EMAIL_DOMAINS or block free providers entirely — configured server-side, no code changes.' }
+    ]},
+    { slug: 'status-page', name: 'System status & uptime', sum: 'Live component health at /status — with uptime numbers that cannot flatter us.', body: [
+      { p: 'The public status page at /status (also linked in the site footer) shows live health for the API, database, AI generation engine, and webhook receiver, plus uptime for the last 24 hours, 7 days, and 30 days and a 90-day daily history strip.' },
+      { p: 'The numbers are honest by construction: the service records a health sample every five minutes, and if it is down it cannot record — so gaps count as downtime. Uptime is only ever measured against observed history; a young deployment shows dashes, never an invented 99.99%.' },
+      { p: 'External monitors can poll GET /api/health — it returns HTTP 200 while healthy and 503 during a disruption, with per-component detail in the body.' }
     ]}
   ]}
 ];

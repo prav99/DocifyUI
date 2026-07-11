@@ -29,18 +29,38 @@ const TOPICS = {
   source: {
     title: 'Step 1 — Connecting sources',
     page: '/source',
-    intro: 'Pick where your source of truth lives. Code hosts provide repositories; Jira, Confluence, Notion, and OpenAPI specs can be combined with them.',
+    intro: 'Pick where your source of truth lives. Repositories come from your unified catalogue; Jira, Confluence, Notion, and OpenAPI specs each have their own selection panel and can be combined freely.',
     steps: [
       'Tick every source you want DocGen to read. The first code source becomes the primary input.',
-      'For code hosts: choose a repository from the dropdown, or type any public repository as owner/name (for example expressjs/express) in the second field.',
-      'For Jira/Confluence: enter your site URL, account email, and an API token, then pick a project or space after the connection is verified.',
-      'For OpenAPI: paste the full https:// URL of your spec and click "Validate spec".',
+      'Repositories: one panel lists everything from your Repository Connections catalogue in a dropdown grouped by organisation. Pick one, then "＋ Add another repository" for more — each extra repository runs as its own generation with the same settings. "Use a public repository" accepts any owner/name (for example expressjs/express) with no connection.',
+      'Jira: connect with site URL, email, and API token, then select ISSUES six ways — paste keys (validated live), search, an epic, a sprint, a release, or a JQL query. Selected issues become chips; their full content (description, comments, links) grounds the document.',
+      'OpenAPI / Swagger: add specs from a URL, pasted text, or a repository file. Inspect shows title, version, endpoints, and validation findings; a checkbox tree picks exactly which endpoints to document. Multiple specs can be combined.',
+      'Notion: paste your integration token, search shared pages, multi-select, and optionally include child pages.',
+      'Confluence: connect, pick a space, then Browse / Search / CQL to multi-select pages from any mix of spaces, with optional child pages.',
       'When every selected source shows "Ready ✓", click Continue.'
     ],
     issues: [
-      ['Dropdown stuck on "Loading…"', 'The source list could not be fetched — check your connection, then re-select the source card to retry.'],
-      ['"Nothing found — check permissions"', 'The token connected but sees no projects. Verify the token scopes on the provider side.'],
-      ['Continue button stays gray', 'Every selected source needs one detail (repository, project, or spec URL). The footer lists which ones still need setup.']
+      ['"No repositories available"', 'Nothing is connected yet — click "Go to Repository Connections", connect an account or organisation, and use "Return to workflow"; your progress is saved and the new repository is auto-selected.'],
+      ['A repository selection disappeared', 'The trust guard cleared it: the provider was disconnected, its token expired, or you lost access. Reconnect on the Repository Connections page.'],
+      ['Jira keys show in red', 'Those keys were not found or your account cannot view them — the reason is listed next to each key. Valid keys from the same paste were still added.'],
+      ['Spec inspection fails', 'The URL must return raw JSON or YAML (not a web page), and private/internal network addresses are blocked by design.'],
+      ['Continue button stays gray', 'Every selected source needs at least one selection. The footer lists which ones still need setup.']
+    ]
+  },
+  repos: {
+    title: 'Repository Connections',
+    page: '/repos',
+    intro: 'The single place for every code-host integration: accounts, organisations, GitLab groups, Bitbucket workspaces, individually managed repositories, and documentation rule sets. Everything connected here flows into one catalogue used by generation, automation, and Doc sync.',
+    steps: [
+      'Connections tab: each provider card shows your account status with Connect / Reauthenticate / Disconnect. Below it, add organisations, groups (nested subgroups like my-group/backend work), or workspaces by name — each shows its repository count with Sync and Remove.',
+      'Managed repositories tab: bulk-paste up to 200 repositories (owner/name or full URLs), verify access, assign rule sets, enable/disable, and health-check individual rows.',
+      'Rule sets tab: reusable documentation-control configurations (what gets documented, for whom) assignable to any number of repositories.',
+      'Came here from a workflow? The blue bar at the top returns you exactly where you left off — with anything you just connected auto-selected.'
+    ],
+    issues: [
+      ['Organisation will not connect', 'The name is validated against the provider first — check the exact slug (for GitLab groups, use the full path, e.g. parent/subgroup).'],
+      ['Session expired on a provider', 'Click "Reconnect account" on that provider’s card — a fresh OAuth pass restores access without losing your organisations or repositories.'],
+      ['Repository counts look stale', 'Click Sync on the organisation row; the catalogue refreshes immediately.']
     ]
   },
   doctype: {
@@ -95,7 +115,7 @@ const TOPICS = {
     steps: [
       'The overall score (0–100) and verdict sit at the top. 85+ passes the publish gate.',
       'The "AI judge review" tab lists open findings — click "Apply fix" on one, or "Fix all remaining" to repair everything at once. Fixes are real content edits.',
-      'The "Scores" tab breaks the result into weighted dimensions; "Broken links" lists link-check failures; "Style guide" shows editorial checks.',
+      'The "Scores" tab breaks the result into weighted dimensions; "Broken links" lists link-check failures; "Style guide" shows editorial checks plus your writing-consistency scores (Voice, Terminology, Structure, Formatting) with concrete findings like “Preferred term: sign in · Detected: log in · 4 occurrences”.',
       '"Re-check with AI judge" re-runs the evaluation to verify the score after fixes.',
       'The dark panel estimates how likely the document is to be retrieved and cited by ChatGPT, Claude, and Gemini — it recomputes after every fix.'
     ],
@@ -141,21 +161,24 @@ const TOPICS = {
       'Enable automation and pick the branch to watch (default: main).',
       'Set the quality gate — regenerated documents below this score are held for review instead of published.',
       'Copy the CI snippet into your repository’s workflow to trigger regeneration from your pipeline.',
-      'Automation profiles let you run several pipelines (different repos, document sets, formats) side by side; each has its own webhook secret and run history.'
+      'Automation profiles let you run several pipelines (different repos, document sets, formats) side by side; each has its own webhook secret and run history.',
+      'Jira event triggers: in the wizard’s Triggers step, open Advanced, enable Jira, and pick events (issue Done/Closed, created, updated, comment added). Point a Jira webhook at the profile’s endpoint with ?token=<secret> — issue events then run the pipeline directly, no merge required.'
     ],
     issues: [
       ['Webhook not firing', 'Verify the webhook URL and secret in your repo settings match the profile, and that the push was to the watched branch.'],
+      ['Jira events ignored', 'Check that Jira is enabled in the profile’s Advanced section AND the specific event type is toggled on — the webhook response says exactly why an event was skipped.'],
       ['Runs held at the gate', 'That is the gate working — open the run, apply fixes, and re-check to pass it.']
     ]
   },
   settings: {
     title: 'Team & settings',
     page: '/settings',
-    intro: 'Manage team members, roles, invites, your plan, and account details.',
+    intro: 'Manage connected sources, your organization writing style, team members, roles, and your plan.',
     steps: [
+      'Writing style tab: set your organization voice once and every future document follows it — pick a style-guide bias (Docify, Microsoft, or Google conventions), define preferred terminology one pair per line (sign in => log in, login), list prohibited words, and add free-form policy notes. Saving bumps the profile version; "Reset to default profile" clears customizations.',
+      'Connected sources tab shows each provider connection and whether credentials are on file.',
       'Invite teammates by email — they receive Writer access by default; owners can change roles.',
-      'Your current plan, billing cycle, and seat count are shown under Plan.',
-      'Upgrade or change plans from the Pricing page.'
+      'Your current plan, billing cycle, and seat count are shown under Plan.'
     ],
     issues: [
       ['Invite not received', 'Ask the teammate to check spam, or re-send the invite.'],
@@ -200,7 +223,7 @@ const TOPICS = {
   }
 };
 
-const ORDER = ['login', 'source', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'settings', 'pricing', 'checkout', 'docs'];
+const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'settings', 'pricing', 'checkout', 'docs'];
 
 export default function Help() {
   const { topic } = useParams();
