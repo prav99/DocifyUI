@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { toast } from '../store.jsx';
-import { Modal, NavBar, Notif, RepoHubCta } from '../ui.jsx';
+import { Modal, NavBar, Notif, RepoHubCta, HelpLink } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
 
 /* =========================================================================
@@ -1061,7 +1061,10 @@ export default function DocSync() {
       <div className="page">
         <div className="row row--between" style={{ flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <h1 className="h04">Doc sync</h1>
+            <div className="row" style={{ gap: 14, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <h1 className="h04">Doc sync</h1>
+              <HelpLink topic="sync" />
+            </div>
             <p className="body01 t2 mt3" style={{ maxWidth: 660 }}>
               Keep the documentation you already have continuously current. The AI understands your document,
               understands each commit, and splices updates into exactly the right section — you stay in control

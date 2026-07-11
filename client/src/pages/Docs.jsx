@@ -67,9 +67,9 @@ const PILLARS = [
         { p: 'Every document type — technical and marketing — is driven by a declarative blueprint: purpose, audience, tone, a standardized section outline, and content rules. One composition engine renders them all, so tone and structure stay uniform across your entire library.' },
         { ul: ['11 document types across two tracks, each tied to an open standard (Diátaxis, OpenAPI 3.1, Keep a Changelog, Google dev-docs)', 'Structure validation against the blueprint appears in every quality report', 'New types are added by configuration — no pipeline changes'] }
       ]},
-      { slug: 'github-integration', name: 'GitHub integration', sum: 'OAuth in one click; repositories, READMEs, and commit history as source material.', body: [
-        { p: 'Sign up with GitHub and DocGen requests read-only repository access via OAuth. Your repositories appear in a picker immediately — select one and generate. Tokens are stored server-side and never exposed to the browser.' },
-        { p: 'GitLab, Jira, Confluence, Notion, and OpenAPI specs connect the same way, and you can attach multiple sources to a single generation with one primary source.' }
+      { slug: 'github-integration', name: 'GitHub integration', sum: 'OAuth in one click; accounts plus any number of organisations feed one catalogue.', body: [
+        { p: 'Sign up with GitHub and DocGen requests read-only repository access via OAuth. Your repositories appear in the unified catalogue immediately — and on the Repository Connections page you can add any number of GitHub organisations, whose repositories aggregate into the same catalogue. Tokens are stored server-side and never exposed to the browser.' },
+        { p: 'GitLab (including nested subgroups) and Bitbucket workspaces work identically. Jira, Confluence, Notion, and OpenAPI specs connect on the Source step with their own panels, and you can attach multiple sources to a single generation with one primary source.' }
       ]},
       { slug: 'bitbucket-integration', name: 'Bitbucket integration', sum: 'Full OAuth flow with automatic token renewal.', body: [
         { p: 'Bitbucket access tokens expire after roughly two hours; DocGen stores the refresh token and silently renews access on every request, so customers never see an expired-session failure mid-generation.' },

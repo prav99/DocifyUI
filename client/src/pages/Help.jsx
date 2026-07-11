@@ -170,6 +170,23 @@ const TOPICS = {
       ['Runs held at the gate', 'That is the gate working — open the run, apply fixes, and re-check to pass it.']
     ]
   },
+  sync: {
+    title: 'Doc sync',
+    page: '/sync',
+    intro: 'Bring your EXISTING documentation and keep it current automatically: every relevant merge is rewritten into the right section of your document — no duplicates — and waits for your approval as a side-by-side diff.',
+    steps: [
+      'Add a document two ways: upload a file, or import directly from a docs repository (owner/name + file path). Markdown, Word, and plain text are parsed into a section outline.',
+      'Connect the repository whose changes should drive updates. Each merge runs through the relevance engine first — refactors, test-only changes, and dependency bumps are filtered out (see the "Filtered out" tab for every skip, with the reason and a one-click "Document anyway" override).',
+      'Relevant changes produce an update proposal: the AI picks the best-matching section (the reasoning panel explains why, with candidate sections and confidence), rewrites it in place or splices a new sub-section under the right parent, and conforms the insert to your document’s own conventions — bullet style, heading case — so it reads like the same author.',
+      'Review each proposal as a side-by-side diff and approve or dismiss. Nothing touches your document without approval; approved versions are kept, so you can roll back.',
+      'Tune what counts as documentation-worthy with docify.yaml and .docify/instructions.md in your repository, or a rule set from Repository Connections.'
+    ],
+    issues: [
+      ['Entries marked SAMPLE', 'Rows tagged “Sample data” with fictional authors are built-in demo material so the page is understandable before your first sync — they disappear as your real activity arrives.'],
+      ['An update landed in the wrong section', 'Open the proposal’s reasoning panel and pick one of the alternative candidate sections, or dismiss it — reviewer decisions feed the classifier.'],
+      ['A change I expected was filtered out', 'Check the Filtered out tab — every skip shows its rationale (commit type, internal-only surface, below threshold) and can be documented anyway with one click.']
+    ]
+  },
   settings: {
     title: 'Team & settings',
     page: '/settings',
@@ -223,7 +240,7 @@ const TOPICS = {
   }
 };
 
-const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'settings', 'pricing', 'checkout', 'docs'];
+const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'sync', 'settings', 'pricing', 'checkout', 'docs'];
 
 export default function Help() {
   const { topic } = useParams();
