@@ -217,7 +217,12 @@ export function TopBar() {
         )}
         {user && (
           <a className={path === '/governance' ? 'on' : ''} onClick={() => nav('/governance')}>
-            Governance<span className="navnew">●</span>
+            Governance
+          </a>
+        )}
+        {user && (
+          <a className={path === '/history' ? 'on' : ''} onClick={() => nav('/history')}>
+            History<span className="navnew">●</span>
           </a>
         )}
       </nav>

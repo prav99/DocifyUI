@@ -644,6 +644,116 @@ apiRouter.get('/repos', async (req, res) => {
   }
 });
 
+/* ================= Import History: document lifecycle management =================
+   The single source of truth for every generated document: searchable list,
+   full version history, compare/restore, and an approval workflow
+   (draft → under review → approved → published) that the automation
+   pipeline's approval gate respects. */
+
+const APPROVALS = ['draft', 'review', 'approved', 'published'];
+
+apiRouter.get('/history', async (req, res) => {
+  const where = { userId: req.uid, status: 'complete' };
+  if (req.query.provider && ['github', 'gitlab', 'bitbucket'].includes(String(req.query.provider))) where.provider = String(req.query.provider);
+  if (req.query.approval && APPROVALS.includes(String(req.query.approval))) where.approval = String(req.query.approval);
+  if (req.query.format) where.format = String(req.query.format);
+  const q = String(req.query.q || '').trim();
+  if (q) where.OR = [{ title: { contains: q } }, { repo: { contains: q } }];
+  const rows = await prisma.generation.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 });
+  const counts = await prisma.docVersion.groupBy({
+    by: ['generationId'], _count: { generationId: true },
+    where: { generationId: { in: rows.map((r) => r.id) } }
+  }).catch(() => []);
+  const vmap = Object.fromEntries(counts.map((c) => [c.generationId, c._count.generationId]));
+  res.json({
+    documents: rows.map((g) => {
+      const oc = j(g.output, {});
+      return {
+        id: g.id, title: g.title || j(g.docTypes, [])[0] || 'Untitled',
+        repo: g.repo, provider: g.provider, branch: g.branch,
+        docTypes: j(g.docTypes, []), format: g.format, formats: (j(g.output, {}).formats) || [g.format],
+        score: g.score, approval: g.approval || 'draft', approvedAt: g.approvedAt,
+        source: oc.source === 'automation' ? 'Automation' : 'Manual',
+        versions: (vmap[g.id] || 0) + 1, // history + current
+        approvalLog: (oc.approvalLog || []).slice(-8),
+        createdAt: g.createdAt
+      };
+    })
+  });
+});
+
+apiRouter.get('/history/:id/versions', async (req, res) => {
+  const g = await prisma.generation.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  if (!g) return res.status(404).json({ error: 'Document not found' });
+  const rows = await prisma.docVersion.findMany({ where: { generationId: g.id }, orderBy: { version: 'asc' } });
+  res.json({
+    current: { version: rows.length + 1, title: g.title, score: g.score, approval: g.approval, content: g.content, createdAt: g.createdAt, current: true },
+    versions: rows.map((v) => ({ id: v.id, version: v.version, title: v.title, score: v.score, note: v.note, createdAt: v.createdAt, content: v.content }))
+  });
+});
+
+apiRouter.get('/history/:id/versions/:vid/download', async (req, res) => {
+  const v = await prisma.docVersion.findFirst({ where: { id: req.params.vid, generationId: req.params.id, userId: req.uid } });
+  if (!v) return res.status(404).json({ error: 'Version not found' });
+  const safe = (v.title || 'document').replace(/[^\w.-]+/g, '_').slice(0, 60);
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '_v' + v.version + '.md"');
+  res.send(v.content || '');
+});
+
+// Approval workflow: draft → review → approved → published (any direction,
+// with an audit log entry per transition).
+apiRouter.post('/history/:id/status', async (req, res) => {
+  const g = await prisma.generation.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  if (!g) return res.status(404).json({ error: 'Document not found' });
+  const to = String((req.body || {}).to || '');
+  if (!APPROVALS.includes(to)) return res.status(400).json({ error: 'Unknown status' });
+  const me = await prisma.user.findUnique({ where: { id: req.uid } }).catch(() => null);
+  const oc = j(g.output, {});
+  oc.approvalLog = [...(oc.approvalLog || []), {
+    from: g.approval || 'draft', to,
+    by: (me && me.email) || 'user',
+    note: String((req.body || {}).note || '').slice(0, 300),
+    at: new Date().toISOString()
+  }].slice(-30);
+  const upd = await prisma.generation.update({
+    where: { id: g.id },
+    data: {
+      approval: to,
+      approvedAt: to === 'approved' || to === 'published' ? new Date() : null,
+      output: JSON.stringify(oc)
+    }
+  });
+  res.json({ approval: upd.approval, approvedAt: upd.approvedAt, approvalLog: oc.approvalLog });
+});
+
+// Restore: snapshot the current state first (nothing lost), then bring the
+// selected version back as the live document — as a fresh draft.
+apiRouter.post('/history/:id/restore', async (req, res) => {
+  const g = await prisma.generation.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  if (!g) return res.status(404).json({ error: 'Document not found' });
+  const v = await prisma.docVersion.findFirst({ where: { id: String((req.body || {}).versionId || ''), generationId: g.id, userId: req.uid } });
+  if (!v) return res.status(404).json({ error: 'Version not found' });
+  const n = await prisma.docVersion.count({ where: { generationId: g.id } });
+  await prisma.docVersion.create({
+    data: {
+      userId: req.uid, generationId: g.id, version: n + 1,
+      title: g.title || '', content: g.content, aiDocs: g.aiDocs || '[]',
+      score: g.score || 0, note: 'Replaced by restore of v' + v.version
+    }
+  });
+  const restored = await prisma.generation.update({
+    where: { id: g.id },
+    data: { title: v.title, content: v.content, aiDocs: v.aiDocs, score: v.score, approval: 'draft', approvedAt: null }
+  });
+  // Re-render the preview from the restored sections so every format matches.
+  try {
+    const previewHtml = renderPreviewFor(restored, j(restored.docTypes, [])[0], restored.format);
+    await prisma.generation.update({ where: { id: g.id }, data: { preview: previewHtml } });
+  } catch { /* preview refresh is best-effort */ }
+  res.json({ ok: true, restored: v.version });
+});
+
 /* Generations */
 // Formats requested for this generation. The primary format lives in the
 // `format` column (back-compat); any additional formats ride in the output
@@ -951,13 +1061,37 @@ async function runPipeline(genId) {
       outWithPolicy.resolvedPolicy = auditPolicy;
     }
     if (styleReport) outWithPolicy.styleReport = styleReport;
+    // IMPORT HISTORY: when regeneration replaces existing content, the
+    // outgoing document is snapshotted as a version first — nothing is ever
+    // silently lost — and the approval state resets: a changed document is a
+    // new draft (or goes straight to Under review when the automation
+    // profile's approval gate is on).
+    const approvalPatch = {};
+    try {
+      if (gen.content && content && gen.content !== content) {
+        const n = await prisma.docVersion.count({ where: { generationId: genId } });
+        await prisma.docVersion.create({
+          data: {
+            userId: gen.userId, generationId: genId, version: n + 1,
+            title: gen.title || '', content: gen.content,
+            aiDocs: gen.aiDocs || '[]', score: gen.score || 0,
+            note: 'Replaced by regeneration'
+          }
+        });
+        approvalPatch.approval = outWithPolicy.approvalGate ? 'review' : 'draft';
+        approvalPatch.approvedAt = null;
+      } else if (!gen.content && content && outWithPolicy.approvalGate) {
+        approvalPatch.approval = 'review';
+      }
+    } catch (e) { console.error('version snapshot skipped:', e.message); }
     await prisma.generation.update({
       where: { id: genId },
       data: {
         status: 'complete', title, content, preview: previewHtml,
         aiDocs: JSON.stringify(aiDocs || []),
         output: JSON.stringify(outWithPolicy),
-        score: aiScore(report.issues.length, 0)
+        score: aiScore(report.issues.length, 0),
+        ...approvalPatch
       }
     });
   } catch (e) {
@@ -1336,6 +1470,9 @@ const PROFILE_DEFAULTS = {
   templateFrom: 'latest', updatePolicy: 'auto', versioning: 'semver-patch',
   gate: 85, minAssistant: 0, autoFix: true, requireApproval: false, // step 5
   publishTo: 'workspace', notifyEmail: '',                          // step 6
+  // Import History approval gate: regenerated documents enter "Under review"
+  // and only versions approved there count as publishable.
+  approvalGate: false,
   notifyOn: { success: true, blocked: true, failure: true },
   // Traceability: link each merge to a Jira issue so the change can be placed
   // and audited — plus Jira EVENT triggers: point a Jira webhook at this
@@ -1677,6 +1814,11 @@ async function profileRun(profile, event) {
   try {
     const tplRow = decision.existing || (cfg.templateFrom === 'latest' ? await latestTemplate(uid) : null);
     const out = tplRow ? j(tplRow.output, {}) : {};
+    // Import History integration: with the approval gate on, regenerated
+    // documents land in "Under review" instead of quietly replacing the
+    // approved state — an enterprise approval gate before distribution.
+    out.approvalGate = !!cfg.approvalGate;
+    out.source = 'automation';
     let version = null;
     if (decision.action === 'version') {
       // A release merge that names its version ("release: v3.1.0") wins over

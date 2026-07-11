@@ -1149,6 +1149,14 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .hubcta-plus{font-size:13px;line-height:1}
 .returnbar{position:sticky;top:56px;z-index:58;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#edf5ff;border:1px solid #d0e2ff;border-left:3px solid #0f62fe;padding:12px 18px;margin-bottom:20px}
 
+/* ==== Import History: diff viewer ==== */
+.diffwrap{border:1px solid var(--border-subtle);background:var(--layer-02,#ffffff);max-height:60vh;overflow-y:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.6}
+.diffline{padding:1px 12px;white-space:pre-wrap;word-break:break-word}
+.diffline--add{background:#defbe6;color:#0e6027}
+.diffline--del{background:#fff1f1;color:#a2191f}
+.diffline--fold{background:var(--layer-01,#f4f4f4);color:var(--text-secondary);cursor:pointer;text-align:center;padding:5px 12px;font-family:inherit}
+.diffline--fold:hover{background:#e8e8e8}
+
 /* ==== Public status page ==== */
 .statusbanner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#defbe6;border:1px solid #a7f0ba;border-left:3px solid #24a148;padding:14px 20px;font-size:14.5px}
 .statusbanner--down{background:#fff1f1;border-color:#ffd7d9;border-left-color:#da1e28}

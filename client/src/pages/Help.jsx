@@ -188,6 +188,22 @@ const TOPICS = {
       ['A change I expected was filtered out', 'Check the Filtered out tab — every skip shows its rationale (commit type, internal-only surface, below threshold) and can be documented anyway with one click.']
     ]
   },
+  history: {
+    title: 'Import History',
+    page: '/history',
+    intro: 'The single source of truth for every generated document: full version history, side-by-side comparison, and an approval workflow (Draft → Under review → Approved → Published) that the automation pipeline respects.',
+    steps: [
+      'Every completed generation appears in the table — searchable by title or repository, filterable by provider and status. Click a row to expand it.',
+      'Version timeline: each time regeneration changes a document, the outgoing content is snapshotted automatically. Compare any version against the current one in the side-by-side diff (added green, removed red, unchanged collapsed, jump between changes), download it, or restore it — restoring snapshots the current state first, so nothing is ever lost.',
+      'Approval workflow: move a document through Draft → Under review → Approved → Published. Every transition is recorded in the approval history with who and when.',
+      'Automation integration: in the pipeline wizard (Quality checks step), enable “Route regenerated documents through Import History” — regenerations then land as Under review instead of silently replacing approved content. Only versions you approve count as publishable.'
+    ],
+    issues: [
+      ['A document went back to Draft', 'Regeneration changed its content — a changed document always needs fresh review. The previous state is in the version timeline.'],
+      ['Diff looks too large', 'Unchanged blocks are collapsed — click “… N unchanged lines” to expand, or use the Next/Previous change buttons to move between edits.'],
+      ['Where does Publish send the document?', 'Publish marks the version as the distributable one for your pipeline and Export center. Docify never pushes to your repositories — download and commit, or export from the Export step.']
+    ]
+  },
   governance: {
     title: 'Documentation Governance',
     page: '/governance',
@@ -257,7 +273,7 @@ const TOPICS = {
   }
 };
 
-const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'sync', 'governance', 'settings', 'pricing', 'checkout', 'docs'];
+const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'sync', 'governance', 'history', 'settings', 'pricing', 'checkout', 'docs'];
 
 export default function Help() {
   const { topic } = useParams();

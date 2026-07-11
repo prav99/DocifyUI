@@ -70,8 +70,28 @@ model Generation {
   content      String         @default("")
   preview      String         @default("") // rendered HTML preview honoring all output options
   score        Int            @default(0)
+  // Import History lifecycle: draft | review | approved | published.
+  approval     String         @default("draft")
+  approvedAt   DateTime?
   createdAt    DateTime       @default(now())
   report       QualityReport?
+}
+
+// Import History: a snapshot of a generated document each time regeneration
+// replaces its content — full version history with compare and restore.
+model DocVersion {
+  id           String   @id @default(cuid())
+  userId       String
+  generationId String
+  version      Int
+  title        String   @default("")
+  content      String   @default("")
+  aiDocs       String   @default("[]")
+  score        Int      @default(0)
+  note         String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([generationId])
 }
 
 model QualityReport {
