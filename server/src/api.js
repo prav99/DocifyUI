@@ -11,6 +11,7 @@ import {
   confluenceSearch, fetchConfluenceContent
 } from './adapters/atlassian.js';
 import { parseSpecText, analyzeSpec, loadSpecText, digestSpec } from './adapters/openapi.js';
+import { resolveWritingPolicy, compileStylePrompt, styleAudit, autofixText, STYLE_GUIDES } from './adapters/styleguide.js';
 import { notionSearch, fetchNotionContent } from './adapters/notion.js';
 import { fetchRepoFile } from './adapters/repofiles.js';
 import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js';
@@ -320,6 +321,33 @@ apiRouter.post('/sources', async (req, res) => {
     : await prisma.source.create({ data });
   invalidateCatalogue(req.uid);
   res.json({ source: publicSource(row), info });
+});
+
+/* ---------------- Writing style: the tenant profile ----------------
+   One profile per user (org). Merged into every generation's resolved
+   writing policy; version bumps on every save so historical generations
+   record which profile version shaped them. */
+apiRouter.get('/style-profile', async (req, res) => {
+  let p = await prisma.writingProfile.findUnique({ where: { userId: req.uid } });
+  if (!p) p = await prisma.writingProfile.create({ data: { userId: req.uid } });
+  res.json({ profile: { ...p, config: undefined, ...JSON.parse(p.config || '{}') }, guides: STYLE_GUIDES });
+});
+
+apiRouter.put('/style-profile', async (req, res) => {
+  const b = req.body || {};
+  const guide = ['docify', 'microsoft', 'google', 'custom'].includes(b.guide) ? b.guide : 'docify';
+  const terms = (Array.isArray(b.terms) ? b.terms : []).slice(0, 60)
+    .map((t) => ({ use: String(t.use || '').slice(0, 60).trim(), not: String(Array.isArray(t.not) ? t.not.join(', ') : t.not || '').slice(0, 200) }))
+    .filter((t) => t.use);
+  const prohibited = (Array.isArray(b.prohibited) ? b.prohibited : String(b.prohibited || '').split(','))
+    .map((w) => String(w).trim()).filter(Boolean).slice(0, 50);
+  const config = JSON.stringify({ terms, prohibited, notes: String(b.notes || '').slice(0, 4000) });
+  const existing = await prisma.writingProfile.findUnique({ where: { userId: req.uid } });
+  const data = { guide, voice: String(b.voice || '').slice(0, 40), config, version: (existing ? existing.version : 0) + 1 };
+  const p = existing
+    ? await prisma.writingProfile.update({ where: { userId: req.uid }, data })
+    : await prisma.writingProfile.create({ data: { userId: req.uid, ...data } });
+  res.json({ profile: { ...p, config: undefined, ...JSON.parse(p.config || '{}') } });
 });
 
 /* ---------------- Jira as a first-class source (issues, not repos) ----------------
@@ -716,16 +744,50 @@ async function runPipeline(genId) {
       }
     } catch (e) { console.error('confluence grounding skipped:', e.message); }
     const baseBrief = j(gen.brief, {});
+    // CONTENT GOVERNANCE: resolve one writing policy from the layered
+    // profiles (platform → track base → document type → tenant profile →
+    // skill.md → manual instructions), compile it into a deterministic
+    // style block, and keep the resolved policy with the generation for
+    // audit and reproducibility.
+    let stylePolicy = null;
+    try {
+      const tenant = await prisma.writingProfile.findUnique({ where: { userId: gen.userId } });
+      stylePolicy = resolveWritingPolicy({
+        track: gen.track, docType: (j(gen.docTypes, []))[0] || '', format: gen.format,
+        brief: { ...baseBrief, audience: baseBrief.audience || effAudience },
+        tenant, skillText: gen.skill || '', instructions: gen.instructions || ''
+      });
+    } catch (e) { console.error('writing policy skipped:', e.message); }
     const genArgs = {
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
       repo: gen.repo,
       instructions: [gen.instructions, effInstructions ? 'Documentation rules for this repository:\n' + effInstructions : '']
         .filter(Boolean).join('\n\n'),
       skill: gen.skill || '', skillName: gen.skillName || '',
+      style: stylePolicy ? compileStylePrompt(stylePolicy) : '',
       brief: { ...baseBrief, audience: baseBrief.audience || effAudience },
       output: j(gen.output, {}), files: scopedFiles
     };
     let { title, content, structure, aiDocs } = await generateDocumentSmart(genArgs);
+    // Deterministic post-generation pass: safe terminology corrections are
+    // applied to the AI sections, then the document re-renders once so every
+    // format inherits the corrected wording.
+    if (stylePolicy && aiDocs && aiDocs.length) {
+      let totalFixes = 0;
+      aiDocs = aiDocs.map((d) => ({
+        ...d,
+        sections: (d.sections || []).map(([h, b]) => {
+          const fh = autofixText(h, stylePolicy);
+          const fb = autofixText(b, stylePolicy);
+          totalFixes += fh.fixes + fb.fixes;
+          return [fh.text, fb.text];
+        })
+      }));
+      if (totalFixes > 0) {
+        const rr = generateDocument({ ...genArgs, aiDocs });
+        title = rr.title; content = rr.content; structure = rr.structure;
+      }
+    }
     // NEVER replace a previously grounded document with template fallback:
     // if this regeneration could not ground (repo fetch or AI failure) but
     // the existing row carries real AI sections from an earlier run, keep
@@ -746,6 +808,26 @@ async function runPipeline(genId) {
       : generateDocument({ ...genArgs, format: 'html', aiDocs }).content;
     // Judge the ACTUAL document (content-aware checks), not a canned sample.
     const report = judge({ content, title, repo: gen.repo, track: gen.track });
+    // Writing-consistency audit: scores + concrete findings ("Preferred term:
+    // sign in · Detected: log in · 4 occurrences"). Findings join the style
+    // checks; scores travel in the generation's output for the quality panel.
+    let styleReport = null;
+    if (stylePolicy) {
+      try {
+        styleReport = styleAudit(content, stylePolicy);
+        report.style = [
+          ...styleReport.findings.map((f) => ({
+            t: (f.kind === 'terminology' ? 'Terminology: “' + f.detected + '” → “' + f.preferred + '”'
+              : f.kind === 'prohibited' ? 'Prohibited term: “' + f.detected + '”'
+              : f.kind === 'structure' ? 'Structure: ' + f.preferred
+              : 'Voice: ' + f.detected),
+            d: f.occurrences + ' occurrence' + (f.occurrences === 1 ? '' : 's') + ' — ' + f.action,
+            pass: /Auto-corrected/.test(f.action)
+          })),
+          ...report.style
+        ];
+      } catch (e) { console.error('style audit skipped:', e.message); }
+    }
     // Upsert so the pipeline can re-run on the SAME generation (automation
     // "update in place" and "sections" actions) without duplicating reports.
     await prisma.qualityReport.upsert({
@@ -765,11 +847,20 @@ async function runPipeline(genId) {
         style: JSON.stringify([...(structure || []), ...report.style])
       }
     });
+    // Audit trail: the resolved policy (without raw custom text) + the
+    // consistency scores ride in the generation's output JSON.
+    const outWithPolicy = { ...j(gen.output, {}) };
+    if (stylePolicy) {
+      const { _skillText, _manualText, ...auditPolicy } = stylePolicy;
+      outWithPolicy.resolvedPolicy = auditPolicy;
+    }
+    if (styleReport) outWithPolicy.styleReport = styleReport;
     await prisma.generation.update({
       where: { id: genId },
       data: {
         status: 'complete', title, content, preview: previewHtml,
         aiDocs: JSON.stringify(aiDocs || []),
+        output: JSON.stringify(outWithPolicy),
         score: aiScore(report.issues.length, 0)
       }
     });

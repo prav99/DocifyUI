@@ -1568,14 +1568,18 @@ async function anthropicRequest (key, body, attempt = 0) {
   throw new Error('Anthropic API: HTTP ' + r.status + ' ' + (await r.text()).slice(0, 200));
 }
 
-async function aiSections({ docType, track, repo, files, brief, instructions, key }) {
+async function aiSections({ docType, track, repo, files, brief, instructions, style, key }) {
   const tpl = TEMPLATES[docType];
   const outline = tpl ? tpl.sections({ product: 'X', version: '', date: '', repo, brief: {} }).map(([h]) => h) : ['Overview'];
   const fileBlock = files.map((f) => '### FILE: ' + f.path + '\n```\n' + f.content + '\n```').join('\n\n');
   const b = brief || {};
+  // The resolved writing policy rides in the SYSTEM prompt so voice, tone,
+  // terminology, and structure stay identical across generations — the same
+  // writer every time, regardless of when the document is produced.
   const sys = 'You are a senior technical writer. Write documentation grounded ONLY in the provided repository files. ' +
     'Never invent endpoints, functions, options, or version numbers that are not visible in the files. ' +
-    'Respond with ONLY a JSON array of [heading, markdownBody] pairs — no prose around it.';
+    'Respond with ONLY a JSON array of [heading, markdownBody] pairs — no prose around it.' +
+    (style ? '\n\n' + String(style).slice(0, 14000) : '');
   const user = 'Repository: ' + repo + '\nDocument type: ' + docTypeName(track, docType) +
     (tpl ? ' (standard: ' + tpl.standard + ')' : '') +
     '\nSuggested outline (adapt as the code warrants): ' + outline.join(' · ') +
@@ -1638,7 +1642,7 @@ export async function generateDocumentSmart(args) {
   // once; only if EVERY type fails does the template fallback kick in.
   const aiDocs = [];
   for (const t of args.docTypes) {
-    const attempt = () => aiSections({ docType: t, track: args.track, repo: args.repo, files, brief: args.brief, instructions: args.instructions, key });
+    const attempt = () => aiSections({ docType: t, track: args.track, repo: args.repo, files, brief: args.brief, instructions: args.instructions, style: args.style || '', key });
     try {
       aiDocs.push({ type: t, sections: await attempt() });
     } catch (e1) {

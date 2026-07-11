@@ -19,6 +19,7 @@ import { Router } from 'express';
 import { prisma } from './db.js';
 import { evaluateCommit, loadRepoConfig, DEFAULT_CONFIG, SAMPLE_YAML, SAMPLE_INSTRUCTIONS } from './adapters/relevance.js';
 import { fetchRepoFile } from './adapters/repofiles.js';
+import { matchSurroundingStyle } from './adapters/styleguide.js';
 import { freshToken } from './auth.js';
 
 export const syncRouter = Router();
@@ -299,15 +300,22 @@ export function buildUpdate(doc, commit) {
     .filter((t) => t.length > 3 && best.title.toLowerCase().includes(t)))].slice(0, 6);
   const topics = SECTION_SIGNAL.filter(([, re]) => re.test(best.title) && re.test(signal)).map(([n]) => n);
 
-  const snippet = commit.body.join('\n');
+  // STYLE MATCHING: the new lines are conformed to the conventions of the
+  // section they are spliced into — list markers, heading case, bold-lead
+  // bullets, and safe terminology — so the insert reads like the same author
+  // wrote it, not like a bot dropped in templated phrasing.
+  const surrounding = lines.slice(Math.max(0, range.start - 1), Math.min(lines.length, range.end));
+  const styledBody = matchSurroundingStyle(commit.body, surrounding, null);
+
+  const snippet = styledBody.join('\n');
   let diff;
   if (kind === 'update-existing') {
     const before = lines.slice(range.start - 1, range.end);
     const heading = before[0];
     const bodyLines = before.slice(1);
     const after = commit.mode === 'replace'
-      ? [heading, '', ...commit.body]
-      : [heading, ...bodyLines.filter((l, i) => !(i === bodyLines.length - 1 && !l.trim())), '', ...commit.body];
+      ? [heading, '', ...styledBody]
+      : [heading, ...bodyLines.filter((l, i) => !(i === bodyLines.length - 1 && !l.trim())), '', ...styledBody];
     diff = { startLine: range.start, before, after };
   } else {
     const level = Math.min(6, (best.level || 1) + 1);
@@ -327,7 +335,7 @@ export function buildUpdate(doc, commit) {
     } else {
       heading = '#'.repeat(level) + ' ' + subTitle;
     }
-    const after = ['', heading, '', ...commit.body];
+    const after = ['', heading, '', ...styledBody];
     const context = lines.slice(Math.max(0, range.end - 2), range.end);
     diff = { startLine: range.end, before: [], after, context };
   }
@@ -348,6 +356,7 @@ export function buildUpdate(doc, commit) {
       + (topics.length ? 'Shared concepts: ' + topics.join(', ') + '. ' : '')
       + (matched.length ? 'Overlapping terms: ' + matched.join(', ') + '.' : 'Match driven by concept-level similarity rather than exact term overlap.'),
     signals: { terms: matched, concepts: topics, filesConsidered: commit.files.length },
+    style: 'The insert was conformed to this section’s conventions — list markers, heading case, and bold-lead patterns were sampled from the surrounding text so the update reads like the same author.',
     candidates
   };
 

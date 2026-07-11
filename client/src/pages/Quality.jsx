@@ -63,6 +63,7 @@ export default function Quality() {
   const { flow } = useFlow();
   const [tab, setTab] = useState('ai');
   const [report, setReport] = useState(null);
+  const [styleScores, setStyleScores] = useState(null); // writing-consistency audit
   const [checking, setChecking] = useState(false);
   const [fixing, setFixing] = useState({}); // issueId -> step index while the fix runs
   const [deltas, setDeltas] = useState({}); // assistantId -> probability gain since last fix
@@ -95,6 +96,10 @@ export default function Quality() {
     api('/generations/' + flow.genId + '/quality')
       .then((d) => setReport(d.report))
       .catch((e) => toast('error', 'Could not load report', e.message));
+    // Writing-consistency scores from the resolved policy audit.
+    api('/generations/' + flow.genId)
+      .then((d) => setStyleScores(((d.generation || {}).output || {}).styleReport || null))
+      .catch(() => {});
   }, [flow.genId, nav]);
 
   if (!report) return <div className="page"><p className="body01 t2">Loading quality report…</p></div>;
@@ -365,7 +370,19 @@ export default function Quality() {
 
         {tab === 'style' && (
           <>
-            <p className="body01 t2 mb5">Checked against your default style profile (enterprise editorial rules). {report.style.filter((s) => !s.pass).length} findings need review, {report.style.filter((s) => s.pass).length} checks pass.</p>
+            {styleScores && styleScores.scores && (
+              <div className="row mb5" style={{ gap: 12, flexWrap: 'wrap' }}>
+                {[['overall', 'Writing consistency'], ['voice', 'Voice'], ['terminology', 'Terminology'], ['structure', 'Structure'], ['formatting', 'Formatting']].map(([k, label]) => (
+                  <div key={k} className="tile tile--white" style={{ padding: '12px 18px', minWidth: 128 }}>
+                    <p className="label01 t2">{label.toUpperCase()}</p>
+                    <p className="h03 mt2" style={{ color: styleScores.scores[k] >= 85 ? 'var(--support-success)' : styleScores.scores[k] >= 65 ? '#b28600' : 'var(--support-error)' }}>
+                      {styleScores.scores[k]}<span className="helper"> / 100</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="body01 t2 mb5">Checked against your resolved writing policy — base style, document-type profile, organization terminology, and your custom instructions. {report.style.filter((s) => !s.pass).length} findings need review, {report.style.filter((s) => s.pass).length} checks pass.</p>
             {report.style.map((r) => (
               <div key={r.t} className="issue" style={{ borderLeftColor: r.pass ? 'var(--support-success)' : 'var(--support-warning)' }}>
                 <div className="row row--between">

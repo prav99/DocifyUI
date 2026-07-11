@@ -11,12 +11,40 @@ export default function Settings() {
   const [members, setMembers] = useState([]);
   const [billing, setBilling] = useState(null);
   const [invEmail, setInvEmail] = useState('');
+  // Organization writing profile — merged into every generation's policy.
+  const [wp, setWp] = useState(null);
+  const [wpBusy, setWpBusy] = useState(false);
 
   useEffect(() => {
     api('/sources').then((d) => setSources(d.sources)).catch(() => {});
     api('/team').then((d) => setMembers(d.members)).catch(() => {});
     api('/billing').then(setBilling).catch(() => {});
+    api('/style-profile').then((d) => setWp({
+      guide: d.profile.guide || 'docify',
+      voice: d.profile.voice || '',
+      version: d.profile.version || 1,
+      notes: d.profile.notes || '',
+      termsText: (d.profile.terms || []).map((t) => t.use + ' => ' + (Array.isArray(t.not) ? t.not.join(', ') : t.not)).join('\n'),
+      prohibitedText: (d.profile.prohibited || []).join(', ')
+    })).catch(() => {});
   }, []);
+
+  async function saveWp() {
+    setWpBusy(true);
+    try {
+      const terms = wp.termsText.split('\n').map((l) => {
+        const [use, not] = l.split('=>').map((s) => (s || '').trim());
+        return use ? { use, not: not || '' } : null;
+      }).filter(Boolean);
+      const d = await api('/style-profile', {
+        method: 'PUT',
+        body: { guide: wp.guide, voice: wp.voice, notes: wp.notes, terms, prohibited: wp.prohibitedText }
+      });
+      setWp((w) => ({ ...w, version: d.profile.version }));
+      toast('success', 'Writing profile saved', 'Version ' + d.profile.version + ' now shapes every new generation and Doc sync update.');
+    } catch (e) { toast('error', 'Could not save', e.message); }
+    finally { setWpBusy(false); }
+  }
 
   async function invite() {
     if (!invEmail.includes('@')) return toast('error', 'Enter a valid email', 'An address is required to send an invite');
@@ -36,10 +64,69 @@ export default function Settings() {
           <HelpLink topic="settings" />
         </div>
         <div className="tabs mt7">
-          {[['sources', 'Connected sources'], ['team', 'Team'], ['billing', 'Billing']].map(([id, label]) => (
+          {[['sources', 'Connected sources'], ['writing', 'Writing style'], ['team', 'Team'], ['billing', 'Billing']].map(([id, label]) => (
             <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
+
+        {tab === 'writing' && (
+          !wp ? <p className="body01 t2">Loading writing profile…</p> : (
+            <div style={{ maxWidth: 720 }}>
+              <p className="body01 t2">
+                Your organization&apos;s voice, applied automatically to every generation and Doc sync update.
+                Documents always start from the <b>Docify Professional Style</b> plus a document-type profile —
+                these settings customize that default. Current version: v{wp.version}.
+              </p>
+              <div className="grid2 mt6">
+                <div className="field">
+                  <label htmlFor="wpguide">Style-guide bias</label>
+                  <select id="wpguide" className="select" value={wp.guide} onChange={(e) => setWp({ ...wp, guide: e.target.value })}>
+                    <option value="docify">Docify Professional Style (default)</option>
+                    <option value="microsoft">Microsoft Writing Style</option>
+                    <option value="google">Google developer documentation style</option>
+                    <option value="custom">Custom (described in the policy notes)</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="wpvoice">Voice</label>
+                  <select id="wpvoice" className="select" value={wp.voice} onChange={(e) => setWp({ ...wp, voice: e.target.value })}>
+                    <option value="">Professional (default)</option>
+                    <option value="conversational">Conversational</option>
+                    <option value="formal">Formal</option>
+                    <option value="direct">Direct and minimal</option>
+                  </select>
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="wpterms">Preferred terminology — one per line: preferred =&gt; never use</label>
+                <textarea id="wpterms" className="textarea mono" rows={5} style={{ fontSize: 13 }}
+                  placeholder={'sign in => log in, login\nworkspace => account area\nAcme Cloud => acme cloud, ACME cloud'}
+                  value={wp.termsText} onChange={(e) => setWp({ ...wp, termsText: e.target.value })} />
+                <span className="helper">The chosen term is used everywhere — headings, steps, tables, and notes. Variants are flagged in the quality report.</span>
+              </div>
+              <div className="field">
+                <label htmlFor="wpban">Prohibited words (comma-separated)</label>
+                <input id="wpban" className="input" placeholder="e.g. simply, obviously, leverage, cutting-edge"
+                  value={wp.prohibitedText} onChange={(e) => setWp({ ...wp, prohibitedText: e.target.value })} />
+              </div>
+              <div className="field">
+                <label htmlFor="wpnotes">Organization writing policy (optional)</label>
+                <textarea id="wpnotes" className="textarea" rows={4}
+                  placeholder="Anything your style guide requires — e.g. 'Refer to customers as members. Spell out numbers under ten. Product name is always DocGen, never Docgen.'"
+                  value={wp.notes} onChange={(e) => setWp({ ...wp, notes: e.target.value })} />
+              </div>
+              <div className="row" style={{ gap: 12 }}>
+                <button className="btn btn--primary btn--field" disabled={wpBusy} onClick={saveWp}>
+                  {wpBusy ? 'Saving…' : 'Save writing profile'}
+                </button>
+                <button className="btn btn--ghost btn--field" disabled={wpBusy}
+                  onClick={() => setWp({ ...wp, guide: 'docify', voice: '', termsText: '', prohibitedText: '', notes: '' })}>
+                  Reset to default profile
+                </button>
+              </div>
+            </div>
+          )
+        )}
 
         {tab === 'sources' && (
           <div className="stack" style={{ maxWidth: 720 }}>

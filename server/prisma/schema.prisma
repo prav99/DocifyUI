@@ -213,6 +213,20 @@ model Repository {
   updatedAt  DateTime  @updatedAt
 }
 
+// Tenant writing profile: the organization's voice, terminology, and
+// prohibited words. Merged into every generation's resolved writing policy.
+model WritingProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  name      String   @default("Organization style")
+  guide     String   @default("docify") // docify | microsoft | google | custom
+  voice     String   @default("")       // optional formality override
+  config    String   @default("{}")     // { terms:[{use,not}], prohibited:[], notes }
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // A connected organisation / GitLab group / Bitbucket workspace. Repositories
 // from every OrgConnection are aggregated into the unified catalogue that all
 // workflow pages consume — connections are managed ONLY on the hub page.

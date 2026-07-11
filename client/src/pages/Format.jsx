@@ -229,6 +229,14 @@ export default function Format() {
             </>)}
           </div>
         </div>
+
+        <p className="helper mt6" style={{ maxWidth: 720 }}>
+          Writing profile: <b>Docify {(flow.docTypes || [])[0] ? String((flow.docTypes || [])[0]).replace(/^\w/, (c) => c.toUpperCase()) : 'Document'} Standard</b>
+          {' '}— voice, terminology, and structure stay consistent across every document you generate.
+          {(flow.instructions || flow.skillName)
+            ? <> <span style={{ color: 'var(--support-success)' }}>Custom instructions applied</span> — your {flow.skillName ? 'skill file' : 'instructions'} customize the default profile.</>
+            : <> Customize it under Team &amp; settings → Writing style.</>}
+        </p>
       </div>
       <NavBar back="/doctype"
         nextLabel={selected.length > 1 ? 'Generate ' + selected.length + ' formats' : 'Generate document'}
