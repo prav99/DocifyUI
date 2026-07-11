@@ -39,8 +39,8 @@ export default function Source() {
   const [hubRepos, setHubRepos] = useState(null); // Repository hub: connect once, use everywhere
   const [hosts, setHosts] = useState({}); // per code host: { loading, connected, repos, reason }
   const [oauthAvail, setOauthAvail] = useState({}); // which hosts have real OAuth configured
-  const [repoQ, setRepoQ] = useState('');
-  const [provFilter, setProvFilter] = useState('');
+  const [addOther, setAddOther] = useState({}); // per host: show owner/name input
+  const [otherVal, setOtherVal] = useState({}); // per host: owner/name draft
 
   const sources = flow.sources || [];
   const cfg = flow.srcCfg || {};
@@ -324,30 +324,35 @@ export default function Source() {
                 // ONE panel for every code host: connection chips, an honest
                 // repository list (connected accounts only), compact selection.
                 const readyCount = hostIds.filter((p) => !!(cfg[p] || {}).sel).length;
-                const checking = hostIds.some((p) => !hosts[p] || hosts[p].loading);
-                const connected = hostIds.filter((p) => hosts[p] && hosts[p].connected);
-                const unconnected = hostIds.filter((p) => hosts[p] && !hosts[p].loading && !hosts[p].connected);
-                const q = repoQ.trim().toLowerCase();
+                const loadingHosts = hostIds.filter((p) => !hosts[p] || hosts[p].loading);
+                const settled = hostIds.filter((p) => hosts[p] && !hosts[p].loading);
+                const unconnected = settled.filter((p) => !hosts[p].connected);
                 const hubByProv = {};
                 (hubRepos || []).forEach((r) => { (hubByProv[r.provider] = hubByProv[r.provider] || []).push(r); });
-                const rows = [];
-                hostIds.forEach((p) => {
+                // Options per host: the account's real list + hub-verified
+                // entries. Under an unconnected provider only PUBLIC hub
+                // entries qualify — those need no account to read.
+                const optionsFor = (p) => {
                   const st = hosts[p];
-                  if (st && st.connected) {
-                    (st.repos || []).forEach((r) =>
-                      rows.push({ provider: p, name: r.name, branch: r.branch, priv: r.private, updated: r.updated, hub: false }));
-                  }
+                  const out = ((st && st.connected && st.repos) || []).map((r) =>
+                    ({ name: r.name, branch: r.branch, priv: r.private, updated: r.updated, hub: false }));
                   (hubByProv[p] || []).forEach((r) => {
-                    // Hub entries under an unconnected provider are shown only
-                    // when public — those need no account to read.
                     if (!(st && st.connected) && r.visibility !== 'public') return;
-                    if (!rows.some((x) => x.provider === p && x.name === r.repo)) {
-                      rows.push({ provider: p, name: r.repo, branch: r.branch, hub: true, ruleSetName: r.ruleSetName });
+                    if (!out.some((x) => x.name === r.repo)) {
+                      out.push({ name: r.repo, branch: r.branch, hub: true, ruleSetName: r.ruleSetName });
                     }
                   });
-                });
-                const visible = rows.filter((r) =>
-                  (!provFilter || r.provider === provFilter) && (!q || r.name.toLowerCase().includes(q)));
+                  return out;
+                };
+                const addByName = (p) => {
+                  const v = (otherVal[p] || '').trim();
+                  if (!/^[\w.-]+\/[\w.-]+$/.test(v)) {
+                    return toast('error', 'Use the owner/name format', 'For example expressjs/express — any public repository works.');
+                  }
+                  setCfg(p, { sel: v, custom: true, fromHub: false });
+                  setAddOther((o) => ({ ...o, [p]: false }));
+                  setOtherVal((o) => ({ ...o, [p]: '' }));
+                };
                 return (
                   <div className="srccard" style={{ borderLeftColor: readyCount === hostIds.length ? 'var(--support-success)' : 'var(--support-warning)' }}>
                     <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
@@ -387,90 +392,100 @@ export default function Source() {
                       </div>
                     ))}
 
-                    {connected.length > 0 && (
-                      <>
-                        <div className="row mt5" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-                          <input className="input" style={{ flex: '1 1 220px', maxWidth: 340 }} placeholder="Search repositories"
-                            aria-label="Search repositories" value={repoQ} onChange={(e) => setRepoQ(e.target.value)} />
-                          {connected.length > 1 && (
-                            <select className="select select--slim" style={{ width: 'auto' }} aria-label="Filter by provider"
-                              value={provFilter} onChange={(e) => setProvFilter(e.target.value)}>
-                              <option value="">All providers</option>
-                              {connected.map((p) => <option key={p} value={p}>{byId(p).name}</option>)}
-                            </select>
-                          )}
-                          <span className="helper" style={{ marginLeft: 'auto' }}>{readyCount} selected</span>
-                        </div>
-                        {checking ? (
-                          <p className="helper mt4">Loading repositories…</p>
-                        ) : visible.length === 0 ? (
-                          <div className="repoempty mt4">
-                            <p className="body01">{rows.length === 0 ? 'No repositories found' : 'No matching repositories'}</p>
-                            <p className="helper mt2">
-                              {rows.length === 0
-                                ? 'Check your permissions or connect another account.'
-                                : 'Try another search or connect a new repository.'}
-                            </p>
-                            <button type="button" className="linkbtn mt2" onClick={() => nav('/repos?return=' + encodeURIComponent('/source'))}>
-                              Add or manage repositories
+                    {loadingHosts.map((p) => (
+                      <p key={p} className="helper mt4">Checking {byId(p).name}…</p>
+                    ))}
+
+                    {settled.map((p) => {
+                      const c = cfg[p] || {};
+                      const st = hosts[p];
+                      const opts = optionsFor(p);
+                      if (!st.connected && !opts.length && !c.sel && !addOther[p]) {
+                        // Fully unconnected host: the connect block above is the
+                        // state; offer only the compact public-repo escape hatch.
+                        return (
+                          <p key={p} className="helper mt3">
+                            <button type="button" className="linkbtn" onClick={() => setAddOther((o) => ({ ...o, [p]: true }))}>
+                              ＋ Or document a public {byId(p).name} repository by owner/name
                             </button>
+                          </p>
+                        );
+                      }
+                      // Organisation groups keep long lists navigable and make
+                      // picking from another org a one-scroll job.
+                      const orgs = {};
+                      opts.forEach((r) => {
+                        const org = r.name.split('/')[0] || 'other';
+                        (orgs[org] = orgs[org] || []).push(r);
+                      });
+                      const info = opts.find((r) => r.name === c.sel);
+                      return (
+                        <div key={p} className="pickblock mt4">
+                          <div className="pickrow">
+                            <span className={'provtag prov--' + p}>{byId(p).name}</span>
+                            {c.sel ? (
+                              <>
+                                <span className="pickrow-sel">
+                                  <IcCheck />
+                                  <b>{c.sel}</b>
+                                  <span className="reporow-meta">
+                                    {info
+                                      ? [info.branch, info.priv !== undefined ? (info.priv ? 'Private' : 'Public') : '', info.hub && info.ruleSetName ? info.ruleSetName : ''].filter(Boolean).join(' · ')
+                                      : c.custom ? 'Public repository' : ''}
+                                  </span>
+                                </span>
+                                <button type="button" className="linkbtn" onClick={() => setCfg(p, { sel: '', custom: false, fromHub: false })}>Change</button>
+                              </>
+                            ) : opts.length ? (
+                              <select className="select" style={{ flex: '1 1 260px', maxWidth: 440 }} value=""
+                                aria-label={'Choose a ' + byId(p).name + ' repository'}
+                                onChange={(e) => {
+                                  const r = opts.find((x) => x.name === e.target.value);
+                                  setCfg(p, { sel: e.target.value, custom: false, fromHub: !!(r && r.hub) });
+                                }}>
+                                <option value="" disabled>Choose a repository…</option>
+                                {Object.keys(orgs).sort().map((org) => (
+                                  <optgroup key={org} label={org}>
+                                    {orgs[org].map((r) => (
+                                      <option key={r.name} value={r.name}>
+                                        {[r.name, r.branch, r.hub && r.ruleSetName ? r.ruleSetName : ''].filter(Boolean).join(' · ')}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="helper">
+                                {st.connected
+                                  ? 'No repositories found — check your permissions or connect another account.'
+                                  : 'Not connected — add a public repository below, or connect above.'}
+                              </span>
+                            )}
                           </div>
-                        ) : (
-                          <ul className="repolist mt4">
-                            {visible.map((r) => {
-                              const c = cfg[r.provider] || {};
-                              const sel = !c.custom && c.sel === r.name;
-                              return (
-                                <li key={r.provider + '/' + r.name}>
-                                  <button type="button" className={'reporow' + (sel ? ' reporow--sel' : '')} aria-pressed={sel}
-                                    onClick={() => setCfg(r.provider, sel
-                                      ? { sel: '', custom: false, fromHub: false }
-                                      : { sel: r.name, custom: false, fromHub: r.hub })}>
-                                    <span className="reporow-check" aria-hidden="true">{sel ? <IcCheck c="#ffffff" /> : null}</span>
-                                    <span className="reporow-name">{r.name}</span>
-                                    <span className={'provtag prov--' + r.provider}>{byId(r.provider).name}</span>
-                                    {r.branch ? <span className="reporow-meta">{r.branch}</span> : null}
-                                    {r.priv !== undefined ? <span className="reporow-meta">{r.priv ? 'Private' : 'Public'}</span> : null}
-                                    {r.hub ? <span className="tag tag--blue">Hub{r.ruleSetName ? ' · ' + r.ruleSetName : ''}</span> : null}
-                                    {r.updated ? <span className="reporow-meta reporow-upd">{r.updated}</span> : null}
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
-                      </>
-                    )}
-
-                    {readyCount > 0 && (
-                      <div className="mt4">
-                        <p className="label01 t2">SELECTED REPOSITORIES</p>
-                        <div className="row mt2" style={{ flexWrap: 'wrap', gap: 8 }}>
-                          {hostIds.filter((p) => (cfg[p] || {}).sel).map((p) => (
-                            <span key={p} className="selchip">
-                              {byId(p).name} / {cfg[p].sel}
-                              <button type="button" aria-label={'Remove ' + cfg[p].sel}
-                                onClick={() => setCfg(p, { sel: '', custom: false, fromHub: false })}>✕</button>
-                            </span>
-                          ))}
+                          {!c.sel && (
+                            addOther[p] ? (
+                              <div className="row mt3" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                                <input className="input" style={{ flex: '1 1 220px', maxWidth: 320 }}
+                                  placeholder="owner/name — e.g. expressjs/express" autoFocus
+                                  aria-label={byId(p).name + ' repository by owner/name'}
+                                  value={otherVal[p] || ''}
+                                  onChange={(e) => setOtherVal((o) => ({ ...o, [p]: e.target.value }))}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') addByName(p); }} />
+                                <button type="button" className="btn btn--tertiary btn--sm btn--center" onClick={() => addByName(p)}>Add</button>
+                                <button type="button" className="linkbtn" onClick={() => setAddOther((o) => ({ ...o, [p]: false }))}>Cancel</button>
+                              </div>
+                            ) : (
+                              <p className="mt2">
+                                <button type="button" className="linkbtn" style={{ fontSize: 12.5 }}
+                                  onClick={() => setAddOther((o) => ({ ...o, [p]: true }))}>
+                                  ＋ Repository from another organisation or any public repository
+                                </button>
+                              </p>
+                            )
+                          )}
                         </div>
-                      </div>
-                    )}
-
-                    <details className="pubrepo mt5">
-                      <summary>Use any public repository instead</summary>
-                      <div className="row" style={{ flexWrap: 'wrap', gap: 12, marginTop: 10 }}>
-                        {hostIds.map((p) => (
-                          <div key={p} className="field" style={{ flex: '1 1 200px', maxWidth: 260, marginBottom: 0 }}>
-                            <label htmlFor={'custom-' + p}>{byId(p).name} (owner/name)</label>
-                            <input id={'custom-' + p} className="input" placeholder="e.g. expressjs/express"
-                              value={(cfg[p] || {}).custom ? (cfg[p].sel || '') : ''}
-                              onChange={(e) => setCfg(p, { sel: e.target.value.trim(), custom: true, fromHub: false })} />
-                          </div>
-                        ))}
-                      </div>
-                      <p className="helper mt2">Public repositories need no connection — DocGen reads them anonymously.</p>
-                    </details>
+                      );
+                    })}
 
                     <RepoHubCta label="Can’t find the repository you need?" action="Connect or manage repositories" style={{ marginTop: 16 }} />
                   </div>
