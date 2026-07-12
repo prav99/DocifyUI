@@ -21,6 +21,7 @@ import { evaluateCommit, loadRepoConfig, DEFAULT_CONFIG, SAMPLE_YAML, SAMPLE_INS
 import { fetchRepoFile } from './adapters/repofiles.js';
 import { matchSurroundingStyle, resolveWritingPolicy, compileStylePrompt, styleAudit, autofixText } from './adapters/styleguide.js';
 import { aiRestructureDocument, blueprintOutline } from './adapters/llm.js';
+import { rewriteText } from './adapters/rewrite.js';
 import { freshToken } from './auth.js';
 
 export const syncRouter = Router();
@@ -987,6 +988,52 @@ syncRouter.post('/updates/:id/reject', async (req, res) => {
   if (u.status !== 'pending') return res.status(400).json({ error: 'Update was already ' + u.status });
   const updated = await prisma.syncUpdate.update({ where: { id: u.id }, data: { status: 'rejected', decidedAt: new Date() } });
   res.json({ update: serializeUpdate(updated) });
+});
+
+/* ---------------- Hybrid inline editor: selection rewrite ----------------
+   Stateless. Rewrites one selected span with the model (Anthropic key set)
+   or a deterministic local fallback. The client shows the result as a
+   proposal — nothing is applied here. */
+syncRouter.post('/rewrite', async (req, res) => {
+  const b = req.body || {};
+  const text = String(b.text || '');
+  if (!text.trim()) return res.status(400).json({ error: 'No text to rewrite' });
+  if (text.length > 20000) return res.status(400).json({ error: 'Selection too large to rewrite (20k char limit)' });
+  const allow = new Set(['improveClarity', 'concise', 'shorten', 'expand', 'simplify', 'professional', 'customerFriendly', 'technical', 'grammar', 'activeVoice', 'removeRepetition', 'tone', 'rewrite']);
+  const action = allow.has(String(b.action)) ? String(b.action) : 'rewrite';
+  const instruction = b.instruction ? String(b.instruction).slice(0, 800) : null;
+  const guide = b.guide ? String(b.guide) : null;
+  try {
+    const out = await rewriteText({ text, action, instruction, guide });
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: 'Rewrite failed: ' + (e.message || 'unknown') });
+  }
+});
+
+/* ---------------- Hybrid inline editor: save reviewed content -------------
+   Persists the reviewer's assembled document (after-lines) + audit trail
+   onto a pending restructure proposal, without a schema change: the edited
+   body rides in diff.after (what Approve applies) and the audit rides in
+   reasoning.audit. Approve then publishes exactly what was reviewed. */
+syncRouter.put('/updates/:id/content', async (req, res) => {
+  const u = await prisma.syncUpdate.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  if (!u) return res.status(404).json({ error: 'Update not found' });
+  if (u.status !== 'pending') return res.status(400).json({ error: 'Only pending proposals can be edited' });
+  const body = req.body || {};
+  const after = Array.isArray(body.after) ? body.after.map((l) => String(l))
+    : (typeof body.content === 'string' ? body.content.split(/\r?\n/) : null);
+  if (!after) return res.status(400).json({ error: 'Provide the reviewed content (after: string[] or content: string)' });
+  const diff = j(u.diff, {});
+  diff.after = after;
+  const reasoning = j(u.reasoning, {});
+  if (Array.isArray(body.audit)) reasoning.audit = body.audit.slice(0, 5000);
+  if (body.stats && typeof body.stats === 'object') reasoning.reviewStats = body.stats;
+  const updated = await prisma.syncUpdate.update({
+    where: { id: u.id },
+    data: { diff: JSON.stringify(diff), reasoning: JSON.stringify(reasoning), snippet: after.join('\n').slice(0, 100000) }
+  });
+  res.json({ update: serializeUpdate(updated, u.docId) });
 });
 
 // Full content of one version (compare view).

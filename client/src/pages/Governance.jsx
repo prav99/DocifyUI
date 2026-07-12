@@ -4,6 +4,7 @@ import { api, download } from '../api.js';
 import { toast } from '../store.jsx';
 import { HelpLink } from '../ui.jsx';
 import { DiffView } from './History.jsx';
+import InlineReviewEditor from '../review/InlineReviewEditor.jsx';
 import { usePageMeta } from '../seo.js';
 
 /* =====================================================================
@@ -79,6 +80,7 @@ export default function Governance() {
   const [proposals, setProposals] = useState(null);
   const [actBusy, setActBusy] = useState('');
   const [showDiff, setShowDiff] = useState(''); // proposal id whose changes are expanded inline
+  const [editing, setEditing] = useState(null); // proposal object open in the hybrid inline editor
 
   const loadDocs = () => api('/sync/documents').then((d) => setDocs(d.documents || [])).catch(() => setDocs([]));
   useEffect(() => { loadDocs(); }, []);
@@ -479,7 +481,15 @@ export default function Governance() {
       )}
 
       {/* ---------------- Step 4: Review & export ---------------- */}
-      {step === 3 && (
+      {step === 3 && editing && (
+        <div className="mt6">
+          <InlineReviewEditor
+            proposal={editing}
+            onClose={() => setEditing(null)}
+            onApproved={() => { setEditing(null); loadProposals(); }} />
+        </div>
+      )}
+      {step === 3 && !editing && (
         <div className="mt6">
           {proposals === null ? <p className="body01 t2">Loading proposals…</p> : (
             <>
@@ -502,7 +512,8 @@ export default function Governance() {
                       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
                         {u.status === 'pending' && (
                           <>
-                            <button className="btn btn--primary btn--sm btn--center" disabled={actBusy === u.id} onClick={() => act(u, 'approve')}>Approve</button>
+                            <button className="btn btn--primary btn--sm btn--center" onClick={() => setEditing(u)}>Review &amp; edit</button>
+                            <button className="btn btn--tertiary btn--sm btn--center" disabled={actBusy === u.id} onClick={() => act(u, 'approve')}>Approve all</button>
                             <button className="btn btn--ghost btn--sm btn--center" disabled={actBusy === u.id} onClick={() => act(u, 'reject')}>Dismiss</button>
                           </>
                         )}

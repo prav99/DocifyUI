@@ -14,3 +14,6 @@ client/vite.config.js.timestamp-*.mjs
 
 # Generated QA/test reports — not source, kept out of the repo
 DocGen_QA_Test_Report.docx
+
+# Standalone offline demo/test harness for the inline review editor (dev-only, not deployed)
+_review_harness/
