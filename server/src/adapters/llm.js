@@ -1640,9 +1640,42 @@ export function blueprintOutline(track, docType) {
    rebuild an EXISTING document against a type blueprint in ONE voice — every
    fact preserved, duplicates merged, terminology normalized. The result is a
    review-queue proposal, never an automatic overwrite. */
+/* Deterministic restructure — the no-AI fallback for standardization.
+   Re-segments the existing document by its own top-level headings (or keeps it
+   whole when it has none), preserving every line of content. Downstream
+   autofixText then normalizes terminology and formatting, so Standardize still
+   yields a real, reviewable proposal when the AI engine is unavailable — and
+   the inline editor's per-selection rewrites run in the same simulated mode as
+   /sync/rewrite. Never invents or drops substance. */
+export function localRestructure({ content }) {
+  const src = String(content || '').replace(/\r\n?/g, '\n');
+  const pairs = [];
+  let curH = null;
+  let buf = [];
+  const flush = () => {
+    const body = buf.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (curH != null || body) pairs.push([curH || 'Overview', body]);
+    buf = [];
+  };
+  for (const ln of src.split('\n')) {
+    // Split on H1/H2 only; deeper headings stay inside the section body so
+    // sub-structure is preserved rather than flattened.
+    const m = ln.match(/^\s{0,3}(#{1,2})\s+(.*\S)\s*$/);
+    if (m) { flush(); curH = m[2].trim(); } else { buf.push(ln); }
+  }
+  flush();
+  // No headings at all → one section holding the whole document, so content is
+  // never lost.
+  if (!pairs.length) return [['Overview', src.trim()]];
+  // Drop a leading empty "Overview" when the doc opened straight with a heading.
+  return pairs.filter(([h, b], i) => !(i === 0 && h === 'Overview' && !b));
+}
+
 export async function aiRestructureDocument({ title, content, docType = 'userguide', track = 'technical', styleSys = '' }) {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('Standardization needs the AI engine — it is not configured on this deployment');
+  // No AI engine configured → deterministic structural pass so Standardize
+  // still produces a reviewable proposal (the inline editor stays reachable).
+  if (!key) return { pairs: localRestructure({ content }), simulated: true, source: 'local' };
   const tpl = TEMPLATES[docType];
   const outline = tpl ? tpl.sections({ product: 'X', version: '', date: '', repo: '', brief: {} }).map(([h]) => h) : ['Overview'];
   const sys = 'You are a senior technical writer performing a full standardization pass on an EXISTING document. ' +
@@ -1656,18 +1689,29 @@ export async function aiRestructureDocument({ title, content, docType = 'usergui
     '\nTarget outline (adapt to the real content — omit sections with nothing to say, keep mandatory ones): ' + outline.join(' · ') +
     '\n\nEXISTING DOCUMENT TO STANDARDIZE:\n\n' + String(content).slice(0, 90000);
   await acquireSlot();
-  let d;
+  let d = null;
   try {
     d = await anthropicRequest(key, { model: AI_MODEL(), max_tokens: 8192, system: sys, messages: [{ role: 'user', content: user }] });
+  } catch (e) {
+    d = null;
   } finally {
     releaseSlot();
   }
-  const text = (d.content || []).map((c) => c.text || '').join('');
-  const m = text.match(/\[[\s\S]*\]?/);
-  if (!m) throw new Error('No JSON array in model response');
-  const arr = parseSectionsArray(m[0]);
-  if (!Array.isArray(arr) || !arr.length) throw new Error('Empty sections from model');
-  return arr.filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [String(p[0]), String(p[1])]);
+  // Model/network failure → deterministic fallback instead of a 400 dead end.
+  if (!d) return { pairs: localRestructure({ content }), simulated: true, source: 'local' };
+  try {
+    const text = (d.content || []).map((c) => c.text || '').join('');
+    const m = text.match(/\[[\s\S]*\]?/);
+    if (!m) throw new Error('No JSON array in model response');
+    const arr = parseSectionsArray(m[0]);
+    if (!Array.isArray(arr) || !arr.length) throw new Error('Empty sections from model');
+    const pairs = arr.filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [String(p[0]), String(p[1])]);
+    if (!pairs.length) throw new Error('No usable sections from model');
+    return { pairs, simulated: false, source: 'anthropic' };
+  } catch (e) {
+    // Malformed model output → deterministic fallback, never a dead end.
+    return { pairs: localRestructure({ content }), simulated: true, source: 'local' };
+  }
 }
 
 // Drop-in async wrapper: real AI when possible, template engine otherwise.

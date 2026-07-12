@@ -815,7 +815,7 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
     const before = String(row.content || '');
     if (before.trim().length < 40) return res.status(400).json({ error: 'The document is too short to standardize' });
     const auditBefore = styleAudit(before, policy);
-    const pairs = await aiRestructureDocument({
+    const { pairs, simulated } = await aiRestructureDocument({
       title: row.name, content: before, docType, styleSys: compileStylePrompt(policy)
     });
     let md = '# ' + row.name.replace(/\.[a-z]+$/i, '') + '\n\n' +
@@ -823,7 +823,10 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
     md = autofixText(md, policy).text;
     const auditAfter = styleAudit(md, policy);
     const reasoning = {
-      why: 'Full standardization pass: the document was rebuilt against the ' + docType + ' blueprint in one consistent voice — every fact kept, duplicated passages merged, terminology and formatting normalized to your writing profile' + (tenant ? ' (v' + tenant.version + ')' : '') + '.',
+      simulated: !!simulated,
+      why: simulated
+        ? 'Structural standardization pass (the AI engine is not configured on this deployment): the document was re-segmented against the ' + docType + ' blueprint, with headings, terminology, and formatting normalized to your writing profile' + (tenant ? ' (v' + tenant.version + ')' : '') + ' — every fact kept, nothing invented. Open the review editor to refine any section; per-selection AI rewrites run in preview mode until the AI engine is enabled.'
+        : 'Full standardization pass: the document was rebuilt against the ' + docType + ' blueprint in one consistent voice — every fact kept, duplicated passages merged, terminology and formatting normalized to your writing profile' + (tenant ? ' (v' + tenant.version + ')' : '') + '.',
       style: 'Writing consistency ' + auditBefore.scores.overall + ' → ' + auditAfter.scores.overall +
         ' · voice ' + auditBefore.scores.voice + '→' + auditAfter.scores.voice +
         ' · terminology ' + auditBefore.scores.terminology + '→' + auditAfter.scores.terminology +
@@ -846,7 +849,8 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
     });
     res.status(201).json({
       update: serializeUpdate(u, row.name),
-      scores: { before: auditBefore.scores, after: auditAfter.scores }
+      scores: { before: auditBefore.scores, after: auditAfter.scores },
+      simulated: !!simulated
     });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });

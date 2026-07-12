@@ -511,6 +511,7 @@ export default function Governance() {
                     <div className="row row--between" style={{ flexWrap: 'wrap', gap: 10 }}>
                       <div>
                         <b className="mono" style={{ fontSize: 13 }}>{u.docName}</b>
+                        {reasoning.simulated && <span className="tag tag--gray" style={{ marginLeft: 8 }} title="The AI engine is not configured on this deployment. The document was structured deterministically; open the editor to refine sections. Per-selection rewrites run in preview mode.">Structured without AI</span>}
                         <p className="helper mt2">
                           {sc.before && sc.after
                             ? <>Writing consistency <b style={{ color: scoreColor(sc.before.overall) }}>{sc.before.overall}</b> → <b style={{ color: scoreColor(sc.after.overall) }}>{sc.after.overall}</b> · terms {sc.before.terminology}→{sc.after.terminology} · structure {sc.before.structure}→{sc.after.structure}</>
