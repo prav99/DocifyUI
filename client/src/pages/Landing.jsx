@@ -257,17 +257,17 @@ function IlluAutomate() {
 const FEATURES = [
   {
     eyebrow: 'CONNECT YOUR TOOLS', title: 'It starts where your truth already lives',
-    body: 'One authorization — the same grant that signs you in. Docify reads your repository the way your best writer would: structure, comments, commit history, API annotations. Read-only, never stored, nothing to configure.',
+    body: 'Connect once, in one place — accounts, whole GitHub organisations, GitLab groups, Bitbucket workspaces — and every workflow shares the same repository catalogue. Each source gets its own native picker: choose Jira issues by epic, sprint, or JQL; pick exact endpoints from an OpenAPI or Swagger spec; select Notion and Confluence pages across spaces. Read-only, never stored, combinable in a single document.',
     illu: <IlluSource />
   },
   {
     eyebrow: 'GENERATE', title: 'Every commit becomes a draft',
-    body: 'Not a template with blanks — a real document, drafted from what the code actually says and rebuilt when it changes. Eleven document types, each held to an open standard — Diátaxis, OpenAPI 3.1, Keep a Changelog — in DITA, PDF, Word, HTML, or Markdown.',
+    body: 'Not a template with blanks — a real document, drafted from what the code actually says and rebuilt when it changes. Eleven document types, each held to an open standard — Diátaxis, OpenAPI 3.1, Keep a Changelog — in DITA, PDF, Word, HTML, or Markdown. And every one is written in a single, governed voice: layered writing profiles keep tone, terminology, and structure identical whether the document was generated today or three months ago.',
     illu: <IlluGenerate />
   },
   {
     eyebrow: 'VALIDATE QUALITY', title: 'Then comes the cross-examination',
-    body: 'Before anything ships, an AI judge reads every section the way a machine will. Does the title match real queries? Does each passage stand alone? Is there an example where a reader expects one? Every finding arrives with a one-click fix — and a projected score gain.',
+    body: 'Before anything ships, an AI judge reads every section the way a machine will. Does the title match real queries? Does each passage stand alone? Is your terminology consistent — “sign in” on one page, never “log in” on the next? A writing-consistency audit scores voice, terminology, structure, and formatting; safe corrections apply automatically, and every finding arrives with a one-click fix and a projected score gain.',
     illu: <IlluVerify />
   },
   {
@@ -277,7 +277,7 @@ const FEATURES = [
   },
   {
     eyebrow: 'ALWAYS CURRENT', title: 'And then you never do this again',
-    body: 'Build a pipeline once: repository, branch, triggers, documents, AI thresholds, publishing. Every push, merged pull request, feature change, bug fix, and configuration update then flows into the documentation automatically — placed into your existing documents at the best-matching section, never as a duplicate. The release and its documentation ship together.',
+    body: 'Build a pipeline once: repository, branch, triggers — merges or Jira events — documents, AI thresholds, publishing. Every change flows into your existing documents at the best-matching section, never as a duplicate, styled to match the document’s own conventions. Every regeneration snapshots the previous version automatically, and an optional approval gate holds updates as “Under review” until a human signs off — compare, restore, approve, publish, all from one Documents dashboard.',
     illu: <IlluAutomate />,
     cta: ['Build your pipeline', '/automation']
   }
