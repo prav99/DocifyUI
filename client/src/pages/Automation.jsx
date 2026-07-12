@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, ScoreTag, IcCheck, HelpLink, RepoHubCta } from '../ui.jsx';
@@ -1048,7 +1048,10 @@ export default function Automation() {
   const nav = useNavigate();
   const [profiles, setProfiles] = useState(null);
   const [catalog, setCatalog] = useState(null);
-  const [view, setView] = useState({ mode: 'list' });
+  // View is driven by the URL: /automation = list, /automation/:id = detail.
+  // The wizard is a transient overlay (new/edit) that returns to a URL on save.
+  const { id: routeId } = useParams();
+  const [wizard, setWizard] = useState(null); // null | { profile } (edit) | {} (new)
 
   async function load() {
     const d = await api('/profiles');
@@ -1089,15 +1092,15 @@ export default function Automation() {
   return (
     <>
       <div className="page">
-        {view.mode === 'wizard' && (
-          <Wizard existing={view.profile || null} catalog={catalog}
-            onDone={(saved) => { setView(saved ? { mode: 'detail', id: saved.id } : { mode: 'list' }); load(); }} />
+        {wizard && (
+          <Wizard existing={wizard.profile || null} catalog={catalog}
+            onDone={(saved) => { setWizard(null); nav(saved ? '/automation/' + saved.id : '/automation'); load(); }} />
         )}
-        {view.mode === 'detail' && (
-          <Detail id={view.id} onBack={() => { setView({ mode: 'list' }); load(); }}
-            onEdit={(p) => setView({ mode: 'wizard', profile: p })} />
+        {!wizard && routeId && (
+          <Detail id={routeId} onBack={() => { nav('/automation'); load(); }}
+            onEdit={(p) => setWizard({ profile: p })} />
         )}
-        {view.mode === 'list' && (
+        {!wizard && !routeId && (
           <>
             <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
               <div>
@@ -1112,7 +1115,7 @@ export default function Automation() {
                   judged, ranked against ChatGPT, Claude, and Gemini, then published or held. Configure once; it runs forever.
                 </p>
               </div>
-              <button className="btn btn--primary" onClick={() => setView({ mode: 'wizard' })}>
+              <button className="btn btn--primary" onClick={() => setWizard({})}>
                 New automation pipeline<span className="ico">+</span>
               </button>
             </div>
@@ -1133,7 +1136,7 @@ export default function Automation() {
                   AI thresholds, publishing — and every merge afterwards keeps your documentation
                   current, judged, and ranked automatically.
                 </p>
-                <button className="btn btn--primary mt5" onClick={() => setView({ mode: 'wizard' })}>
+                <button className="btn btn--primary mt5" onClick={() => setWizard({})}>
                   Start the wizard<span className="ico">→</span>
                 </button>
               </div>
@@ -1160,7 +1163,7 @@ export default function Automation() {
                         </p>
                       )}
                       <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-                        <button className="btn btn--primary btn--sm" onClick={() => setView({ mode: 'detail', id: p.id })}>Open</button>
+                        <button className="btn btn--primary btn--sm" onClick={() => nav('/automation/' + p.id)}>Open</button>
                         <button className="btn btn--tertiary btn--sm" disabled={p.status !== 'active'} onClick={() => act(p, 'run')}>Run now</button>
                         <button className="btn btn--ghost btn--sm" onClick={() => act(p, 'toggle')}>{p.status === 'active' ? 'Pause' : 'Resume'}</button>
                         <button className="btn btn--ghost btn--sm" onClick={() => act(p, 'clone')}>Clone</button>
@@ -1176,7 +1179,7 @@ export default function Automation() {
       </div>
       {/* The wizard has its own gated Back/Next footer — hide the global page
           nav there so it can't be mistaken for advancing the wizard. */}
-      {view.mode !== 'wizard' && <NavBar back="/dashboard" next="/settings" />}
+      {!wizard && <NavBar back="/dashboard" next="/settings" />}
     </>
   );
 }

@@ -77,6 +77,7 @@ function App() {
               <Route path="/checkout" element={<RequireAuth><Checkout /></RequireAuth>} />
               <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
               <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
+              <Route path="/automation/:id" element={<RequireAuth><Automation /></RequireAuth>} />
               <Route path="/sync" element={<RequireAuth><DocSync /></RequireAuth>} />
               <Route path="/repos" element={<RequireAuth><Repos /></RequireAuth>} />
               <Route path="/standardize" element={<RequireAuth><Governance /></RequireAuth>} />
