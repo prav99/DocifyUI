@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, Notif, Score, IcCheck, IcInfo, HelpLink } from '../ui.jsx';
+import InlineReviewEditor from '../review/InlineReviewEditor.jsx';
 
 const CAT_DESC = {
   'LLM readiness': 'Whether AI systems can find, summarize, and cite this document.',
@@ -73,6 +74,7 @@ export default function Quality() {
   const [tab, setTab] = useState('ai');
   const [report, setReport] = useState(null);
   const [gen, setGen] = useState(null); // generation metadata for the automation context header
+  const [review, setReview] = useState(null); // automation human-review payload { proposal, context }
   const [styleScores, setStyleScores] = useState(null); // writing-consistency audit
   const [checking, setChecking] = useState(false);
   const [fixing, setFixing] = useState({}); // issueId -> step index while the fix runs
@@ -102,6 +104,7 @@ export default function Quality() {
   }, [report]);
 
   useEffect(() => {
+    if (fromAuto) return; // automation review mode loads via the run/review endpoint below
     if (!genId) { nav('/dashboard'); return; }
     api('/generations/' + genId + '/quality')
       .then((d) => setReport(d.report))
@@ -111,7 +114,70 @@ export default function Quality() {
     api('/generations/' + genId)
       .then((d) => { setGen(d.generation || null); setStyleScores(((d.generation || {}).output || {}).styleReport || null); })
       .catch(() => {});
-  }, [genId, nav]);
+  }, [genId, nav, fromAuto]);
+
+  // Automation human-review mode: load the run's document as a reviewable
+  // before→after proposal (auto-fixes shown as PROPOSED changes).
+  useEffect(() => {
+    if (!fromAuto) return undefined;
+    let alive = true;
+    api('/profiles/' + profileId + '/runs/' + runId + '/review')
+      .then((d) => { if (alive) setReview(d); })
+      .catch((e) => { toast('error', 'Could not load the review', e.message); nav('/automation/' + profileId); });
+    return () => { alive = false; };
+  }, [fromAuto, profileId, runId, nav]);
+
+  async function approveReview(after) {
+    const r = await api('/profiles/' + profileId + '/runs/' + runId + '/review/approve', { method: 'POST', body: { after } });
+    toast('success', 'Approved & published', 'The run is now Approved · Published — downloads use exactly what you approved.');
+    return r;
+  }
+  async function saveReviewDraft(after) {
+    await api('/profiles/' + profileId + '/runs/' + runId + '/review/draft', { method: 'POST', body: { after } });
+  }
+  async function requestReviewChanges(reason, after) {
+    await api('/profiles/' + profileId + '/runs/' + runId + '/review/request-changes', { method: 'POST', body: { reason, after } });
+    toast('info', 'Changes requested', 'The run is marked “Changes requested” and was not published.');
+    nav('/automation/' + profileId);
+  }
+
+  // In review mode the Standardize editor IS the page — mounted on the exact
+  // automation document, with a context header + Approve / Request changes.
+  if (fromAuto) {
+    if (!review) return <div className="page"><p className="body01 t2">Loading document for review…</p></div>;
+    const c = review.context || {};
+    return (
+      <div className="page">
+        <div className="qa-autobar">
+          <button className="linkbtn" onClick={() => nav('/automation/' + profileId)}>← Back to automation run</button>
+          <span className="helper">Automation{c.profileName ? ' · ' + c.profileName : ''}{c.repo ? ' · ' + c.repo : ''}{c.pr ? ' · ' + c.pr : ''} · Human review</span>
+        </div>
+        <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <h1 className="h04">Review &amp; approve</h1>
+          <HelpLink topic="quality" />
+        </div>
+        <p className="body01 t2 mt3">
+          {review.proposal.docName}{c.repo ? ' · ' + c.repo : ''}{c.branch ? ' @ ' + c.branch : ''}{c.format ? ' · ' + String(c.format).toUpperCase() : ''}{c.score != null ? ' · score ' + c.score + '/100' : ''}{c.findings ? ' · ' + c.findings + ' proposed fix' + (c.findings === 1 ? '' : 'es') : ''}
+        </p>
+        {c.outcome === 'changes-requested' && c.reviewReason
+          ? <div className="syncnote mt3" role="note"><strong>Changes previously requested:</strong>&nbsp;{c.reviewReason}</div> : null}
+        <div className="mt5">
+          <InlineReviewEditor
+            proposal={review.proposal}
+            backLabel="Back to automation run"
+            approveLabel="Approve & publish"
+            saveLabel="Save draft"
+            footerNote={(c.gatePassed === false ? 'Below the quality gate — resolve findings before publishing. ' : '') + 'Approving publishes exactly what you reviewed and marks the run Approved · Published.'}
+            onClose={() => nav('/automation/' + profileId)}
+            onApprove={approveReview}
+            onSaveContent={saveReviewDraft}
+            onRequestChanges={requestReviewChanges}
+            onApproved={() => nav('/automation/' + profileId)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (!report) return <div className="page"><p className="body01 t2">Loading quality report…</p></div>;
 

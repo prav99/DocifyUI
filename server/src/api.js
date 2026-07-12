@@ -2169,6 +2169,127 @@ apiRouter.post('/profiles/:id/runs/:runId/approve', async (req, res) => {
   res.json({ ok: true, run });
 });
 
+/* -------- Automation human review (reuses the Standardize inline editor) -----
+   When "Require human approval" is on, the auto-fixes must be treated as
+   PROPOSED changes, not pre-accepted "Fixed" ones. generateDocument is
+   deterministic from the stored aiDocs/args, so we rebuild both sides of the
+   diff on demand — the raw generated output (before) vs. the same output with
+   the quality fixes applied (after) — and hand it to the same review engine
+   Standardize uses. Nothing is a schema change; nothing touches the pipeline. */
+function reviewGenArgs(gen) {
+  return {
+    track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format, repo: gen.repo,
+    instructions: gen.instructions || '', skill: gen.skill || '', skillName: gen.skillName || '',
+    brief: j(gen.brief, {}), output: j(gen.output, {}),
+    aiDocs: (j(gen.aiDocs, []).length ? j(gen.aiDocs, []) : null)
+  };
+}
+function findRun(row, runId) { return j(row.runs, []).find((r) => r.id === runId); }
+
+apiRouter.get('/profiles/:id/runs/:runId/review', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const run = findRun(row, req.params.runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  if (!run.genId) return res.status(400).json({ error: 'This run has no generated document to review' });
+  const gen = await prisma.generation.findFirst({ where: { id: run.genId, userId: req.uid } });
+  if (!gen) return res.status(404).json({ error: 'Generated document not found' });
+  const rep = await prisma.qualityReport.findUnique({ where: { generationId: gen.id } });
+  const allIds = rep ? j(rep.issues, []).map((i) => i.id) : [];
+  const genArgs = reviewGenArgs(gen);
+  let raw, fixed;
+  try {
+    raw = generateDocument({ ...genArgs, fixes: [] });
+    fixed = generateDocument({ ...genArgs, fixes: allIds });
+  } catch (e) { return res.status(500).json({ error: 'Could not rebuild the document for review: ' + (e.message || 'unknown') }); }
+  const cfg = j(row.config, {});
+  const docType = docTypeName(gen.track, j(gen.docTypes, [])[0]);
+  // A saved draft (reviewer returning later) wins as the working "after".
+  const after = Array.isArray(run.reviewDraft) && run.reviewDraft.length ? run.reviewDraft : String(fixed.content || '').split('\n');
+  const proposal = {
+    id: 'arev-' + run.id,
+    docName: gen.title || docType || 'Document',
+    kind: 'restructure',
+    status: 'pending',
+    diff: { startLine: 1, before: String(raw.content || '').split('\n'), after },
+    reasoning: {
+      why: allIds.length
+        ? 'Automation proposed ' + allIds.length + ' quality ' + (allIds.length === 1 ? 'fix' : 'fixes') + ' on the generated ' + docType + '. Each is a proposed change — accept, reject, edit, or rewrite it before publishing. Nothing publishes until you approve.'
+        : 'Review the generated ' + docType + ' before publishing. Edit or rewrite any section, then approve.',
+      automation: { runId: run.id, profileId: row.id, genId: gen.id }
+    },
+    snippet: String(fixed.content || '').slice(0, 4000)
+  };
+  const context = {
+    profileName: row.name, repo: gen.repo, branch: gen.branch, docType, format: gen.format,
+    score: run.overall != null ? run.overall : gen.score, findings: allIds.length,
+    pr: run.jira && run.jira.issue ? run.jira.issue : '', commit: run.commit || '', version: run.version || null,
+    trigger: run.trigger || '', requireApproval: !!cfg.requireApproval, outcome: run.outcome,
+    gate: cfg.gate, gatePassed: run.gatePassed !== false,
+    hasDraft: Array.isArray(run.reviewDraft) && run.reviewDraft.length > 0,
+    reviewReason: run.reviewReason || ''
+  };
+  res.json({ proposal, context });
+});
+
+apiRouter.post('/profiles/:id/runs/:runId/review/draft', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const runs = j(row.runs, []);
+  const run = runs.find((r) => r.id === req.params.runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  const after = Array.isArray((req.body || {}).after) ? req.body.after.map((l) => String(l).slice(0, 20000)).slice(0, 20000) : null;
+  if (!after) return res.status(400).json({ error: 'Provide the draft content (after: string[])' });
+  run.reviewDraft = after;
+  if (run.outcome === 'awaiting-approval' || run.outcome === 'changes-requested') run.outcome = run.outcome; // unchanged
+  await prisma.automationProfile.update({ where: { id: row.id }, data: { runs: JSON.stringify(runs) } });
+  res.json({ ok: true });
+});
+
+apiRouter.post('/profiles/:id/runs/:runId/review/request-changes', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const runs = j(row.runs, []);
+  const run = runs.find((r) => r.id === req.params.runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  if (!['awaiting-approval', 'changes-requested'].includes(run.outcome)) return res.status(400).json({ error: 'Run is not open for review' });
+  run.outcome = 'changes-requested';
+  run.reviewReason = String((req.body || {}).reason || '').slice(0, 2000);
+  run.reviewedAt = new Date().toISOString();
+  if (Array.isArray((req.body || {}).after)) run.reviewDraft = req.body.after.map((l) => String(l).slice(0, 20000)).slice(0, 20000);
+  await prisma.automationProfile.update({ where: { id: row.id }, data: { runs: JSON.stringify(runs) } });
+  res.json({ ok: true, run });
+});
+
+apiRouter.post('/profiles/:id/runs/:runId/review/approve', async (req, res) => {
+  const row = await ownProfile(req, res);
+  if (!row) return;
+  const runs = j(row.runs, []);
+  const run = runs.find((r) => r.id === req.params.runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  if (!['awaiting-approval', 'changes-requested'].includes(run.outcome)) return res.status(400).json({ error: 'Run is not open for review' });
+  const after = Array.isArray((req.body || {}).after) ? req.body.after.map((l) => String(l)) : null;
+  if (!after) return res.status(400).json({ error: 'Provide the reviewed content (after: string[])' });
+  const content = after.join('\n');
+  // Persist the reviewed content as the generation's approved output, so every
+  // download, the Documents list, and Import History reflect exactly what the
+  // reviewer approved — never the unreviewed original.
+  if (run.genId) {
+    const gen = await prisma.generation.findFirst({ where: { id: run.genId, userId: req.uid } });
+    if (gen) {
+      await prisma.generation.update({ where: { id: gen.id }, data: { content, approval: 'approved', approvedAt: new Date().toISOString() } });
+      const rep = await prisma.qualityReport.findUnique({ where: { generationId: gen.id } });
+      if (rep) await prisma.qualityReport.update({ where: { id: rep.id }, data: { fixedIds: JSON.stringify(j(rep.issues, []).map((i) => i.id)) } });
+    }
+  }
+  run.outcome = 'published';
+  run.approvedAt = new Date().toISOString();
+  run.reviewDraft = null;
+  run.reviewReason = '';
+  await prisma.automationProfile.update({ where: { id: row.id }, data: { runs: JSON.stringify(runs) } });
+  res.json({ ok: true, run });
+});
+
 // Effectiveness insights: score and per-model ranking trends over the run
 // history — the executive view of whether automation is working.
 apiRouter.get('/profiles/:id/insights', async (req, res) => {

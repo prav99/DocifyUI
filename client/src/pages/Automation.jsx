@@ -73,6 +73,7 @@ function runStatusTag(r, cfg) {
   if (r.status === 'failed') return ['tag--red', 'Failed'];
   if (r.outcome === 'published') return ['tag--green', cfg && cfg.requireApproval ? 'Approved · Published' : 'Auto-approved · Published'];
   if (r.outcome === 'awaiting-approval') return ['tag--amber', 'Waiting for approval'];
+  if (r.outcome === 'changes-requested') return ['tag--amber', 'Changes requested'];
   if (r.outcome === 'held') return ['tag--red', 'Gate blocked'];
   if (r.outcome === 'skipped') return ['tag--gray', 'Filtered out'];
   return ['tag--gray', 'Completed'];
@@ -1066,7 +1067,7 @@ function Detail({ id, onBack, onEdit }) {
         <div className="stack">
           {p.runs.map((r) => {
             const [scls, slabel] = runStatusTag(r, cfg);
-            const isDraft = r.outcome === 'awaiting-approval';
+            const isDraft = r.outcome === 'awaiting-approval' || r.outcome === 'changes-requested';
             const canDownload = r.status === 'complete' && r.genId && (r.outcome === 'published' || isDraft);
             return (
               <div key={r.id} className={'arun' + (r.status === 'running' ? ' arun--live' : '')}>
@@ -1088,7 +1089,12 @@ function Detail({ id, onBack, onEdit }) {
                   <p className="helper mt1">⤷ Placed at <b>{r.placement.anchorPath}</b> · {r.placement.mode === 'insert-new' ? 'new sub-section' : 'section updated in place'} · <b>{r.placement.confidence}%</b> match</p>
                 )}
                 {isDraft && (
-                  <p className="helper mt1">Passed the automated checks — publishing is paused until you approve. Download the draft or open the document to review it first.</p>
+                  <p className="helper mt1">{r.outcome === 'changes-requested'
+                    ? 'Changes were requested on this run — reopen the review to finish and approve, or it stays unpublished.'
+                    : 'Passed the automated checks — publishing is paused until you review. Each auto-fix is a proposed change you can accept, reject, edit, or rewrite before publishing.'}</p>
+                )}
+                {r.outcome === 'changes-requested' && r.reviewReason && (
+                  <p className="helper mt1"><b>Requested:</b> {r.reviewReason}</p>
                 )}
                 {r.status === 'complete' && r.assistants && (
                   <p className="helper mt1">AI-readiness: ChatGPT {r.assistants.chatgpt}% · Claude {r.assistants.claude}% · Gemini {r.assistants.gemini}%</p>
@@ -1237,7 +1243,7 @@ export default function Automation() {
                         </p>
                       )}
                       <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-                        {last && last.outcome === 'awaiting-approval'
+                        {last && (last.outcome === 'awaiting-approval' || last.outcome === 'changes-requested')
                           ? <button className="btn btn--primary btn--sm" onClick={() => (last.genId ? nav('/quality/' + last.genId + '?runId=' + last.id + '&profileId=' + p.id + '&from=automation') : nav('/automation/' + p.id))}>Review &amp; approve</button>
                           : <button className="btn btn--primary btn--sm" onClick={() => nav('/automation/' + p.id)}>Open</button>}
                         {last && last.status === 'complete' && last.genId && (last.outcome === 'published' || last.outcome === 'awaiting-approval') && (

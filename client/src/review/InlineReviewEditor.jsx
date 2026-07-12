@@ -33,7 +33,7 @@ function offsetWithin(root, container, off) {
   } catch { return 0; }
 }
 
-export default function InlineReviewEditor({ proposal, config: cfgProp, onClose, onApproved }) {
+export default function InlineReviewEditor({ proposal, config: cfgProp, onClose, onApproved, onApprove: onApproveProp, onSaveContent, onRequestChanges, approveLabel = 'Approve & publish', saveLabel = 'Save review', backLabel = 'Back to queue', footerNote }) {
   const config = useMemo(() => ({ ...DEFAULT_CONFIG, ...(cfgProp || {}) }), [cfgProp]);
   const diff = useMemo(() => (typeof proposal.diff === 'string' ? JSON.parse(proposal.diff || '{}') : (proposal.diff || {})), [proposal]);
   const beforeText = useMemo(() => linesToText(diff.before || []), [diff]);
@@ -343,21 +343,38 @@ export default function InlineReviewEditor({ proposal, config: cfgProp, onClose,
   const saveReview = useCallback(async () => {
     setBusy(true);
     try {
-      await api('/sync/updates/' + proposal.id + '/content', { method: 'PUT', body: { after: currentText.split('\n'), audit, stats } });
-      setSaved(true); toast('success', 'Review saved', 'Your edited version is stored on the proposal. Approve to publish it as a new version.');
+      if (onSaveContent) await onSaveContent(currentText.split('\n'), audit, stats);
+      else await api('/sync/updates/' + proposal.id + '/content', { method: 'PUT', body: { after: currentText.split('\n'), audit, stats } });
+      setSaved(true); toast('success', onSaveContent ? 'Draft saved' : 'Review saved', onSaveContent ? 'Your edits are kept — return anytime to finish and approve.' : 'Your edited version is stored on the proposal. Approve to publish it as a new version.');
     } catch (e) { toast('error', 'Save failed', e.message); } finally { setBusy(false); }
-  }, [proposal.id, currentText, audit, stats]);
+  }, [proposal.id, currentText, audit, stats, onSaveContent]);
 
   const approve = useCallback(async () => {
     if (stats.pending > 0 && !window.confirm(stats.pending + ' change' + (stats.pending === 1 ? '' : 's') + ' are still marked Proposed (not explicitly accepted). They will be included as shown. Approve and publish?')) return;
     setBusy(true);
     try {
-      await api('/sync/updates/' + proposal.id + '/content', { method: 'PUT', body: { after: currentText.split('\n'), audit, stats } });
-      const r = await api('/sync/updates/' + proposal.id + '/approve', { method: 'POST', body: {} });
-      toast('success', 'Approved — document updated', 'Published as version v' + (r.version || '?') + '. Previous version kept in Doc sync → Versions.');
-      onApproved && onApproved(r);
+      if (onApproveProp) {
+        const r = await onApproveProp(currentText.split('\n'), audit, stats);
+        onApproved && onApproved(r);
+      } else {
+        await api('/sync/updates/' + proposal.id + '/content', { method: 'PUT', body: { after: currentText.split('\n'), audit, stats } });
+        const r = await api('/sync/updates/' + proposal.id + '/approve', { method: 'POST', body: {} });
+        toast('success', 'Approved — document updated', 'Published as version v' + (r.version || '?') + '. Previous version kept in Doc sync → Versions.');
+        onApproved && onApproved(r);
+      }
     } catch (e) { toast('error', 'Approve failed', e.message); } finally { setBusy(false); }
-  }, [proposal.id, currentText, audit, stats, onApproved]);
+  }, [proposal.id, currentText, audit, stats, onApproved, onApproveProp]);
+
+  // Optional third outcome (automation review): send the run back without
+  // publishing. The reviewer's in-progress edits ride along so nothing is lost.
+  const requestChanges = useCallback(async () => {
+    if (!onRequestChanges) return;
+    const reason = window.prompt('Describe the changes needed. The run will be marked “Changes requested” and will not publish:', '');
+    if (reason === null) return;
+    setBusy(true);
+    try { await onRequestChanges(reason, currentText.split('\n'), audit, stats); }
+    catch (e) { toast('error', 'Request changes failed', e.message); } finally { setBusy(false); }
+  }, [onRequestChanges, currentText, audit, stats]);
 
   /* ---------------- render ---------------- */
   const canRewrite = sel && sel.editable;
@@ -367,7 +384,7 @@ export default function InlineReviewEditor({ proposal, config: cfgProp, onClose,
 
       <ReviewHeader proposal={proposal} stats={stats} mode={mode} setMode={setMode} panel={panel} setPanel={setPanel}
         onUndo={undo} onRedo={redo} canUndo={past.current.length > 0} canRedo={future.current.length > 0}
-        onBulk={bulk} onClose={onClose} config={config} />
+        onBulk={bulk} onClose={onClose} config={config} backLabel={backLabel} />
 
       <div className="rvx-body">
         <div className="rvx-doc-wrap">
@@ -426,7 +443,8 @@ export default function InlineReviewEditor({ proposal, config: cfgProp, onClose,
         <ManualEditor manual={manual} onChange={(text) => setManual((m) => ({ ...m, text }))} onCommit={commitManual} onCancel={() => setManual(null)} />
       )}
 
-      <ReviewFooter saved={saved} busy={busy} stats={stats} onSave={saveReview} onApprove={approve} onClose={onClose} />
+      <ReviewFooter saved={saved} busy={busy} stats={stats} onSave={saveReview} onApprove={approve} onClose={onClose}
+        onRequestChanges={onRequestChanges ? requestChanges : null} approveLabel={approveLabel} saveLabel={saveLabel} note={footerNote} />
     </div>
   );
 
@@ -499,13 +517,13 @@ function handleMenuPick(id, target, extra, h) {
 /* ============================ subcomponents ============================ */
 const linesJoin = (ls) => (ls || []).join('\n');
 
-function ReviewHeader({ proposal, stats, mode, setMode, panel, setPanel, onUndo, onRedo, canUndo, canRedo, onBulk, onClose, config }) {
+function ReviewHeader({ proposal, stats, mode, setMode, panel, setPanel, onUndo, onRedo, canUndo, canRedo, onBulk, onClose, config, backLabel = 'Back to queue' }) {
   const sc = (proposal.reasoning && (typeof proposal.reasoning === 'string' ? JSON.parse(proposal.reasoning) : proposal.reasoning).scores) || {};
   return (
     <div className="rvx-head">
       <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
         <div className="row" style={{ gap: 10, alignItems: 'baseline' }}>
-          <button className="linkbtn" onClick={onClose}>← Back to queue</button>
+          <button className="linkbtn" onClick={onClose}>← {backLabel}</button>
           <b className="mono" style={{ fontSize: 13 }}>{proposal.docName}</b>
           <span className="helper">{stats.total} changes · {stats.accepted} accepted · {stats.rejected} rejected · {stats.pending} proposed · {stats.edited} edited</span>
         </div>
@@ -742,17 +760,18 @@ function SidePanel({ which, blocks, audit, onJump, onStatus, config }) {
   );
 }
 
-function ReviewFooter({ saved, busy, stats, onSave, onApprove, onClose }) {
+function ReviewFooter({ saved, busy, stats, onSave, onApprove, onClose, onRequestChanges, approveLabel = 'Approve & publish', saveLabel = 'Save review', note }) {
   return (
     <div className="rvx-foot">
       <p className="helper" style={{ margin: 0, maxWidth: 620 }}>
-        Approving replaces the live document and cuts a new version (the previous one is kept in Doc sync → Versions).
+        {note || 'Approving replaces the live document and cuts a new version (the previous one is kept in Doc sync → Versions).'}
         {stats.pending > 0 ? ' ' + stats.pending + ' change' + (stats.pending === 1 ? '' : 's') + ' still proposed.' : ' All changes reviewed.'}
       </p>
       <div className="row" style={{ gap: 8 }}>
         <button className="btn btn--ghost btn--field" onClick={onClose}>Close</button>
-        <button className="btn btn--tertiary btn--field" onClick={onSave} disabled={busy}>{saved ? 'Saved ✓' : 'Save review'}</button>
-        <button className="btn btn--primary btn--field" onClick={onApprove} disabled={busy}>Approve &amp; publish</button>
+        {onRequestChanges && <button className="btn btn--tertiary btn--field" onClick={onRequestChanges} disabled={busy}>Request changes</button>}
+        <button className="btn btn--tertiary btn--field" onClick={onSave} disabled={busy}>{saved ? 'Saved ✓' : saveLabel}</button>
+        <button className="btn btn--primary btn--field" onClick={onApprove} disabled={busy}>{approveLabel}</button>
       </div>
     </div>
   );
