@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api, download } from '../api.js';
 import { toast } from '../store.jsx';
 import { HelpLink } from '../ui.jsx';
@@ -118,6 +119,8 @@ export default function History() {
   const [versions, setVersions] = useState({}); // id -> {current, versions}
   const [diff, setDiff] = useState(null); // { rowId, title, before, after, labels } — rendered INLINE in the expanded row
   const [busy, setBusy] = useState('');
+  const { id: routeId } = useParams();
+  const nav = useNavigate();
 
   const load = () => {
     const p = new URLSearchParams();
@@ -128,16 +131,17 @@ export default function History() {
   };
   useEffect(() => { load(); }, [q, provider, approval]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openRow = async (id) => {
-    if (openId === id) { setOpenId(''); return; }
-    setOpenId(id);
-    if (!versions[id]) {
-      try {
-        const d = await api('/history/' + id + '/versions');
-        setVersions((v) => ({ ...v, [id]: d }));
-      } catch (e) { toast('error', 'Could not load versions', e.message); }
-    }
+  const loadVersions = async (id) => {
+    if (!id || versions[id]) return;
+    try {
+      const d = await api('/history/' + id + '/versions');
+      setVersions((v) => ({ ...v, [id]: d }));
+    } catch (e) { toast('error', 'Could not load versions', e.message); }
   };
+  // The URL drives which document is expanded: /history/:id opens that document,
+  // so a refresh keeps it open and the link is shareable.
+  useEffect(() => { setOpenId(routeId || ''); if (routeId) loadVersions(routeId); }, [routeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openRow = (id) => { nav(openId === id ? '/history' : '/history/' + id); };
 
   const setStatus = async (id, to) => {
     setBusy(id + to);
@@ -156,9 +160,11 @@ export default function History() {
     try {
       await api('/history/' + id + '/restore', { method: 'POST', body: { versionId: v.id } });
       toast('success', 'Version ' + v.version + ' restored', 'The current state was snapshotted first — nothing was lost. The restored document is a fresh draft.');
-      setVersions((x) => { const n = { ...x }; delete n[id]; return n; });
       load();
-      openRow(id); setOpenId(id);
+      // Keep this document open (it's already at /history/:id) and refresh its
+      // versions in place after the restore.
+      setOpenId(id);
+      try { const d = await api('/history/' + id + '/versions'); setVersions((x) => ({ ...x, [id]: d })); } catch { /* keep open */ }
     } catch (e) { toast('error', 'Restore failed', e.message); }
     finally { setBusy(''); }
   };

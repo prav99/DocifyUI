@@ -84,6 +84,7 @@ function App() {
               {/* Old URL keeps working — bookmarks, help links, history */}
               <Route path="/governance" element={<Navigate to="/standardize" replace />} />
               <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
+              <Route path="/history/:id" element={<RequireAuth><History /></RequireAuth>} />
               <Route path="/founder" element={<RequireAuth><Founder /></RequireAuth>} />
               <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
               <Route path="/docs" element={<Docs />} />
