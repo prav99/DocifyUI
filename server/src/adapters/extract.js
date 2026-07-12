@@ -22,16 +22,36 @@ import mammoth from 'mammoth';
 async function extractPdf(buf) {
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const pdf = await getDocument({ data: new Uint8Array(buf), useSystemFonts: true, isEvalSupported: false }).promise;
-  const pages = [];
+  // Pass 1: reassemble lines, tracking each line's largest font size so we
+  // can promote visually-larger lines to markdown headings (PDFs carry no
+  // heading semantics, but the standardize pipeline needs #/## headings).
+  const lines = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    let s = '';
-    for (const it of content.items) { s += (it.str || ''); s += it.hasEOL ? '\n' : ' '; }
-    pages.push(s.replace(/[ \t]{2,}/g, ' ').replace(/ *\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim());
+    let cur = { text: '', size: 0 };
+    const flush = () => { const t = cur.text.replace(/[ \t]{2,}/g, ' ').trim(); if (t) lines.push({ text: t, size: cur.size }); cur = { text: '', size: 0 }; };
+    for (const it of content.items) {
+      const sz = it.transform ? Math.abs(it.transform[3]) : (it.height || 0);
+      if (it.str) { cur.text += it.str + (it.hasEOL ? '' : ' '); if (sz > cur.size) cur.size = sz; }
+      if (it.hasEOL) flush();
+    }
+    flush();
+    lines.push({ text: '', size: 0 });
   }
   try { if (pdf.destroy) await pdf.destroy(); } catch { /* ignore */ }
-  return pages.join('\n\n');
+  // Body size = most common rounded font size among content lines.
+  const freq = {};
+  for (const l of lines) if (l.text) { const k = Math.round(l.size); freq[k] = (freq[k] || 0) + 1; }
+  let body = 0, best = -1;
+  for (const k of Object.keys(freq)) if (freq[k] > best) { best = freq[k]; body = +k; }
+  const out = lines.map((l) => {
+    if (!l.text) return '';
+    if (body && l.size >= body * 1.5 && l.text.length <= 90) return '# ' + l.text;
+    if (body && l.size >= body * 1.18 && l.text.length <= 90) return '## ' + l.text;
+    return l.text;
+  });
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 const TEXT_EXT = new Set([
@@ -57,6 +77,27 @@ function cleanup(t) {
     .replace(/\n{4,}/g, '\n\n\n').trim();
 }
 function badContent(msg) { const e = new Error(msg); e.status = 415; e.userMessage = msg; return e; }
+
+// The standardize pipeline requires at least one heading. Extracted PDFs,
+// plain text, and RTF often have none — promote the first line to a title and
+// obvious short section titles to ## so parsing succeeds. The corrector
+// rebuilds full structure afterwards, so light heuristics are fine here.
+function ensureHeadings(text, title) {
+  if (/^\s{0,3}#{1,6}\s/m.test(text) || /^\s*\d+(?:\.\d+)*\.?\s+[A-Z]/m.test(text)) return text;
+  const lines = String(text).split('\n');
+  let promoted = false;
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i].trim();
+    if (!ln) continue;
+    if (!promoted) { lines[i] = '# ' + ln; promoted = true; continue; }
+    const next = (lines[i + 1] || '').trim();
+    if (ln.length <= 60 && !/[.:;,]$/.test(ln) && /^[A-Za-z0-9]/.test(ln) && next && next.length > ln.length) {
+      lines[i] = '## ' + ln;
+    }
+  }
+  if (!promoted) return '# ' + (title || 'Document') + '\n\n' + String(text);
+  return lines.join('\n');
+}
 
 /* Dependency-free HTML → Markdown: keeps headings, lists, code, links,
    emphasis; drops script/style/nav; decodes entities. Good enough to feed
@@ -97,11 +138,12 @@ export async function extractDocument(buffer, filename, mimetype = '') {
   const e = ext(filename);
   const mt = String(mimetype || '').toLowerCase();
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || '');
+  const title = String(filename || 'Document').replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'Document';
 
   if (e === 'pdf' || mt.includes('pdf')) {
     const text = cleanup(await extractPdf(buf));
     if (!text.trim()) throw badContent('This PDF has no extractable text — it looks scanned. Add a text layer (OCR) or upload a text-based PDF.');
-    return { text, format: 'pdf', kind: 'pdf' };
+    return { text: ensureHeadings(text, title), format: 'pdf', kind: 'pdf' };
   }
 
   if (e === 'docx' || e === 'docm' || mt.includes('officedocument.wordprocessingml') || mt.includes('ms-word')) {
@@ -109,7 +151,7 @@ export async function extractDocument(buffer, filename, mimetype = '') {
     try { const { value } = await mammoth.convertToHtml({ buffer: buf }); text = htmlToMarkdown(value); } catch { /* fall through */ }
     if (!text.trim()) { try { const raw = await mammoth.extractRawText({ buffer: buf }); text = cleanup(raw.value || ''); } catch { /* ignore */ } }
     if (!text.trim()) throw badContent('No readable text found in this Word document.');
-    return { text, format: 'docx', kind: 'docx' };
+    return { text: ensureHeadings(text, title), format: 'docx', kind: 'docx' };
   }
 
   if (e === 'doc' || mt === 'application/msword') {
@@ -122,13 +164,13 @@ export async function extractDocument(buffer, filename, mimetype = '') {
   if (e === 'html' || e === 'htm' || e === 'xhtml' || mt.includes('text/html')) {
     const text = htmlToMarkdown(buf.toString('utf8'));
     if (!text.trim()) throw badContent('No readable text found in this HTML file.');
-    return { text, format: 'html', kind: 'html' };
+    return { text: ensureHeadings(text, title), format: 'html', kind: 'html' };
   }
 
   if (e === 'rtf' || mt.includes('rtf')) {
     const text = rtfToText(buf.toString('utf8'));
     if (!text.trim()) throw badContent('No readable text found in this RTF file.');
-    return { text, format: 'rtf', kind: 'rtf' };
+    return { text: ensureHeadings(text, title), format: 'rtf', kind: 'rtf' };
   }
 
   // Plain-text / markup / source-code formats (and unknown-but-utf8 files)
@@ -136,11 +178,11 @@ export async function extractDocument(buffer, filename, mimetype = '') {
     const text = cleanup(buf.toString('utf8'));
     if (!text.trim()) throw badContent('The file appears to be empty.');
     if (looksBinary(text)) throw badContent('This looks like a binary file we can’t read. Supported: PDF, Word (.docx), HTML, RTF, Markdown, and text/code formats.');
-    return { text, format: e || 'txt', kind: 'text' };
+    return { text: ensureHeadings(text, title), format: e || 'txt', kind: 'text' };
   }
 
   // Last resort: if it decodes as clean utf8, accept it as text.
   const guess = buf.toString('utf8');
-  if (guess.trim() && !looksBinary(guess)) return { text: cleanup(guess), format: e || 'txt', kind: 'text' };
+  if (guess.trim() && !looksBinary(guess)) return { text: ensureHeadings(cleanup(guess), title), format: e || 'txt', kind: 'text' };
   throw badContent('Unsupported file type “.' + e + '”. Supported: PDF, Word (.docx), HTML, RTF, Markdown, and text/code formats.');
 }
