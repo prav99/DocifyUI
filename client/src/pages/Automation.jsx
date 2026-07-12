@@ -1096,7 +1096,9 @@ function Detail({ id, onBack, onEdit }) {
                 {r.status === 'running' && r.genId && <RunProgress genId={r.genId} />}
                 {(isDraft || (r.status === 'complete' && r.genId) || r.status === 'failed') && (
                   <div className="arun-actions">
-                    {isDraft && <button className="btn btn--primary btn--sm btn--center" onClick={() => approve(r.id)}>Review &amp; approve</button>}
+                    {isDraft && (r.genId
+                      ? <button className="btn btn--primary btn--sm btn--center" onClick={() => nav('/quality/' + r.genId + '?runId=' + r.id + '&profileId=' + p.id + '&from=automation')}>Review &amp; approve</button>
+                      : <button className="btn btn--primary btn--sm btn--center" onClick={() => approve(r.id)}>Approve &amp; publish</button>)}
                     {canDownload && <button className="btn btn--tertiary btn--sm btn--center" onClick={() => runDownload(r)}>{isDraft ? 'Download draft' : 'Download ' + String(cfg.format).toUpperCase()}</button>}
                     {r.genId && r.status === 'complete' && <button className="btn btn--ghost btn--sm btn--center" onClick={() => viewDoc(r.genId)}>View document</button>}
                     {r.genId && r.status === 'complete' && <button className="linkbtn" onClick={() => openReport(r.genId)}>Quality report</button>}
@@ -1236,7 +1238,7 @@ export default function Automation() {
                       )}
                       <div className="row mt5" style={{ flexWrap: 'wrap' }}>
                         {last && last.outcome === 'awaiting-approval'
-                          ? <button className="btn btn--primary btn--sm" onClick={() => nav('/automation/' + p.id)}>Review &amp; approve</button>
+                          ? <button className="btn btn--primary btn--sm" onClick={() => (last.genId ? nav('/quality/' + last.genId + '?runId=' + last.id + '&profileId=' + p.id + '&from=automation') : nav('/automation/' + p.id))}>Review &amp; approve</button>
                           : <button className="btn btn--primary btn--sm" onClick={() => nav('/automation/' + p.id)}>Open</button>}
                         {last && last.status === 'complete' && last.genId && (last.outcome === 'published' || last.outcome === 'awaiting-approval') && (
                           <button className="btn btn--tertiary btn--sm" onClick={() => download('/generations/' + last.genId + '/download?fmt=' + encodeURIComponent(p.config.format), traceableName(p.config, last)).catch((e) => toast('error', 'Download failed', e.message))}>Download latest</button>

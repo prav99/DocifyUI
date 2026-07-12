@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, Notif, Score, IcCheck, IcInfo, HelpLink } from '../ui.jsx';
@@ -61,8 +61,18 @@ function Gauge({ score, gate, potential }) {
 export default function Quality() {
   const nav = useNavigate();
   const { flow } = useFlow();
+  // URL-addressable: /quality/:genId (from an automation run) wins over the
+  // generate-flow's session genId, so refresh / back / direct link / re-login
+  // all reopen the exact document — never an unrelated latest one.
+  const { genId: routeGenId } = useParams();
+  const [sp] = useSearchParams();
+  const genId = routeGenId || flow.genId;
+  const runId = sp.get('runId');
+  const profileId = sp.get('profileId');
+  const fromAuto = sp.get('from') === 'automation' && !!profileId && !!runId;
   const [tab, setTab] = useState('ai');
   const [report, setReport] = useState(null);
+  const [gen, setGen] = useState(null); // generation metadata for the automation context header
   const [styleScores, setStyleScores] = useState(null); // writing-consistency audit
   const [checking, setChecking] = useState(false);
   const [fixing, setFixing] = useState({}); // issueId -> step index while the fix runs
@@ -92,15 +102,16 @@ export default function Quality() {
   }, [report]);
 
   useEffect(() => {
-    if (!flow.genId) { nav('/dashboard'); return; }
-    api('/generations/' + flow.genId + '/quality')
+    if (!genId) { nav('/dashboard'); return; }
+    api('/generations/' + genId + '/quality')
       .then((d) => setReport(d.report))
       .catch((e) => toast('error', 'Could not load report', e.message));
-    // Writing-consistency scores from the resolved policy audit.
-    api('/generations/' + flow.genId)
-      .then((d) => setStyleScores(((d.generation || {}).output || {}).styleReport || null))
+    // Generation metadata (title, repo, branch, format, approval) + the
+    // writing-consistency scores from the resolved policy audit.
+    api('/generations/' + genId)
+      .then((d) => { setGen(d.generation || null); setStyleScores(((d.generation || {}).output || {}).styleReport || null); })
       .catch(() => {});
-  }, [flow.genId, nav]);
+  }, [genId, nav]);
 
   if (!report) return <div className="page"><p className="body01 t2">Loading quality report…</p></div>;
 
@@ -178,6 +189,14 @@ export default function Quality() {
     finally { setChecking(false); }
   }
 
+  async function approveAutomation() {
+    try {
+      await api('/profiles/' + profileId + '/runs/' + runId + '/approve', { method: 'POST' });
+      toast('success', 'Approved & published', 'The automation run is now Approved · Published.');
+      nav('/automation/' + profileId);
+    } catch (e) { toast('error', 'Approval failed', e.message); }
+  }
+
   const ai = report.aiScore;
   const overall = report.overall != null ? report.overall : ai;
   const dims = report.dimensions || [];
@@ -196,11 +215,22 @@ export default function Quality() {
   return (
     <>
       <div className="page">
+        {fromAuto && (
+          <div className="qa-autobar">
+            <button className="linkbtn" onClick={() => nav('/automation/' + profileId)}>← Back to automation run</button>
+            <span className="helper">Automation{gen && gen.repo ? ' · ' + gen.repo : ''}{gen && gen.docTypes && gen.docTypes[0] ? ' · ' + gen.docTypes[0] : ''} · Review &amp; approve</span>
+          </div>
+        )}
         <div className="row row--between" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <h1 className="h04">AI quality review</h1>
+          <h1 className="h04">{fromAuto ? 'Review & approve' : 'AI quality review'}</h1>
           <HelpLink topic="quality" />
         </div>
-        <p className="body01 t2 mt3">{report.title} · generated just now</p>
+        <p className="body01 t2 mt3">
+          {report.title}
+          {fromAuto && gen
+            ? ' · ' + (gen.repo || 'repo') + (gen.branch ? ' @ ' + gen.branch : '') + ' · ' + String(gen.format || '').toUpperCase() + ' · score ' + overall + '/100'
+            : ' · generated just now'}
+        </p>
 
         <div className="judgeband mt7">
           <div>
@@ -552,7 +582,15 @@ export default function Quality() {
           </>
         )}
       </div>
-      <NavBar back="/generate" next="/export" nextLabel="Continue to export" />
+      {fromAuto
+        ? <NavBar
+            back={'/automation/' + profileId}
+            backLabel="Back to automation run"
+            nextLabel="Approve & publish"
+            onNext={approveAutomation}
+            note={report.gatePassed === false ? 'Below the quality gate — review the findings before publishing.' : 'Passed the quality gate. Approving marks this run Approved · Published.'}
+          />
+        : <NavBar back="/generate" next="/export" nextLabel="Continue to export" />}
     </>
   );
 }

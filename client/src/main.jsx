@@ -72,6 +72,7 @@ function App() {
               <Route path="/format" element={<RequireAuth><Format /></RequireAuth>} />
               <Route path="/generate" element={<RequireAuth><Generate /></RequireAuth>} />
               <Route path="/quality" element={<RequireAuth><Quality /></RequireAuth>} />
+              <Route path="/quality/:genId" element={<RequireAuth><Quality /></RequireAuth>} />
               <Route path="/export" element={<RequireAuth><ExportPage /></RequireAuth>} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/checkout" element={<RequireAuth><Checkout /></RequireAuth>} />

@@ -292,13 +292,13 @@ function UserMenu({ user }) {
 }
 
 /* ---------- Bottom nav ---------- */
-export function NavBar({ back, next, nextLabel = 'Continue', disabled = false, note, onNext }) {
+export function NavBar({ back, backLabel = 'Back', next, nextLabel = 'Continue', disabled = false, note, onNext }) {
   const nav = useNavigate();
   return (
     <div className="navbar">
       <div className="inner">
         {back ? (
-          <button className="btn btn--ghost btn--center" onClick={() => nav(back)}>← Back</button>
+          <button className="btn btn--ghost btn--center" onClick={() => nav(back)}>← {backLabel}</button>
         ) : <span />}
         <div className="row">
           {note ? <span className="navnote">{note}</span> : null}

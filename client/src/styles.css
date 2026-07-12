@@ -1399,3 +1399,7 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .arun-prog-fill{height:100%;background:var(--button-primary);width:0;transition:width .5s var(--ease);position:relative}
 .arun-prog-fill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);transform:translateX(-100%);animation:genslide 1.4s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.arun-prog-fill::after{animation:none}.arun-prog-fill{transition:none}}
+/* Automation → Quality review context bar (breadcrumb + back link) */
+.qa-autobar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:16px;background:var(--layer-hover);border-left:3px solid var(--button-primary)}
+.qa-autobar .linkbtn{font-weight:600}
+.qa-autobar .helper{margin-left:auto}
