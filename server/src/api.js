@@ -760,8 +760,10 @@ apiRouter.post('/history/:id/restore', async (req, res) => {
 // options JSON so no schema change is needed.
 function genFormats(g) {
   const oc = j(g.output, {});
-  const list = Array.isArray(oc.formats) && oc.formats.length ? oc.formats.map(String) : [g.format];
-  return [...new Set(list)];
+  const list = Array.isArray(oc.formats) && oc.formats.length ? oc.formats.map(String) : [];
+  // The generation's primary format is always renderable, so never drop it —
+  // otherwise a stale output.formats can 400 a perfectly valid download.
+  return [...new Set([g.format, ...list].filter(Boolean))];
 }
 
 // Deterministic re-render of the generated sections for ONE document type in
@@ -1229,8 +1231,9 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
   if (!g || g.status !== 'complete') return res.status(404).json({ error: 'Not ready' });
   // ?fmt= downloads any format that was requested for this generation;
   // without it the primary format keeps the old behavior exactly.
-  const wanted = req.query.kind === 'report' ? g.format : String(req.query.fmt || g.format);
-  if (!genFormats(g).includes(wanted)) return res.status(400).json({ error: 'Format not part of this generation' });
+  let wanted = req.query.kind === 'report' ? g.format : String(req.query.fmt || g.format);
+  // Never 400 a valid generation over a format quirk — fall back to its primary.
+  if (!genFormats(g).includes(wanted)) wanted = g.format;
   // ?doc= downloads a single document type; omitted = the whole set (legacy).
   const types = j(g.docTypes, []);
   const wantDoc = req.query.doc ? String(req.query.doc) : null;
