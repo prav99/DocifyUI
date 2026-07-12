@@ -804,6 +804,8 @@ function serializeGen(g, opts = {}) {
     docTypes: j(g.docTypes, []), format: g.format, formats, instructions: g.instructions,
     files: j(g.files, []), skillName: g.skillName || '',
     status: g.status, step: g.step, steps: j(g.steps, []),
+    progress: g.status === 'complete' ? 100 : (g.progress || 0),
+    stage: g.stage || '', stageDetail: g.stageDetail || '',
     title: g.title, content: g.content, preview: g.preview || '',
     output: j(g.output, {}), brief: j(g.brief, {}),
     // The blueprint-selected preview layout, so the UI can label the preview
@@ -839,28 +841,71 @@ function serializeGen(g, opts = {}) {
   return base;
 }
 
-function buildSteps({ provider, instructions, files, skillName }) {
-  const steps = provider === 'jira'
-    ? ['Reading Jira projects', 'Collecting issues and release versions']
-    : ['Parsing repo structure', 'Extracting code comments'];
-  if (skillName) steps.push('Applying skill: ' + skillName);
+// Ordered pipeline stages with live-progress targets. runPipeline advances
+// through these at REAL work boundaries (not a timer): the % shown while a
+// stage is running is its `progress`, and the client eases toward the next.
+function pipelineStages({ provider = 'github', skillName = '', instructions = '', files = [] } = {}) {
+  const jira = provider === 'jira';
+  const stages = [
+    { key: 'parse', label: jira ? 'Reading Jira projects' : 'Parsing repository structure', progress: 8 },
+    { key: 'extract', label: jira ? 'Collecting issues & versions' : 'Extracting code comments', progress: 20 },
+    { key: 'analyse', label: 'Analysing sources & scope', progress: 32 }
+  ];
+  if (skillName) stages.push({ key: 'skill', label: 'Applying skill: ' + skillName, progress: 40 });
   if ((instructions && instructions.trim()) || (files && files.length)) {
-    steps.push('Applying your customization instructions');
+    stages.push({ key: 'custom', label: 'Applying your instructions', progress: 44 });
   }
-  steps.push('Drafting sections', 'Running quality checks');
-  return steps;
+  stages.push(
+    { key: 'generate', label: 'Generating document sections', progress: 48 },
+    { key: 'style', label: 'Applying style guide', progress: 72 },
+    { key: 'quality', label: 'Running quality checks', progress: 82 },
+    { key: 'ai', label: 'AI compatibility analysis', progress: 89 },
+    { key: 'preview', label: 'Preparing preview', progress: 95 },
+    { key: 'finalize', label: 'Finalizing output', progress: 99 }
+  );
+  return stages;
 }
+function buildSteps(opts) { return pipelineStages(opts).map((s) => s.label); }
+
+// Progressive preview fragments written to gen.preview as work completes, so
+// the preview panel fills in (metadata → outline → full render) instead of
+// staying blank until the end.
+const previewShell = (inner) => '<div style="font-family:\'IBM Plex Sans\',system-ui,sans-serif;color:#161616;line-height:1.5">' + inner + '</div>';
+function metaPreviewHtml(gen, fileCount) {
+  const dt = docTypeName(gen.track, (j(gen.docTypes, [])[0]) || '');
+  return previewShell(
+    '<div style="font-size:11px;letter-spacing:.04em;color:#6f6f6f;text-transform:uppercase;margin-bottom:6px">Drafting</div>' +
+    '<h1 style="font-size:22px;margin:0 0 8px">' + esc(dt || gen.title || 'Your document') + '</h1>' +
+    '<p style="color:#525252;margin:0 0 4px">From <code>' + esc(gen.repo) + '</code> · ' + fileCount + ' files in scope</p>' +
+    '<p style="color:#8d8d8d;margin:0">Writing sections from your source…</p>'
+  );
+}
+function outlinePreviewHtml(title, content) {
+  const heads = String(content || '').split('\n').filter((l) => /^#{1,3}\s/.test(l)).slice(0, 40);
+  const rows = heads.map((h) => {
+    const lvl = (h.match(/^#+/) || ['#'])[0].length;
+    const txt = esc(h.replace(/^#+\s*/, ''));
+    return '<div style="margin:6px 0 6px ' + ((lvl - 1) * 18) + 'px;font-size:' + (lvl === 1 ? 18 : lvl === 2 ? 15 : 13) + 'px;font-weight:' + (lvl <= 2 ? 600 : 400) + ';color:' + (lvl === 1 ? '#161616' : '#393939') + '">' + txt + '</div>';
+  }).join('');
+  return previewShell('<h1 style="font-size:22px;margin:0 0 12px">' + esc(title || 'Document') + '</h1>' + (rows || '<p style="color:#8d8d8d">Structuring sections…</p>'));
+}
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 async function runPipeline(genId) {
   try {
     const gen = await prisma.generation.findUnique({ where: { id: genId } });
     if (!gen) return;
-    const steps = j(gen.steps, []);
-    await prisma.generation.update({ where: { id: genId }, data: { status: 'running' } });
-    for (let i = 1; i <= steps.length; i++) {
-      await sleep(900);
-      await prisma.generation.update({ where: { id: genId }, data: { step: i } });
-    }
+    // Real stage tracking: each `mark` fires when actual work reaches that
+    // boundary, writing step + stage label + detail + % (never a timer).
+    const stages = pipelineStages({ provider: gen.provider, skillName: gen.skillName, instructions: gen.instructions, files: j(gen.files, []) });
+    const idxOf = (key) => stages.findIndex((s) => s.key === key);
+    const mark = async (key, detail = '') => {
+      const s = stages.find((x) => x.key === key);
+      if (!s) return;
+      await prisma.generation.update({ where: { id: genId }, data: { status: 'running', step: idxOf(key), stage: s.label, stageDetail: String(detail || '').slice(0, 200), progress: s.progress } });
+    };
+    const setPreview = async (html) => { try { await prisma.generation.update({ where: { id: genId }, data: { preview: String(html).slice(0, 400000) } }); } catch { /* ignore */ } };
+    await mark('parse');
     // Real repository content when available: authenticated via a connected
     // Source token when possible, unauthenticated for public repos otherwise.
     let srcToken = '';
@@ -873,6 +918,7 @@ async function runPipeline(genId) {
     let repoFiles = [];
     try { repoFiles = await fetchRepoFiles(gen.provider, gen.repo, gen.branch, srcToken); }
     catch (e) { console.error('repo fetch skipped (' + gen.repo + '):', e.message); }
+    await mark('extract', repoFiles.length ? repoFiles.length + ' files read' : 'reading source');
     // Unified rules engine: the same rule sets + docify.yaml that govern
     // automation and Doc sync also scope NORMAL generation — files outside the
     // configured scan scope never reach the AI, and rule-set instructions /
@@ -949,6 +995,7 @@ async function runPipeline(genId) {
         }
       }
     } catch (e) { console.error('confluence grounding skipped:', e.message); }
+    await mark('analyse', scopedFiles.length + ' files in scope');
     const baseBrief = j(gen.brief, {});
     // CONTENT GOVERNANCE: resolve one writing policy from the layered
     // profiles (platform → track base → document type → tenant profile →
@@ -974,6 +1021,10 @@ async function runPipeline(genId) {
       brief: { ...baseBrief, audience: baseBrief.audience || effAudience },
       output: j(gen.output, {}), files: scopedFiles
     };
+    if (idxOf('skill') >= 0) await mark('skill');
+    if (idxOf('custom') >= 0) await mark('custom');
+    await setPreview(metaPreviewHtml(gen, scopedFiles.length));
+    await mark('generate', (j(gen.docTypes, []).length > 1) ? j(gen.docTypes, []).length + ' documents' : 'Drafting sections');
     let { title, content, structure, aiDocs } = await generateDocumentSmart(genArgs);
     // Deterministic post-generation pass: safe terminology corrections are
     // applied to the AI sections, then the document re-renders once so every
@@ -1006,12 +1057,15 @@ async function runPipeline(genId) {
       content = kept.content;
       structure = kept.structure;
     }
+    await mark('style');
+    await setPreview(outlinePreviewHtml(title, content));
     // Rendered preview for the UI: same engine, HTML target, same options —
     // so the preview shows exactly what the user configured, for every format.
     // aiDocs (when real generation ran) are reused — no second API call.
     const previewHtml = gen.format === 'html'
       ? content
       : generateDocument({ ...genArgs, format: 'html', aiDocs }).content;
+    await mark('quality');
     // Judge the ACTUAL document (content-aware checks), not a canned sample.
     const report = judge({ content, title, repo: gen.repo, track: gen.track });
     // Writing-consistency audit: scores + concrete findings ("Preferred term:
@@ -1034,6 +1088,10 @@ async function runPipeline(genId) {
         ];
       } catch (e) { console.error('style audit skipped:', e.message); }
     }
+    await mark('ai', 'Scoring ChatGPT · Claude · Gemini');
+    await mark('preview');
+    await setPreview(previewHtml);
+    await mark('finalize');
     // Upsert so the pipeline can re-run on the SAME generation (automation
     // "update in place" and "sections" actions) without duplicating reports.
     await prisma.qualityReport.upsert({
@@ -1088,6 +1146,7 @@ async function runPipeline(genId) {
       where: { id: genId },
       data: {
         status: 'complete', title, content, preview: previewHtml,
+        progress: 100, stage: 'Complete', stageDetail: '',
         aiDocs: JSON.stringify(aiDocs || []),
         output: JSON.stringify(outWithPolicy),
         score: aiScore(report.issues.length, 0),
@@ -1095,7 +1154,8 @@ async function runPipeline(genId) {
       }
     });
   } catch (e) {
-    await prisma.generation.update({ where: { id: genId }, data: { status: 'failed' } }).catch(() => {});
+    console.error('generation pipeline failed:', e && e.message);
+    await prisma.generation.update({ where: { id: genId }, data: { status: 'failed', stage: 'Failed', stageDetail: String((e && e.message) || '').slice(0, 200) } }).catch(() => {});
   }
 }
 

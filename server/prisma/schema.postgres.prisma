@@ -66,6 +66,9 @@ model Generation {
   status       String         @default("queued") // queued | running | complete | failed
   step         Int            @default(0)
   steps        String         @default("[]") // JSON array of step labels
+  progress     Int            @default(0) // 0–100 live pipeline progress
+  stage        String         @default("") // current stage label
+  stageDetail  String         @default("") // sub-status e.g. "24 files read"
   title        String         @default("")
   content      String         @default("")
   preview      String         @default("") // rendered HTML preview honoring all output options

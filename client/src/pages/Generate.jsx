@@ -4,6 +4,44 @@ import { api, download } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
 
+/* Smoothly eased progress: snaps up to the real backend % quickly, then gently
+   creeps within a long-running stage so the bar always feels alive — the
+   backend % stays the source of truth (the creep never passes it by much). */
+function useSmoothProgress(backendPct, running, done) {
+  const [disp, setDisp] = useState(0);
+  const val = useRef(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const target = done ? 100 : backendPct;
+      const ceiling = done ? 100 : Math.min(97, backendPct + 20);
+      let v = val.current;
+      if (v < target) v += Math.max(0.6, (target - v) * 0.16);
+      else if (running && v < ceiling) v += 0.15;
+      v = Math.max(0, Math.min(100, Math.min(v, ceiling)));
+      if (Math.abs(v - val.current) > 0.001) { val.current = v; setDisp(v); }
+      if (done && v >= 100) clearInterval(id);
+    }, 80);
+    return () => clearInterval(id);
+  }, [backendPct, running, done]);
+  return disp;
+}
+
+/* Rough time-remaining from observed real-progress velocity. Returns null when
+   there isn't enough signal (e.g. mid a long stage) rather than a wrong number. */
+function useEta(realPct, running, done) {
+  const start = useRef(null);
+  useEffect(() => {
+    if (!running) { start.current = null; return; }
+    if (start.current == null && realPct > 0) start.current = { t: Date.now(), p: realPct };
+  }, [running, realPct]);
+  if (done || !running || !start.current) return null;
+  const dt = (Date.now() - start.current.t) / 1000;
+  const dp = realPct - start.current.p;
+  if (dt < 1.5 || dp < 2) return null;
+  const remain = (100 - realPct) / (dp / dt);
+  return remain > 2 && remain < 900 ? Math.round(remain) : null;
+}
+
 /* ---------- Source-view syntax highlighting (escape first, then wrap) ---------- */
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -99,10 +137,18 @@ export default function Generate() {
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [flow.genId, nav]);
 
+  const gRunning = gen ? (gen.status === 'running' || gen.status === 'queued') : true;
+  const gDone = gen ? gen.status === 'complete' : false;
+  const displayPct = useSmoothProgress(gen ? (gen.progress || 0) : 0, gRunning, gDone);
+  const eta = useEta(gen ? (gen.progress || 0) : 0, gRunning, gDone);
+
   if (!gen) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
   const done = gen.status === 'complete';
+  const failed = gen.status === 'failed';
+  const running = gen.status === 'running' || gen.status === 'queued';
   const steps = gen.steps || [];
+  const activeStep = gen.step || 0;
 
   return (
     <>
@@ -115,23 +161,45 @@ export default function Generate() {
           From <span className="mono">{gen.repo}</span> → {(gen.formats && gen.formats.length ? gen.formats : [gen.format]).map((f) => f.toUpperCase()).join(' · ')}
           {gen.docTypes.length > 1 ? ' · ' + gen.docTypes.length + ' documents, each previewed separately' : ''}
         </p>
+
+        {!failed && (
+          <div className="genprog mt6" role="progressbar" aria-valuenow={Math.round(displayPct)} aria-valuemin={0} aria-valuemax={100} aria-label="Generation progress">
+            <div className="genprog-head">
+              <span className="genprog-title">{done ? 'Generation complete' : (steps[activeStep] || gen.stage || 'Starting…')} <b>{Math.round(displayPct)}%</b></span>
+              <span className="genprog-meta">
+                {done ? 'All stages finished'
+                  : <>Step {Math.min(activeStep + 1, steps.length)} of {steps.length}{gen.stageDetail ? ' · ' + gen.stageDetail : ''}{eta ? ' · ~' + eta + 's left' : ''}</>}
+              </span>
+            </div>
+            <div className="genprog-track"><div className={'genprog-fill' + (done ? ' is-done' : '')} style={{ width: displayPct + '%' }} /></div>
+          </div>
+        )}
+        {failed && (
+          <div className="genfail mt6">
+            <b>Generation failed.</b> <span>{gen.stageDetail || 'Something went wrong during generation.'}</span>
+            <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }} onClick={() => nav('/format')}>← Back &amp; retry</button>
+          </div>
+        )}
+
         <div className="genlayout mt7">
           <div className="tile tile--white" style={{ padding: 24, alignSelf: 'start' }}>
             <h2 className="h02 mb5">Pipeline</h2>
             <div>
               {steps.map((s, i) => {
-                const cls = done || i < gen.step ? 'done' : i === gen.step && gen.status === 'running' ? 'doing' : 'todo';
+                const state = done || i < activeStep ? 'done' : (i === activeStep && running) ? 'doing' : 'todo';
                 return (
-                  <div key={s} className={'genstep ' + cls}>
+                  <div key={s + i} className={'genstep ' + state}>
                     <span className="sicon">
-                      {cls === 'done' ? <IcCheck /> : cls === 'doing' ? <span className="spin" /> : <span className="dotcircle" />}
+                      {state === 'done' ? <IcCheck /> : state === 'doing' ? <span className="spin" /> : <span className="dotcircle" />}
                     </span>
-                    {s}
+                    <span className="genstep-txt">
+                      {s}
+                      {state === 'doing' && gen.stageDetail ? <span className="genstep-sub">{gen.stageDetail}</span> : null}
+                    </span>
                   </div>
                 );
               })}
             </div>
-            {gen.status === 'failed' && <p className="body01 mt5" style={{ color: 'var(--support-error)' }}>Generation failed — go back and retry.</p>}
           </div>
           <div>
             {done ? (
@@ -153,9 +221,20 @@ export default function Generate() {
                 </div>
               </>
             ) : (
-              <div className="tile" style={{ padding: 24 }}>
-                <h2 className="h02 mb5">Preview</h2>
-                <p className="body01 t2">The rendered preview appears here when the pipeline finishes — with every option you configured applied.</p>
+              <div className="tile tile--white genprev">
+                <div className="genprev-head">
+                  <h2 className="h02" style={{ margin: 0 }}>Preview</h2>
+                  {!failed && <span className="genprev-live"><span className="genprev-dot" /> building live</span>}
+                </div>
+                {gen.preview ? (
+                  <div className="genprev-frame"><PreviewFrame html={gen.preview} title="Live preview" /></div>
+                ) : (
+                  <div className="genprev-skel" aria-hidden="true">
+                    <div className="skel w60" style={{ height: 18 }} />
+                    <div className="skel w90" /><div className="skel w80" /><div className="skel" />
+                    <div className="skel w90" style={{ marginTop: 22 }} /><div className="skel w60" /><div className="skel w80" />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -165,7 +244,7 @@ export default function Generate() {
         <div className="inner">
           <button className="btn btn--ghost btn--center" onClick={() => nav('/format')}>← Back</button>
           <div className="row">
-            <span className="navnote">{done ? 'Generation complete' : 'Generating…'}</span>
+            <span className="navnote">{done ? 'Generation complete' : failed ? 'Generation failed' : 'Generating… ' + Math.round(displayPct) + '%'}</span>
             <button className="btn btn--primary" disabled={!done} onClick={() => nav('/quality')}>
               View quality report<span className="ico">→</span>
             </button>
