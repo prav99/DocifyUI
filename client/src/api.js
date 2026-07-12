@@ -24,14 +24,16 @@ export async function api(path, opts = {}) {
 }
 
 // Authenticated file download (fetch → blob → anchor click).
-export async function download(path) {
+export async function download(path, nameOverride) {
   const res = await fetch('/api' + path, {
     headers: token ? { Authorization: 'Bearer ' + token } : {}
   });
   if (!res.ok) throw new Error('Download failed (' + res.status + ')');
   const cd = res.headers.get('Content-Disposition') || '';
   const m = cd.match(/filename="([^"]+)"/);
-  const name = m ? m[1] : 'download.txt';
+  // A caller-supplied traceable name (e.g. repo-doctype-commit-vN.ext) wins over
+  // the server's default filename.
+  const name = nameOverride || (m ? m[1] : 'download.txt');
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

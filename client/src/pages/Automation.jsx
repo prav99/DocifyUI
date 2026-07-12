@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api, getCatalog } from '../api.js';
+import { api, getCatalog, download } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, ScoreTag, IcCheck, HelpLink, RepoHubCta } from '../ui.jsx';
 
@@ -50,6 +50,32 @@ const WZ_STYLE_GUIDES = [
 
 function fmtWhen(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+/* ---- Automation run helpers: traceable filenames + a clear status model ---- */
+const FMT_EXT = { markdown: 'md', mdx: 'md', html: 'html', xhtml: 'xhtml', word: 'docx', pdf: 'pdf', dita: 'dita', docbook: 'dbk', epub: 'epub', text: 'txt' };
+const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+// e.g. docifyui-api-reference-kan-42-a7f3d91-v20.pdf
+function traceableName(cfg, run, fmt) {
+  const repo = slug((cfg.repo || 'docs').split('/').pop());
+  const doc = slug((cfg.docTypes && cfg.docTypes[0]) || 'document');
+  const parts = [repo, doc];
+  if (run.jira && run.jira.issue) parts.push(slug(run.jira.issue));
+  if (run.commit) parts.push(String(run.commit).slice(0, 7));
+  parts.push(run.version ? 'v' + run.version : new Date(run.at || Date.now()).toISOString().slice(0, 10));
+  return parts.filter(Boolean).join('-').replace(/-+/g, '-') + '.' + (FMT_EXT[fmt || cfg.format] || 'txt');
+}
+
+// One clear status per run, from run.status + run.outcome + the approval config.
+function runStatusTag(r, cfg) {
+  if (r.status === 'running' || r.status === 'queued') return ['tag--blue', 'Running'];
+  if (r.status === 'failed') return ['tag--red', 'Failed'];
+  if (r.outcome === 'published') return ['tag--green', cfg && cfg.requireApproval ? 'Approved · Published' : 'Auto-approved · Published'];
+  if (r.outcome === 'awaiting-approval') return ['tag--amber', 'Waiting for approval'];
+  if (r.outcome === 'held') return ['tag--red', 'Gate blocked'];
+  if (r.outcome === 'skipped') return ['tag--gray', 'Filtered out'];
+  return ['tag--gray', 'Completed'];
 }
 
 /* ---------------- Collapsible "Advanced" section: keeps the main path clean ---------------- */
@@ -846,6 +872,37 @@ function PlacementStudio({ profile, onEdit }) {
   );
 }
 
+/* Live progress for a run that's still executing — polls its generation and
+   shows the same stage/percent the Generate pipeline uses, inside the run row. */
+function RunProgress({ genId }) {
+  const [g, setG] = useState(null);
+  useEffect(() => {
+    if (!genId) return undefined;
+    let alive = true; let t;
+    const poll = async () => {
+      try {
+        const d = await api('/generations/' + genId);
+        if (!alive) return;
+        setG(d.generation);
+        if (d.generation.status === 'running' || d.generation.status === 'queued') t = setTimeout(poll, 1200);
+      } catch { t = setTimeout(poll, 2500); }
+    };
+    poll();
+    return () => { alive = false; clearTimeout(t); };
+  }, [genId]);
+  if (!g) return null;
+  const pct = g.status === 'complete' ? 100 : (g.progress || 0);
+  return (
+    <div className="arun-prog mt2" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+      <div className="row row--between" style={{ gap: 8 }}>
+        <span className="helper">{g.stage || 'Starting…'}{g.stageDetail ? ' · ' + g.stageDetail : ''}</span>
+        <span className="helper mono">{Math.round(pct)}%</span>
+      </div>
+      <div className="arun-prog-track"><div className="arun-prog-fill" style={{ width: pct + '%' }} /></div>
+    </div>
+  );
+}
+
 /* ---------------- Profile detail: webhook, simulations, runs, trends ---------------- */
 function Detail({ id, onBack, onEdit }) {
   const nav = useNavigate();
@@ -904,6 +961,19 @@ function Detail({ id, onBack, onEdit }) {
     catch (e) { toast('error', 'Rotation failed', e.message); }
   }
   function openReport(genId) { setFlow({ genId }); nav('/quality'); }
+  function viewDoc(genId) { nav('/history/' + genId); }
+  function runDownload(r, fmt) {
+    const f = fmt || cfg.format;
+    download('/generations/' + r.genId + '/download?fmt=' + encodeURIComponent(f), traceableName(cfg, r, f))
+      .catch((e) => toast('error', 'Download failed', e.message));
+  }
+  async function runNow() {
+    try {
+      await api('/profiles/' + p.id + '/run', { method: 'POST', body: { simulate: true } });
+      toast('success', 'Run started', 'It runs right here — watch the progress below.');
+      load();
+    } catch (e) { toast('error', 'Could not start run', e.message); }
+  }
 
   const series = ins ? ins.series : [];
 
@@ -916,6 +986,7 @@ function Detail({ id, onBack, onEdit }) {
           <span className={'tag ' + (p.status === 'active' ? 'tag--green' : 'tag--gray')}>{p.status === 'active' ? 'Active' : 'Paused'}</span>
         </div>
         <div className="row">
+          <button className="btn btn--primary btn--sm" disabled={p.status !== 'active'} onClick={runNow}>Run now</button>
           <button className="btn btn--tertiary btn--sm" onClick={() => onEdit(p)}>Edit</button>
           <button className="btn btn--ghost btn--sm" onClick={async () => { await api('/profiles/' + p.id, { method: 'PUT', body: { status: p.status === 'active' ? 'paused' : 'active' } }); load(); }}>
             {p.status === 'active' ? 'Pause' : 'Resume'}
@@ -994,45 +1065,43 @@ function Detail({ id, onBack, onEdit }) {
       ) : (
         <div className="stack">
           {p.runs.map((r) => {
-            const [cls, label] = OUTCOME_TAG[r.outcome] || [];
+            const [scls, slabel] = runStatusTag(r, cfg);
+            const isDraft = r.outcome === 'awaiting-approval';
+            const canDownload = r.status === 'complete' && r.genId && (r.outcome === 'published' || isDraft);
             return (
-              <div key={r.id} className="prun">
-                <div className="prun-top">
-                  <span className="helper" style={{ minWidth: 150 }}>{fmtWhen(r.at)}</span>
-                  <span className="body01">{TRIGGER_LABEL[r.trigger] || r.trigger}</span>
-                  <span className="tag tag--blue">{r.action === 'place' && r.placement ? 'place → ' + r.placement.anchor : r.action}{r.version ? ' → v' + r.version : ''}</span>
+              <div key={r.id} className={'arun' + (r.status === 'running' ? ' arun--live' : '')}>
+                <div className="arun-head">
+                  <span className={'tag ' + scls}>{slabel}</span>
+                  {r.status === 'complete' && r.overall != null && <ScoreTag n={r.overall} />}
+                  <span className="body01" style={{ fontWeight: 600 }}>{TRIGGER_LABEL[r.trigger] || r.trigger}</span>
                   {r.jira && r.jira.matched && <span className="tag tag--outline">{r.jira.issue}</span>}
-                  {r.status === 'running' && <span className="tag tag--blue">Running…</span>}
-                  {r.status === 'failed' && <span className="tag tag--red">Failed</span>}
-                  {r.status === 'complete' && <ScoreTag n={r.overall} />}
-                  {r.status === 'complete' && cls && <span className={'tag ' + cls}>{label}</span>}
-                  {r.status === 'complete' && r.grounded === false && <span className="tag tag--red">Template fallback</span>}
-                  <span style={{ flex: 1 }} />
-                  {r.outcome === 'awaiting-approval' && (
-                    <button className="btn btn--primary btn--sm" onClick={() => approve(r.id)}>Approve &amp; publish</button>
-                  )}
-                  {r.genId && r.status === 'complete' && (
-                    <button className="linkbtn" onClick={() => openReport(r.genId)}>View report →</button>
-                  )}
+                  {r.version ? <span className="tag tag--blue">v{r.version}</span> : null}
+                  {r.grounded === false && <span className="tag tag--red">Template fallback</span>}
+                  <span className="helper" style={{ marginLeft: 'auto' }}>{fmtWhen(r.at)}</span>
                 </div>
                 <p className="helper mt2">
-                  {r.commit ? String(r.commit).slice(0, 7) + ' on ' + r.branch + ' · ' : ''}{r.reason}
-                  {r.holdWhy ? ' — held: ' + r.holdWhy : ''}
-                  {r.groundedWhy ? ' — ⚠ ' + r.groundedWhy : ''}
+                  {r.commit ? <>commit <span className="mono">{String(r.commit).slice(0, 7)}</span> on {r.branch} · </> : ''}{r.reason}
+                  {r.holdWhy ? ' — ' + r.holdWhy : ''}
                   {r.error ? ' — ' + r.error : ''}
                 </p>
                 {r.placement && (
-                  <p className="helper mt2">
-                    ⤷ Placed at <b>{r.placement.anchorPath}</b> · {r.placement.mode === 'insert-new' ? 'new sub-section spliced in' : 'section updated in place'} · <b>{r.placement.confidence}%</b> match
-                  </p>
+                  <p className="helper mt1">⤷ Placed at <b>{r.placement.anchorPath}</b> · {r.placement.mode === 'insert-new' ? 'new sub-section' : 'section updated in place'} · <b>{r.placement.confidence}%</b> match</p>
                 )}
-                {r.jira && r.jira.matched && (
-                  <p className="helper mt2">
-                    Traceability: <b>{r.jira.issue}</b> → commit <span className="mono">{r.jira.commit || (r.commit ? String(r.commit).slice(0, 7) : '—')}</span> · resolved via {r.jira.source}
-                  </p>
+                {isDraft && (
+                  <p className="helper mt1">Passed the automated checks — publishing is paused until you approve. Download the draft or open the document to review it first.</p>
                 )}
                 {r.status === 'complete' && r.assistants && (
-                  <p className="helper mt2">AI ranking: ChatGPT {r.assistants.chatgpt}% · Claude {r.assistants.claude}% · Gemini {r.assistants.gemini}%</p>
+                  <p className="helper mt1">AI-readiness: ChatGPT {r.assistants.chatgpt}% · Claude {r.assistants.claude}% · Gemini {r.assistants.gemini}%</p>
+                )}
+                {r.status === 'running' && r.genId && <RunProgress genId={r.genId} />}
+                {(isDraft || (r.status === 'complete' && r.genId) || r.status === 'failed') && (
+                  <div className="arun-actions">
+                    {isDraft && <button className="btn btn--primary btn--sm btn--center" onClick={() => approve(r.id)}>Review &amp; approve</button>}
+                    {canDownload && <button className="btn btn--tertiary btn--sm btn--center" onClick={() => runDownload(r)}>{isDraft ? 'Download draft' : 'Download ' + String(cfg.format).toUpperCase()}</button>}
+                    {r.genId && r.status === 'complete' && <button className="btn btn--ghost btn--sm btn--center" onClick={() => viewDoc(r.genId)}>View document</button>}
+                    {r.genId && r.status === 'complete' && <button className="linkbtn" onClick={() => openReport(r.genId)}>Quality report</button>}
+                    {r.status === 'failed' && <button className="btn btn--ghost btn--sm btn--center" onClick={runNow}>Retry</button>}
+                  </div>
                 )}
               </div>
             );
@@ -1081,7 +1150,9 @@ export default function Automation() {
         toast('info', 'Pipeline deleted', p.name);
       } else if (action === 'run') {
         await api('/profiles/' + p.id + '/run', { method: 'POST', body: { simulate: true } });
-        toast('success', 'Run started', 'Open the pipeline to watch it execute');
+        toast('success', 'Run started', 'Watch it run — progress and download appear on the pipeline page.');
+        nav('/automation/' + p.id);
+        return;
       }
       load();
     } catch (e) { toast('error', 'Action failed', e.message); }
@@ -1158,12 +1229,18 @@ export default function Automation() {
                         {p.stats.avgOverall != null && <span className="helper">avg <b>{p.stats.avgOverall}</b></span>}
                       </div>
                       {last && (
-                        <p className="helper mt2">
-                          Last: {fmtWhen(last.at)} — {last.action} · {last.status === 'complete' ? (last.outcome || '') + (last.overall ? ' at ' + last.overall : '') : last.status}
+                        <p className="helper mt2 row" style={{ gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span className={'tag ' + runStatusTag(last, p.config)[0]}>{runStatusTag(last, p.config)[1]}</span>
+                          <span>Last run {fmtWhen(last.at)}{last.overall ? ' · score ' + last.overall : ''}{last.commit ? ' · ' + String(last.commit).slice(0, 7) : ''}</span>
                         </p>
                       )}
                       <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-                        <button className="btn btn--primary btn--sm" onClick={() => nav('/automation/' + p.id)}>Open</button>
+                        {last && last.outcome === 'awaiting-approval'
+                          ? <button className="btn btn--primary btn--sm" onClick={() => nav('/automation/' + p.id)}>Review &amp; approve</button>
+                          : <button className="btn btn--primary btn--sm" onClick={() => nav('/automation/' + p.id)}>Open</button>}
+                        {last && last.status === 'complete' && last.genId && (last.outcome === 'published' || last.outcome === 'awaiting-approval') && (
+                          <button className="btn btn--tertiary btn--sm" onClick={() => download('/generations/' + last.genId + '/download?fmt=' + encodeURIComponent(p.config.format), traceableName(p.config, last)).catch((e) => toast('error', 'Download failed', e.message))}>Download latest</button>
+                        )}
                         <button className="btn btn--tertiary btn--sm" disabled={p.status !== 'active'} onClick={() => act(p, 'run')}>Run now</button>
                         <button className="btn btn--ghost btn--sm" onClick={() => act(p, 'toggle')}>{p.status === 'active' ? 'Pause' : 'Resume'}</button>
                         <button className="btn btn--ghost btn--sm" onClick={() => act(p, 'clone')}>Clone</button>

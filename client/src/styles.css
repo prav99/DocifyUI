@@ -1388,3 +1388,14 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .tgt-valid.is-ok{background:#defbe6;color:#0e6027}
 .tgt-valid.is-bad{background:#fff1f1;color:#a2191f}
 .tgt-tab:focus-visible,.tgt-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+/* ===================== Automation run cards (arun-*) ===================== */
+.arun{border:1px solid var(--border-subtle);border-left:3px solid var(--border-strong);background:var(--layer-02);padding:12px 16px}
+.arun--live{border-left-color:var(--button-primary);animation:fadeup .2s var(--ease)}
+.arun-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.arun-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.arun-prog{margin-top:8px}
+.arun-prog-track{height:6px;background:var(--layer-hover);overflow:hidden;margin-top:4px}
+.arun-prog-fill{height:100%;background:var(--button-primary);width:0;transition:width .5s var(--ease);position:relative}
+.arun-prog-fill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);transform:translateX(-100%);animation:genslide 1.4s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.arun-prog-fill::after{animation:none}.arun-prog-fill{transition:none}}
