@@ -1256,9 +1256,12 @@ export default function Automation() {
           </>
         )}
       </div>
-      {/* The wizard has its own gated Back/Next footer — hide the global page
-          nav there so it can't be mistaken for advancing the wizard. */}
-      {!wizard && <NavBar back="/dashboard" next="/settings" />}
+      {/* Global page nav only on the top-level list. The wizard has its own
+          gated Back/Next footer, and the detail/run view has its own
+          "← All pipelines" link + per-run actions — a generic Back/Continue
+          bar there is meaningless (there's nothing to "continue" to) and was
+          easily mistaken for a run action, so hide it on both. */}
+      {!wizard && !routeId && <NavBar back="/dashboard" next="/settings" />}
     </>
   );
 }
