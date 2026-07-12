@@ -1134,7 +1134,9 @@ export default function Automation() {
           </>
         )}
       </div>
-      <NavBar back="/dashboard" next="/settings" />
+      {/* The wizard has its own gated Back/Next footer — hide the global page
+          nav there so it can't be mistaken for advancing the wizard. */}
+      {view.mode !== 'wizard' && <NavBar back="/dashboard" next="/settings" />}
     </>
   );
 }
