@@ -814,7 +814,7 @@ function serializeGen(g, opts = {}) {
       const fw = FRAMEWORK[j(g.docTypes, [])[0]];
       return fw && fw.preview ? fw.preview.layout : 'document';
     })(),
-    score: g.score, createdAt: g.createdAt
+    score: g.score, approval: g.approval || 'draft', createdAt: g.createdAt
   };
   // Outputs grid for the preview tabs — one independent cell per
   // (document type × output format). Detail endpoint only, once complete.
@@ -1564,6 +1564,8 @@ const PROFILE_DEFAULTS = {
   // The developer's existing documentation — the placement target. Parsed into
   // { name, format, sections:[{level,title,line}], lines, pagesEst } on upload.
   sourceDoc: null,
+  targetGenId: null, // pinned Import History document to update (Step 4 picker)
+  targetRef: null,   // display metadata for the pinned target { kind, genId, title, repo, docType, format, approval }
   // Documentation rule set (repository hub). '' = the repo's assigned rule set
   // (or the user default); an id here is a workflow-specific override.
   ruleSetId: ''
@@ -1794,7 +1796,11 @@ function bumpVersion(v, strategy) {
 
 async function decideDocAction(uid, cfg, event, jira) {
   const rows = await prisma.generation.findMany({ where: { userId: uid }, orderBy: { createdAt: 'desc' }, take: 100 });
-  const existing = rows.find((g) => g.status === 'complete'
+  // When the pipeline pins a specific Import History document (chosen in the
+  // Step 4 picker), that exact document is the update target. Otherwise fall
+  // back to the most recent generation matching repo · doc type · format.
+  const pinned = cfg.targetGenId ? rows.find((g) => g.id === cfg.targetGenId && g.status === 'complete') : null;
+  const existing = pinned || rows.find((g) => g.status === 'complete'
     && g.format === cfg.format
     && j(g.docTypes, [])[0] === cfg.docTypes[0]
     && (!cfg.repo || g.repo === cfg.repo));

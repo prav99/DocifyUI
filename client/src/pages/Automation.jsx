@@ -174,6 +174,10 @@ function Wizard({ existing, catalog, onDone }) {
   const [srcPending, setSrcPending] = useState(null);
   const [srcRemove, setSrcRemove] = useState(false);
   const wzFileRef = useRef(null);
+  // Step 4 "document to update" picker
+  const [docSource, setDocSource] = useState('history'); // history | upload
+  const [histDocs, setHistDocs] = useState(null);
+  const [docSearch, setDocSearch] = useState('');
 
   async function onWzFile(e) {
     const f = e.target.files && e.target.files[0];
@@ -187,10 +191,38 @@ function Wizard({ existing, catalog, onDone }) {
     const format = /\.(md|markdown|mdx)$/i.test(f.name) ? 'markdown' : 'text';
     setSrcPending({ name: f.name, format, content });
     setSrcName(f.name); setSrcInfo(null); setSrcRemove(false);
+    set({ targetGenId: null, targetRef: null }); // an upload replaces any pinned history doc
     toast('info', 'Document ready', f.name + ' — indexed when you save the pipeline');
     if (wzFileRef.current) wzFileRef.current.value = '';
   }
   function removeWzDoc() { setSrcPending(null); setSrcName(''); setSrcInfo(null); setSrcRemove(true); }
+
+  // Import History candidates for the "document to update" picker.
+  useEffect(() => {
+    if (step !== 3 || histDocs !== null) return;
+    if (!['place', 'auto', 'version', 'update'].includes(cfg.updatePolicy)) return;
+    api('/generations')
+      .then((d) => setHistDocs((d.generations || []).filter((g) => g.status === 'complete')))
+      .catch(() => setHistDocs([]));
+  }, [step, cfg.updatePolicy, histDocs]);
+
+  // Pin a specific Import History document as the update target (clears any upload).
+  function selectHistoryDoc(g) {
+    set({
+      targetGenId: g.id,
+      targetRef: {
+        kind: 'history', genId: g.id,
+        title: g.title || (g.docTypes && g.docTypes[0]) || 'Document',
+        repo: g.repo, docType: (g.docTypes || [])[0] || '', format: g.format,
+        approval: g.approval || 'draft', createdAt: g.createdAt
+      }
+    });
+    setSrcPending(null); setSrcName(''); setSrcInfo(null); setSrcRemove(!!existingDoc);
+  }
+  function clearTarget() {
+    set({ targetGenId: null, targetRef: null });
+    setSrcPending(null); setSrcName(''); setSrcInfo(null); setSrcRemove(!!existingDoc);
+  }
 
   // Pure consumer of the unified catalogue — connections are configured only
   // on the Repository Connections page.
@@ -216,7 +248,27 @@ function Wizard({ existing, catalog, onDone }) {
 
   const types = (catalog.doctypes[cfg.track] || []);
   const formats = (catalog.formats[cfg.track] || []).filter((f) => f.ok);
-  const canNext = step === 0 ? !!cfg.repo : step === 3 ? cfg.docTypes.length > 0 && !!cfg.format : true;
+
+  // ---- Step 4: "document to update" requirement + validation ----
+  const targetRequired = cfg.updatePolicy === 'place' || cfg.updatePolicy === 'auto';
+  const targetShown = ['place', 'auto', 'version', 'update'].includes(cfg.updatePolicy);
+  const pinnedRef = cfg.targetRef && cfg.targetRef.genId ? cfg.targetRef : null;
+  const hasTarget = !!pinnedRef || !!srcName;
+  const repoMismatch = !!(pinnedRef && pinnedRef.repo && cfg.repo && pinnedRef.repo !== cfg.repo);
+  const targetValid = !targetRequired || (hasTarget && !repoMismatch);
+  const histList = histDocs || [];
+  const filteredHist = histList.filter((g) => {
+    const q = docSearch.trim().toLowerCase();
+    if (!q) return true;
+    return ((g.title || '') + ' ' + (g.repo || '') + ' ' + (g.docTypes || []).join(' ') + ' ' + g.format).toLowerCase().includes(q);
+  }).sort((a, b) => ((b.repo === cfg.repo ? 1 : 0) - (a.repo === cfg.repo ? 1 : 0)) || (new Date(b.createdAt) - new Date(a.createdAt)));
+  const suggestion = (!hasTarget && targetShown && cfg.repo)
+    ? (histList.find((g) => g.repo === cfg.repo && (g.approval === 'approved' || g.approval === 'published'))
+      || histList.find((g) => g.repo === cfg.repo && (g.docTypes || [])[0] === cfg.docTypes[0])
+      || histList.find((g) => g.repo === cfg.repo))
+    : null;
+
+  const canNext = step === 0 ? !!cfg.repo : step === 3 ? (cfg.docTypes.length > 0 && !!cfg.format && targetValid) : true;
 
   async function saveProfile() {
     setSaving(true);
@@ -453,25 +505,101 @@ function Wizard({ existing, catalog, onDone }) {
               )}
             </div>
 
-            {(cfg.updatePolicy === 'place' || cfg.updatePolicy === 'auto') && (
-              <>
-                <p className="label01 t2 mb2 mt6">YOUR EXISTING DOCUMENT <span style={{ textTransform: 'none', letterSpacing: 0 }}>(optional)</span></p>
-                <p className="helper mb3">Upload it once and changes land in the right section of <i>your</i> document. Markdown or text — only the outline is stored, never the body.</p>
+            {targetShown && (
+              <div className="tgt mt6">
+                <p className="label01 t2 mb2">
+                  DOCUMENT TO UPDATE{' '}
+                  <span className={'tag ' + (targetRequired ? 'tag--red' : 'tag--gray')} style={{ verticalAlign: 'middle' }}>{targetRequired ? 'Required' : 'Optional'}</span>
+                </p>
+                <p className="helper mb3">
+                  {targetRequired
+                    ? 'Pick the document this pipeline keeps current — every merge updates the right section of it, never a duplicate.'
+                    : 'Optionally pin a base document; a new version is cut from it on each merge.'}
+                </p>
+
                 <input ref={wzFileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text" style={{ display: 'none' }} onChange={onWzFile} />
-                {srcName ? (
-                  <div className="prun">
-                    <div className="prun-top">
+
+                {pinnedRef ? (
+                  <div className={'tgt-sel' + (repoMismatch ? ' tgt-sel--warn' : '')}>
+                    <div className="tgt-sel-main">
+                      <span className="body01" style={{ fontWeight: 600 }}>{pinnedRef.title}</span>
+                      <span className="helper">{pinnedRef.docType || 'doc'} · {String(pinnedRef.format || '').toUpperCase()} · {pinnedRef.repo || 'no repo'} · {pinnedRef.approval}</span>
+                    </div>
+                    <span className="tag tag--purple">Import History</span>
+                    <button className="btn btn--ghost btn--sm" onClick={clearTarget}>Change</button>
+                  </div>
+                ) : srcName ? (
+                  <div className="tgt-sel">
+                    <div className="tgt-sel-main">
                       <span className="body01" style={{ fontWeight: 600 }}>{srcName}</span>
                       {srcInfo ? <span className="helper">{srcInfo.sections} sections · ~{srcInfo.pagesEst} pages</span> : <span className="tag tag--blue">indexed on save</span>}
-                      <span style={{ flex: 1 }} />
-                      <button className="btn btn--ghost btn--sm" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Replace</button>
-                      <button className="btn btn--ghost btn--sm" onClick={removeWzDoc}>Remove</button>
                     </div>
+                    <span className="tag tag--teal">Uploaded</span>
+                    <button className="btn btn--ghost btn--sm" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Replace</button>
+                    <button className="btn btn--ghost btn--sm" onClick={removeWzDoc}>Remove</button>
                   </div>
                 ) : (
-                  <button className="btn btn--tertiary" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Upload document<span className="ico">↑</span></button>
+                  <>
+                    {suggestion && (
+                      <div className="tgt-suggest">
+                        <div>
+                          <p className="label01 t2" style={{ color: 'var(--link-primary)', margin: 0 }}>RECOMMENDED FOR {cfg.repo}</p>
+                          <p className="body01" style={{ fontWeight: 600, margin: '2px 0 0' }}>{suggestion.title || (suggestion.docTypes && suggestion.docTypes[0]) || 'Document'}</p>
+                          <p className="helper" style={{ margin: 0 }}>{String(suggestion.format).toUpperCase()} · {suggestion.approval} · {fmtWhen(suggestion.createdAt)}</p>
+                        </div>
+                        <button className="btn btn--primary btn--sm btn--center" onClick={() => selectHistoryDoc(suggestion)}>Use this</button>
+                      </div>
+                    )}
+                    <div className="tgt-tabs">
+                      <button className={'tgt-tab' + (docSource === 'history' ? ' is-on' : '')} onClick={() => setDocSource('history')}>Import History</button>
+                      <button className={'tgt-tab' + (docSource === 'upload' ? ' is-on' : '')} onClick={() => setDocSource('upload')}>Upload</button>
+                      <button className="tgt-tab is-soon" disabled title="Coming soon">Workspace · soon</button>
+                      <button className="tgt-tab is-soon" disabled title="Coming soon">Connected repos · soon</button>
+                    </div>
+                    {docSource === 'history' && (
+                      <div className="tgt-hist">
+                        <input className="input" placeholder="Search your documents…" value={docSearch} onChange={(e) => setDocSearch(e.target.value)} />
+                        {histDocs === null ? <p className="helper mt3">Loading your documents…</p>
+                          : filteredHist.length === 0 ? <p className="helper mt3">No generated documents yet — create one from Generate, or use Upload.</p>
+                            : (
+                              <div className="tgt-list mt3">
+                                {filteredHist.slice(0, 8).map((g) => {
+                                  const match = g.repo && cfg.repo && g.repo === cfg.repo;
+                                  const appr = g.approval === 'approved' || g.approval === 'published';
+                                  return (
+                                    <button key={g.id} className="tgt-row" onClick={() => selectHistoryDoc(g)}>
+                                      <div className="tgt-row-main">
+                                        <span className="body01" style={{ fontWeight: 600 }}>{g.title || (g.docTypes && g.docTypes[0]) || 'Document'}</span>
+                                        <span className="helper">{(g.docTypes && g.docTypes[0]) || ''} · {String(g.format).toUpperCase()} · {g.repo || 'no repo'} · {fmtWhen(g.createdAt)}</span>
+                                      </div>
+                                      {match && <span className="tag tag--green">Matches repo</span>}
+                                      <span className={'tag ' + (appr ? 'tag--green' : 'tag--gray')}>{g.approval || 'draft'}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                      </div>
+                    )}
+                    {docSource === 'upload' && (
+                      <div className="tgt-upload mt3">
+                        <button className="btn btn--tertiary" onClick={() => wzFileRef.current && wzFileRef.current.click()}>Upload document<span className="ico">↑</span></button>
+                        <p className="helper mt2">Markdown or text — only the outline is stored, never the body. For PDF / Word / HTML, add it via Generate or Doc sync, then pick it from Import History.</p>
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
+
+                <div className={'tgt-valid mt3 ' + (targetValid ? 'is-ok' : 'is-bad')}>
+                  {repoMismatch
+                    ? '✕ This document is for ' + pinnedRef.repo + ', but the pipeline watches ' + cfg.repo + '. Choose a document from ' + cfg.repo + '.'
+                    : (targetRequired && !hasTarget)
+                      ? '✕ Select the document this pipeline will keep up to date before you continue.'
+                      : hasTarget
+                        ? '✓ Ready — merges will update ' + (pinnedRef ? pinnedRef.title : srcName) + '.'
+                        : 'Optional — leave empty and a document is created/versioned automatically.'}
+                </div>
+              </div>
             )}
 
             <Adv title="Advanced — output format, version numbering, template">

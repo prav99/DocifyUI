@@ -1366,3 +1366,25 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
   .genprog-fill::after,.genstep.doing::before,.genprev-dot,.genprev-skel .skel,.spin{animation:none}
   .genprog-fill{transition:none}
 }
+
+/* ===================== Automation Step 4 — "document to update" picker (tgt-*) ===================== */
+.tgt{animation:fadeup .22s var(--ease)}
+.tgt-sel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--border-subtle);border-left:3px solid var(--support-success);background:var(--layer-01);padding:10px 14px}
+.tgt-sel--warn{border-left-color:var(--support-error)}
+.tgt-sel-main{display:flex;flex-direction:column;gap:1px;flex:1;min-width:180px}
+.tgt-suggest{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--link-primary);background:#edf5ff;padding:10px 14px;margin-bottom:10px}
+.tgt-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border-subtle);margin-bottom:12px;flex-wrap:wrap}
+.tgt-tab{font-family:inherit;font-size:13px;height:34px;padding:0 14px;background:transparent;border:0;border-bottom:2px solid transparent;cursor:pointer;color:var(--text-secondary)}
+.tgt-tab:hover:not(:disabled){color:var(--text-primary)}
+.tgt-tab.is-on{color:var(--link-primary);font-weight:600;border-bottom-color:var(--link-primary)}
+.tgt-tab.is-soon{color:var(--text-placeholder);cursor:not-allowed}
+.tgt-list{display:flex;flex-direction:column;border:1px solid var(--border-subtle)}
+.tgt-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font-family:inherit;background:var(--background);border:0;border-bottom:1px solid var(--border-subtle);padding:10px 14px;cursor:pointer}
+.tgt-row:last-child{border-bottom:0}
+.tgt-row:hover{background:#edf5ff}
+.tgt-row-main{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.tgt-row-main .helper{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tgt-valid{font-size:13px;padding:8px 12px;border-radius:2px;font-variant-numeric:tabular-nums}
+.tgt-valid.is-ok{background:#defbe6;color:#0e6027}
+.tgt-valid.is-bad{background:#fff1f1;color:#a2191f}
+.tgt-tab:focus-visible,.tgt-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
