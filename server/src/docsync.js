@@ -22,7 +22,16 @@ import { fetchRepoFile } from './adapters/repofiles.js';
 import { matchSurroundingStyle, resolveWritingPolicy, compileStylePrompt, styleAudit, autofixText } from './adapters/styleguide.js';
 import { aiRestructureDocument, blueprintOutline } from './adapters/llm.js';
 import { rewriteText } from './adapters/rewrite.js';
+import { extractDocument } from './adapters/extract.js';
+import multer from 'multer';
 import { freshToken } from './auth.js';
+
+// In-memory multipart upload (15 MB) for the multi-format document uploader.
+const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
+const uploadSingle = (req, res, next) => uploadMem.single('file')(req, res, (err) => {
+  if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'File exceeds the 15 MB limit — split it or trim the export.' : ('Upload error: ' + err.message) });
+  next();
+});
 
 export const syncRouter = Router();
 
@@ -538,6 +547,42 @@ syncRouter.post('/documents', async (req, res) => {
   });
   runParsePipeline(row.id).catch((e) => console.error('parse pipeline', e));
   res.status(201).json({ document: serializeDoc(row) });
+});
+
+/* ---------------- Multi-format upload ----------------
+   Accepts PDF, Word (.docx), HTML, RTF, Markdown, and text/code files as
+   multipart/form-data. The raw bytes are extracted to clean text/markdown
+   (server/src/adapters/extract.js) and then run through the same parse
+   pipeline as pasted or imported documents. */
+syncRouter.post('/documents/upload', uploadSingle, async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer || !req.file.buffer.length) {
+      return res.status(400).json({ error: 'No file received — choose a document to upload.' });
+    }
+    const name = String(req.file.originalname || 'document').slice(0, 140);
+    let out;
+    try {
+      out = await extractDocument(req.file.buffer, name, req.file.mimetype);
+    } catch (e) {
+      // 415/422: a readable, per-format message for the user (scanned PDF, .doc, etc.)
+      return res.status(e.status || 422).json({ error: e.userMessage || e.message || 'Could not read this file.' });
+    }
+    let content = out.text;
+    if (content.length > 1_500_000) content = content.slice(0, 1_500_000);
+    if (!content.trim()) return res.status(422).json({ error: 'No readable text could be extracted from this file.' });
+    const row = await prisma.syncDoc.create({
+      data: {
+        userId: req.uid, name,
+        format: String(out.format || 'txt').slice(0, 30),
+        repo: '', branch: 'main',
+        content, status: 'parsing', progress: 4
+      }
+    });
+    runParsePipeline(row.id).catch((e) => console.error('parse pipeline', e));
+    res.status(201).json({ document: serializeDoc(row), extractedChars: content.length, kind: out.kind, format: out.format });
+  } catch (e) {
+    res.status(500).json({ error: 'Upload failed: ' + (e.message || 'unknown error') });
+  }
 });
 
 /* Docs that live in a SEPARATE repository from the code: import the baseline

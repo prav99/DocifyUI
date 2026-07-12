@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, download } from '../api.js';
+import { api, download, getToken } from '../api.js';
 import { toast } from '../store.jsx';
 import { HelpLink } from '../ui.jsx';
 import { DiffView } from './History.jsx';
@@ -104,22 +104,30 @@ export default function Governance() {
     finally { setAddBusy(false); }
   }
 
-  function addUpload(file) {
+  async function addUpload(file) {
     if (!file) return;
-    if (file.size > 1_400_000) return toast('error', 'File too large', 'The limit is 1.4 MB of text — split larger exports.');
-    const rd = new FileReader();
-    rd.onload = async () => {
-      setAddBusy(true);
-      try {
-        await api('/sync/documents', { method: 'POST', body: { name: file.name, format: file.name.split('.').pop() || 'markdown', content: String(rd.result || '') } });
-        toast('success', file.name + ' added', 'Parsing structure — it will be selectable in a few seconds.');
-        setAddMode('');
-        setTimeout(loadDocs, 2500);
-        setTimeout(loadDocs, 6000);
-      } catch (e) { toast('error', 'Upload failed', e.message); }
-      finally { setAddBusy(false); }
-    };
-    rd.readAsText(file);
+    if (file.size > 15_000_000) return toast('error', 'File too large', 'The limit is 15 MB per file — split it or trim the export.');
+    setAddBusy(true);
+    try {
+      // Send the raw file to the server, which extracts text from PDF, Word,
+      // HTML, RTF, Markdown, and text/code formats (binary formats can't be
+      // read as text in the browser).
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/sync/documents/upload', {
+        method: 'POST',
+        headers: getToken() ? { Authorization: 'Bearer ' + getToken() } : {},
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Upload failed (' + res.status + ')');
+      const chars = data.extractedChars ? data.extractedChars.toLocaleString() + ' characters extracted — ' : '';
+      toast('success', file.name + ' added', chars + 'parsing structure, it will be selectable in a few seconds.');
+      setAddMode('');
+      setTimeout(loadDocs, 2500);
+      setTimeout(loadDocs, 6000);
+    } catch (e) { toast('error', 'Upload failed', e.message); }
+    finally { setAddBusy(false); }
   }
 
   async function addImport() {
@@ -273,12 +281,13 @@ export default function Governance() {
                   <button key={id} type="button" className={'chip' + (addMode === id ? ' on' : '')}
                     onClick={() => setAddMode(addMode === id ? '' : id)}>{l}</button>
                 ))}
-                <span className="helper" style={{ marginLeft: 'auto' }}>Markdown, Word (.docx text), HTML, plain text — 1.4 MB max</span>
+                <span className="helper" style={{ marginLeft: 'auto' }}>PDF, Word (.docx), HTML, Markdown, RTF, and text/code files — 15 MB max</span>
               </div>
               {addMode === 'upload' && (
                 <div className="pickblock mt3">
-                  <input type="file" accept=".md,.markdown,.txt,.html,.htm,.docx,.xml,.dita,.json,.yaml,.yml" aria-label="Upload a document"
-                    onChange={(e) => addUpload(e.target.files && e.target.files[0])} disabled={addBusy} />
+                  <input type="file" aria-label="Upload a document" disabled={addBusy}
+                    accept=".pdf,.doc,.docx,.docm,.rtf,.odt,.html,.htm,.xhtml,.md,.markdown,.mdx,.txt,.text,.rst,.adoc,.asciidoc,.csv,.tsv,.json,.yaml,.yml,.xml,.dita,.tex,.log,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/html,text/plain,text/markdown"
+                    onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; addUpload(f); }} />
                   <p className="helper mt2">The file is read as text and parsed into sections. Binary PDF needs conversion to text or Markdown first.</p>
                 </div>
               )}
