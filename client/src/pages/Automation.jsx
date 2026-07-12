@@ -707,6 +707,10 @@ function Wizard({ existing, catalog, onDone }) {
 function PlacementStudio({ profile, onEdit }) {
   const cfg = profile.config;
   const src = cfg.sourceDoc;
+  // The update target is either a pinned Import History document (Step 4) or an
+  // uploaded outline. Either one enables the placement preview below.
+  const pin = cfg.targetRef && cfg.targetRef.genId ? cfg.targetRef : null;
+  const target = pin || src || null;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState((cfg.jira && cfg.jira.projectKey ? cfg.jira.projectKey + '-42 ' : '') + 'feat: rotate signing keys on refresh');
   const [files, setFiles] = useState('src/auth/token.js');
@@ -738,7 +742,17 @@ function PlacementStudio({ profile, onEdit }) {
         document — you review one location instead of scrolling a long file. Preview a placement below.
       </p>
 
-      {src ? (
+      {pin ? (
+        <div className="prun mt5">
+          <div className="prun-top">
+            <span className="body01" style={{ fontWeight: 600 }}>{pin.title}</span>
+            <span className="tag tag--purple">Import History</span>
+            <span className="helper">{pin.docType || 'doc'} · {String(pin.format || '').toUpperCase()} · {pin.repo || 'no repo'}{pin.approval ? ' · ' + pin.approval : ''}</span>
+            <span style={{ flex: 1 }} />
+            <button className="btn btn--ghost btn--sm" onClick={() => onEdit && onEdit(profile)}>Change in setup</button>
+          </div>
+        </div>
+      ) : src ? (
         <div className="prun mt5">
           <div className="prun-top">
             <span className="body01" style={{ fontWeight: 600 }}>{src.name}</span>
@@ -750,13 +764,13 @@ function PlacementStudio({ profile, onEdit }) {
         </div>
       ) : (
         <div className="tile mt5" style={{ padding: 20, border: '1px dashed var(--border-strong)' }}>
-          <p className="body01" style={{ fontWeight: 600 }}>No document uploaded yet</p>
-          <p className="helper mt2">Add the document to place into during setup — Edit this pipeline, then Step 4 · Documents. Markdown (.md) or text (.txt) today; PDF, Word, and Confluence/Notion coming next.</p>
-          <button className="btn btn--tertiary mt3" onClick={() => onEdit && onEdit(profile)}>Add a document in setup<span className="ico">→</span></button>
+          <p className="body01" style={{ fontWeight: 600 }}>No document selected yet</p>
+          <p className="helper mt2">Choose the document this pipeline places into — Edit this pipeline, then Step 4 · Documents. Pick an existing document from your Import History, or upload a Markdown / text file.</p>
+          <button className="btn btn--tertiary mt3" onClick={() => onEdit && onEdit(profile)}>Choose a document in setup<span className="ico">→</span></button>
         </div>
       )}
 
-      {src && (
+      {target && (
         <>
           <div className="divider" style={{ margin: '18px 0' }} />
           <p className="label01 t2 mb3">PREVIEW A PLACEMENT</p>
@@ -796,7 +810,7 @@ function PlacementStudio({ profile, onEdit }) {
                     <div style={{ height: 4, background: 'var(--border-subtle)', marginTop: 6 }}><div style={{ height: 4, width: c.confidence + '%', background: 'var(--button-primary)' }} /></div>
                     <p className="helper mt2">p.{c.page} · {c.mode === 'insert-new' ? 'new sub-section' : 'update in place'}</p>
                   </div>
-                )) : <p className="helper">Best match shown. Upload a document with more headings to see ranked alternatives.</p>}
+                )) : <p className="helper">Best match shown — a document with a richer heading outline surfaces ranked alternatives.</p>}
               </div>
             </div>
           )}
