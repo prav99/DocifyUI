@@ -188,22 +188,25 @@ export function sanitizeCustomText(text, maxLen = 20000) {
 }
 
 /* ----------------------------- Policy resolution ----------------------------- */
-export function resolveWritingPolicy({ track = 'technical', docType = '', format = 'markdown', brief = {}, tenant = null, skillText = '', instructions = '' } = {}) {
+export function resolveWritingPolicy({ track = 'technical', docType = '', format = 'markdown', brief = {}, tenant = null, skillText = '', instructions = '', guide = '' } = {}) {
   const base = TRACK_BASE[track] || TRACK_BASE.technical;
   const dt = DOCTYPE_PROFILES[docType] || { name: docType || 'document', tone: 'clear and professional', requiredSections: [], rules: [] };
   const tcfg = tenant ? j(tenant.config, {}) : {};
   const tenantTerms = Array.isArray(tcfg.terms) ? tcfg.terms.filter((x) => x && x.use) : [];
   const skill = sanitizeCustomText(skillText, 60000);
   const manual = sanitizeCustomText(instructions, 8000);
+  // A per-run style guide (e.g. an automation pipeline's choice) overrides the
+  // tenant's saved guide. '' / 'auto' = "let Docify decide" → tenant, else default.
+  const effGuide = (guide && guide !== 'auto') ? guide : ((tenant && tenant.guide) || '');
   return {
     version: 1,
     documentType: docType,
     documentTypeName: dt.name,
     track,
     outputFormat: format,
-    styleProfile: (tenant && tenant.guide && tenant.guide !== 'docify') ? tenant.guide : base.styleProfile,
+    styleProfile: (effGuide && effGuide !== 'docify') ? effGuide : base.styleProfile,
     styleLabel: base.label,
-    guideBias: tenant && STYLE_GUIDES[tenant.guide] && tenant.guide !== 'docify' ? STYLE_GUIDES[tenant.guide] : '',
+    guideBias: (STYLE_GUIDES[effGuide] && effGuide !== 'docify') ? STYLE_GUIDES[effGuide] : '',
     tenantProfile: tenant ? { name: tenant.name, version: tenant.version } : null,
     voice: { ...base.voice, ...(tenant && tenant.voice ? { formality: tenant.voice } : {}), ...(brief.tone ? { tone: brief.tone } : {}) },
     tone: brief.tone || dt.tone,

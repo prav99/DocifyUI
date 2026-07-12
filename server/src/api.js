@@ -1008,7 +1008,8 @@ async function runPipeline(genId) {
       stylePolicy = resolveWritingPolicy({
         track: gen.track, docType: (j(gen.docTypes, []))[0] || '', format: gen.format,
         brief: { ...baseBrief, audience: baseBrief.audience || effAudience },
-        tenant, skillText: gen.skill || '', instructions: gen.instructions || ''
+        tenant, skillText: gen.skill || '', instructions: gen.instructions || '',
+        guide: oc0.styleGuide || '' // per-pipeline style guide (falls back to tenant/default when '')
       });
     } catch (e) { console.error('writing policy skipped:', e.message); }
     const genArgs = {
@@ -1566,6 +1567,7 @@ const PROFILE_DEFAULTS = {
   sourceDoc: null,
   targetGenId: null, // pinned Import History document to update (Step 4 picker)
   targetRef: null,   // display metadata for the pinned target { kind, genId, title, repo, docType, format, approval }
+  styleGuide: '',    // per-pipeline writing style guide ('' = let Docify decide → tenant/default)
   // Documentation rule set (repository hub). '' = the repo's assigned rule set
   // (or the user default); an id here is a workflow-specific override.
   ruleSetId: ''
@@ -1904,6 +1906,7 @@ async function profileRun(profile, event) {
     // approved state — an enterprise approval gate before distribution.
     out.approvalGate = !!cfg.approvalGate;
     out.source = 'automation';
+    out.styleGuide = cfg.styleGuide || ''; // per-pipeline writing style guide carried to generation
     let version = null;
     if (decision.action === 'version') {
       // A release merge that names its version ("release: v3.1.0") wins over

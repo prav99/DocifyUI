@@ -20,7 +20,7 @@ const DEFAULT_CFG = {
     enabled: false, site: '', projectKey: '', requireIssue: false,
     triggers: { created: false, updated: false, statusDone: true, comment: false }
   },
-  track: 'technical', docTypes: ['api'], format: 'markdown',
+  track: 'technical', docTypes: ['api'], format: 'markdown', styleGuide: '',
   templateFrom: 'latest', updatePolicy: 'place', versioning: 'semver-patch',
   gate: 85, minAssistant: 0, autoFix: true, requireApproval: false, approvalGate: false,
   publishTo: 'workspace', notifyEmail: '', notifyOn: { success: true, blocked: true, failure: true }
@@ -34,6 +34,19 @@ const OUTCOME_TAG = {
 };
 
 const TRIGGER_LABEL = { webhook: 'Merge (webhook)', simulate: 'Simulated merge', manual: 'Manual run' };
+
+// Writing style guides this pipeline can enforce (same set as Standardize).
+// '' = let Docify decide (falls back to your saved writing profile / default).
+const WZ_STYLE_GUIDES = [
+  ['', 'Let Docify decide (recommended)'],
+  ['docify', 'Docify Professional'],
+  ['ibm', 'Enterprise classic'],
+  ['microsoft', 'Microsoft-style'],
+  ['google', 'Google dev-docs style'],
+  ['apple', 'Minimal consumer'],
+  ['atlassian', 'Team-docs style'],
+  ['marketing', 'Marketing content']
+];
 
 function fmtWhen(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
@@ -104,6 +117,7 @@ function PipelinePreview({ cfg, step, name }) {
         cfg.docTypes.length ? cfg.docTypes.join(', ') : '· choose document types',
         (cfg.format ? cfg.format.toUpperCase() : '· format') + ' · policy: ' + cfg.updatePolicy +
           (cfg.updatePolicy === 'auto' || cfg.updatePolicy === 'version' ? ' · ' + cfg.versioning : ''),
+        'style: ' + (cfg.styleGuide ? (WZ_STYLE_GUIDES.find(([id]) => id === cfg.styleGuide) || ['', cfg.styleGuide])[1] : 'Docify decides'),
         cfg.updatePolicy === 'place' || cfg.updatePolicy === 'auto'
           ? '⤷ splice at best-matching section' : null
       ]
@@ -363,6 +377,18 @@ function Wizard({ existing, catalog, onDone }) {
               <p className="helper">
                 The relevance engine gates every merge with these rules — internal-only changes are
                 filtered before any documentation is generated. Manage rule sets on the Repositories page.
+              </p>
+            </div>
+            <div className="field" style={{ marginTop: 16, marginBottom: 0 }}>
+              <label htmlFor="wzguide">Writing style guide</label>
+              <select id="wzguide" className="select" value={cfg.styleGuide || ''}
+                onChange={(e) => set({ styleGuide: e.target.value })}>
+                {WZ_STYLE_GUIDES.map(([id, name]) => <option key={id || 'auto'} value={id}>{name}</option>)}
+              </select>
+              <p className="helper">
+                The voice, tone, and terminology every generated document is held to. <b>Let Docify decide</b> uses
+                your saved writing profile (or the professional default). A rule set decides <i>what</i> gets
+                documented; the style guide decides <i>how</i> it reads.
               </p>
             </div>
           </>
