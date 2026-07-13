@@ -164,11 +164,10 @@ export function renderReportHtml(model, opts = {}) {
   }
 
   if (has(preset, 'scores')) {
-    const keyScores = [
-      ['Overall quality', sc.overall], ['AI Search Readiness', sc.aiSearchReadiness], ['LLM readiness', sc.llmReadiness],
-      ...sc.dims.map((d) => [d.name, d.score])
-    ];
+    const headScores = [['Overall quality', sc.overall], ['AI Search Readiness', sc.aiSearchReadiness], ['LLM readiness', sc.llmReadiness]];
     add('scores', 'Score overview',
+      '<div class="cards">' + headScores.map(([k, v]) => '<div class="card"><span class="k">' + escX(k) + '</span><span class="v" style="color:' + scoreColor(v, sc.gate) + '">' + v + '</span></div>').join('') + '</div>' +
+      '<h3>Quality by dimension</h3>' +
       '<table class="scores"><thead><tr><th>Dimension</th><th>Score</th><th></th><th>Weight</th><th>Open</th><th>Status</th></tr></thead><tbody>' +
       sc.dims.map((d) => '<tr><td>' + escX(d.name) + '<div class="muted sm">' + escX(d.desc) + '</div></td><td class="num">' + d.score + '</td><td class="barcell">' + bar(d.score) + '</td><td class="num">' + d.weight + '%</td><td class="num">' + d.open + '</td><td>' + chip(d.pass ? 'Pass' : 'Review', d.pass ? COL.ok : COL.warn) + '</td></tr>').join('') +
       '</tbody></table>');
