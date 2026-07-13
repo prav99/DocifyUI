@@ -47,7 +47,7 @@ const PILLARS = [
       ]},
       { slug: 'ai-citation-readiness', name: 'AI citation readiness', sum: 'Make every section quotable: short descriptions, anchors, and self-contained chunks.', body: [
         { p: 'AI assistants cite what they can extract cleanly. The generator writes every heading with a stable anchor id, keeps sections self-contained, and — once the metadata fixes are applied — adds a short description and keyword set that retrieval systems quote directly.' },
-        { ul: ['Annotated preview marks retrieval-ready chunks, consistent terms, and broken links inline', 'The AI consumability report exports the full audit as plain HTML for reviews', 'Citation-hostile patterns (ambiguous pronouns, run-on sentences, duplicated passages) are flagged with one-click rewrites'] }
+        { ul: ['Annotated preview marks retrieval-ready chunks, consistent terms, and broken links inline', 'The AI quality report exports the full audit as PDF, HTML, or PowerPoint for reviews','Citation-hostile patterns (ambiguous pronouns, run-on sentences, duplicated passages) are flagged with one-click rewrites'] }
       ]},
       { slug: 'content-quality-assessment', name: 'Content quality assessment', sum: 'Six dimensions, transparent weights, and penalties you can tune.', body: [
         { p: 'Scoring is deliberately explainable: each dimension starts at 100 and loses a fixed penalty per open finding, broken link, or failed style check, with a floor of 40. The overall score is the weight-blended sum — no black box.' },
@@ -119,7 +119,7 @@ const PILLARS = [
         { p: 'Output options cover the governance surface: classification labels, DRAFT banners, watermarks on every page, disclaimer and copyright blocks, and a document identity table (version, date, author, ID) on every output.' },
         { ul: ['Corporate email verification with domain allow-lists and free-email blocking', 'OAuth tokens held server-side; role-based access on team plans', 'Structure validation proves each document conforms to its declared standard'] }
       ]},
-      { slug: 'executive-reporting', name: 'Executive reporting dashboard', sum: 'The AI consumability report: a complete audit record in plain HTML.', body: [
+      { slug: 'executive-reporting', name: 'Executive reporting dashboard', sum: 'The AI quality report: a complete, management-ready audit record in PDF, HTML, or PowerPoint.', body: [
         { p: 'One download captures everything a stakeholder needs: overall score and verdict, all six dimension scores with weights, per-model readiness estimates, every finding with its status, and the exact before/after of each applied fix.' },
         { p: 'It ships as dependency-free HTML — attach it to a release review, an audit, or a customer security questionnaire as-is. A JSON variant serves CI and BI pipelines.' }
       ]}

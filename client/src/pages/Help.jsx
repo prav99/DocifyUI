@@ -127,10 +127,10 @@ const TOPICS = {
   export: {
     title: 'Step 6 — Export & download',
     page: '/export',
-    intro: 'Download the finished document in your chosen format, plus the AI consumability report. Every download is built from the latest corrected content.',
+    intro: 'Download the finished document in your chosen format, plus the AI quality report as PDF, HTML, or PowerPoint. Every download is built from the latest corrected content.',
     steps: [
       'Click "Download <format>" for the document. Binary formats (PDF, Word) are assembled at download time with your page setup applied.',
-      '"AI consumability report" downloads the full quality report as reviewer-friendly HTML.',
+      '"AI quality report" downloads the complete Step-5 review as a management-ready PDF, self-contained HTML, or PowerPoint deck.',
       '"Show final preview" renders exactly what the file will contain.',
       'Use "Set up auto-regenerate on merge" to keep the document current automatically — see the Automation help topic.'
     ],

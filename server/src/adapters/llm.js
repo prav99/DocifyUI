@@ -1308,8 +1308,8 @@ export function renderQualityReport(ser, meta) {
     '.muted{color:#525252;font-size:13px}';
   const out = [
     '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>',
-    '<title>AI consumability report — ' + escX(meta.title) + '</title><style>' + css + '</style></head><body>',
-    '<h1>AI consumability report — ' + escX(meta.title) + '</h1>',
+    '<title>AI quality report —' + escX(meta.title) + '</title><style>' + css + '</style></head><body>',
+    '<h1>AI quality report —' + escX(meta.title) + '</h1>',
     '<p class="muted">Source: <code>' + escX(meta.repo) + '</code> · format: ' + escX(String(meta.format).toUpperCase()) +
       ' · generated ' + new Date().toISOString().slice(0, 10) + ' · publish gate ≥ ' + ser.gate + '</p>',
     '<div class="band"><span class="big">' + ser.overall + '</span><span><span class="v">' + escX(ser.verdict) + '</span><br/>' +

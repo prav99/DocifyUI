@@ -17,6 +17,7 @@ import { fetchRepoFile } from './adapters/repofiles.js';
 import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js';
 import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, renderMarkdownPreview, FRAMEWORK } from './adapters/llm.js';
+import { buildReportModel, renderReportHtml, renderReportPdf, renderReportPptx, traceableReportName } from './adapters/report.js';
 import { fetchRepoFiles } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge } from './adapters/stripe.js';
@@ -1247,23 +1248,48 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
     const rep = await prisma.qualityReport.findUnique({ where: { generationId: g.id } });
     if (!rep) return res.status(404).json({ error: 'Report not ready' });
     const ser = serializeReport(rep, g);
-    if (String(req.query.fmt || 'html') === 'json') {
-      res.setHeader('Content-Disposition', 'attachment; filename="quality-report.json"');
+    const reqFmt = String(req.query.fmt || 'html').toLowerCase();
+    const preset = ['executive', 'full', 'technical'].includes(String(req.query.preset)) ? String(req.query.preset) : 'full';
+    // One model → HTML, PDF, and PowerPoint all render the SAME numbers.
+    const meta = {
+      title: g.title, repo: g.repo, branch: g.branch, format: g.format,
+      docType: docTypeName(g.track, j(g.docTypes, [])[0]),
+      commit: req.query.commit ? String(req.query.commit) : '',
+      pr: req.query.pr ? String(req.query.pr) : '',
+      version: req.query.version ? String(req.query.version) : null,
+      reviewStatus: g.approval === 'approved' ? 'Approved · Published' : g.approval === 'review' ? 'In review' : (ser.gatePassed ? 'Publish-ready' : 'Review recommended')
+    };
+    if (reqFmt === 'json') {
+      res.setHeader('Content-Disposition', 'attachment; filename="' + traceableReportName(meta, 'json', preset) + '"');
       res.setHeader('Content-Type', 'application/json');
       return res.send(JSON.stringify({
         generatedAt: new Date().toISOString(),
         document: { title: g.title, repo: g.repo, format: g.format, track: g.track },
         scores: { overall: ser.overall, verdict: ser.verdict, gate: ser.gate, gatePassed: ser.gatePassed },
-        dimensions: ser.dimensions,
-        assistants: ser.assistants,
-        issues: ser.issues,
-        links: ser.links,
-        style: ser.style
+        dimensions: ser.dimensions, assistants: ser.assistants, issues: ser.issues, links: ser.links, style: ser.style
       }, null, 2));
     }
-    res.setHeader('Content-Disposition', 'attachment; filename="ai-consumability-report.html"');
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.send(renderQualityReport(ser, { title: g.title, repo: g.repo, format: g.format }));
+    const model = buildReportModel(ser, meta);
+    const fname = traceableReportName(meta, reqFmt, preset);
+    try {
+      if (reqFmt === 'pdf') {
+        const buf = await renderReportPdf(model, { preset });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename="' + fname + '"');
+        return res.send(buf);
+      }
+      if (reqFmt === 'pptx') {
+        const buf = await renderReportPptx(model, { preset });
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+        res.setHeader('Content-Disposition', 'attachment; filename="' + fname + '"');
+        return res.send(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+      }
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="' + fname + '"');
+      return res.send(renderReportHtml(model, { preset }));
+    } catch (e) {
+      return res.status(500).json({ error: 'Report generation failed: ' + (e.message || 'unknown') });
+    }
   }
   // Binary formats are built for real at download time from the stored
   // Markdown master (which already includes any applied fixes).

@@ -1399,6 +1399,20 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .arun-prog-fill{height:100%;background:var(--button-primary);width:0;transition:width .5s var(--ease);position:relative}
 .arun-prog-fill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);transform:translateX(-100%);animation:genslide 1.4s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.arun-prog-fill::after{animation:none}.arun-prog-fill{transition:none}}
+/* AI quality report — split-button download menu (Export page) */
+.qr-split{position:relative;width:100%}
+.qr-split-main{width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.qr-scrim{position:fixed;inset:0;z-index:40}
+.qr-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 8px 24px rgba(0,0,0,.16)}
+.qr-mi{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;background:none;border:0;padding:10px 14px;cursor:pointer;font:inherit;color:var(--text-primary)}
+.qr-mi:hover{background:var(--layer-hover)}
+.qr-mi .helper{font-size:12px}
+.qr-sep{height:1px;background:var(--border-subtle);margin:2px 0}
+.qr-cfg{border:1px solid var(--border-subtle);padding:12px 14px;background:var(--layer-01)}
+.qr-preset{display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:6px;cursor:pointer}
+.qr-preset:hover{background:var(--layer-hover)}
+.qr-preset.is-on{background:var(--layer-hover)}
+.qr-preset input{margin-top:3px}
 /* Automation → Quality review context bar (breadcrumb + back link) */
 .qa-autobar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:16px;background:var(--layer-hover);border-left:3px solid var(--button-primary)}
 .qa-autobar .linkbtn{font-weight:600}

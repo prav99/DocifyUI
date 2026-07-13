@@ -5,6 +5,13 @@ import { useFlow, toast } from '../store.jsx';
 import { NavBar, IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
 import { buildChips } from './Generate.jsx';
 
+const PRESET_LABEL = { executive: 'Executive summary', full: 'Full audit report', technical: 'Technical quality report' };
+const PRESETS = [
+  ['executive', 'Executive summary', 'Cover, summary, scorecards, and recommendation.'],
+  ['full', 'Full audit report', 'Everything — all findings, links, style, and applied fixes.'],
+  ['technical', 'Technical quality report', 'Scores, findings, links, style, and fixes.']
+];
+
 export default function ExportPage() {
   const nav = useNavigate();
   const { flow } = useFlow();
@@ -12,6 +19,10 @@ export default function ExportPage() {
   const [report, setReport] = useState(null);
   const [catalog, setCatalog] = useState(null);
   const [showPrev, setShowPrev] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);   // AI quality report format menu
+  const [busyFmt, setBusyFmt] = useState(null);        // format currently generating
+  const [preset, setPreset] = useState('full');        // executive | full | technical
+  const [cfgOpen, setCfgOpen] = useState(false);       // preset configuration popover
 
   useEffect(() => {
     if (!flow.genId) { nav('/dashboard'); return; }
@@ -38,6 +49,16 @@ export default function ExportPage() {
       const name = await download('/generations/' + gen.id + '/download' + (kind === 'report' ? '?kind=report&fmt=' + fmt : ''));
       toast('success', 'Download started', name);
     } catch (e) { toast('error', 'Download failed', e.message); }
+  }
+
+  // AI quality report — one data source, three formats, chosen preset.
+  async function dlReport(fmt) {
+    setMenuOpen(false); setBusyFmt(fmt);
+    try {
+      const name = await download('/generations/' + gen.id + '/download?kind=report&fmt=' + fmt + '&preset=' + preset);
+      toast('success', 'AI quality report ready', name);
+    } catch (e) { toast('error', 'Report generation failed', e.message + ' — try again'); }
+    finally { setBusyFmt(null); }
   }
 
   return (
@@ -92,15 +113,43 @@ export default function ExportPage() {
               <button className="btn btn--primary" style={{ width: '100%' }} onClick={() => dl('doc')}>
                 Download {fmtDefn ? fmtDefn.name : gen.format.toUpperCase()}<span className="ico">↓</span>
               </button>
-              <button className="btn btn--tertiary" style={{ width: '100%' }} onClick={() => dl('report', 'html')}>
-                AI consumability report<span className="ico">↓</span>
-              </button>
+              <div className="qr-split">
+                <button className="btn btn--tertiary qr-split-main" disabled={!report || !!busyFmt}
+                  aria-haspopup="menu" aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((o) => !o)}>
+                  {busyFmt ? 'Generating ' + busyFmt.toUpperCase() + ' report…'
+                    : report ? 'Download AI quality report' : 'Preparing report…'}
+                  <span className="ico">▾</span>
+                </button>
+                {menuOpen && <div className="qr-scrim" onClick={() => setMenuOpen(false)} />}
+                {menuOpen && (
+                  <div className="qr-menu" role="menu">
+                    <button className="qr-mi" role="menuitem" onClick={() => dlReport('pdf')}>PDF report<span className="helper">Management-ready, printable</span></button>
+                    <button className="qr-mi" role="menuitem" onClick={() => dlReport('html')}>HTML report<span className="helper">Self-contained, responsive</span></button>
+                    <button className="qr-mi" role="menuitem" onClick={() => dlReport('pptx')}>PowerPoint presentation<span className="helper">Executive slide deck</span></button>
+                    <div className="qr-sep" />
+                    <button className="qr-mi" role="menuitem" onClick={() => { setMenuOpen(false); setCfgOpen(true); }}>Configure report…<span className="helper">Preset: {PRESET_LABEL[preset]}</span></button>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="helper mt5 mono">{fname}</p>
-            <p className="helper mt3">
-              The AI consumability report is the full audit record in plain HTML: dimension scores, the
-              AI-assistant readiness estimates, every finding with its status, and the exact before/after of
-              each applied fix, plus link and style checks — ready to attach to a review.
+            {cfgOpen && (
+              <div className="qr-cfg mt3">
+                <div className="row row--between" style={{ alignItems: 'baseline' }}>
+                  <b className="body01">Report preset</b>
+                  <button className="linkbtn" onClick={() => setCfgOpen(false)}>Done</button>
+                </div>
+                {PRESETS.map(([id, label, desc]) => (
+                  <label key={id} className={'qr-preset' + (preset === id ? ' is-on' : '')}>
+                    <input type="radio" name="qrpreset" checked={preset === id} onChange={() => setPreset(id)} />
+                    <span><b>{label}</b><span className="helper" style={{ display: 'block' }}>{desc}</span></span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="helper mt5">
+              Includes the complete AI judge review, scores, broken-link analysis, style-guide results, applied
+              fixes, and the publish-readiness assessment — the same data across every format.
             </p>
           </div>
           <div className="tile tile--white" style={{ padding: 24 }}>
