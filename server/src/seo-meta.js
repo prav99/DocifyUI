@@ -7,13 +7,13 @@
 export const SITE_URL = 'https://docifydocai.com';
 const SITE_NAME = 'Docify';
 
-const DEFAULT_DESC = 'Docify automates technical documentation end to end: connect GitHub, GitLab, or Bitbucket and every merge updates your documentation automatically — validated by an AI quality judge and scored for AI search readiness across ChatGPT, Claude, Gemini, and Copilot.';
+const DEFAULT_DESC = 'Docify keeps technical documentation aligned with every meaningful product change: connect GitHub, GitLab, or Bitbucket, generate or auto-update docs from your code, validate quality, style, links, and AI-search readiness, review and approve changes, and export to Markdown, PDF, Word, HTML, and DITA.';
 
 // Public, indexable routes. Anything not listed falls back to the default
 // tags (in-app routes are noindexed via robots.txt anyway).
 export const PAGE_META = {
   '/': {
-    title: 'Docify — Documentation that updates itself when your code changes | Docify',
+    title: 'Docify — Automated Technical Documentation from GitHub, GitLab & Bitbucket',
     desc: DEFAULT_DESC
   },
   '/pricing': {
@@ -26,7 +26,7 @@ export const PAGE_META = {
   },
   '/docs': {
     title: 'Product Docs & Guides | ' + SITE_NAME,
-    desc: 'How Docify works: AI compatibility checking, LLM-as-a-Judge scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.'
+    desc: 'How Docify works: connecting GitHub, GitLab, and Bitbucket, generating and auto-updating documentation, the AI quality review and AI-search readiness, human review and approval, and every output format.'
   },
   '/help': {
     title: 'Help Center | ' + SITE_NAME,
@@ -71,7 +71,7 @@ const JSON_LD = JSON.stringify({
         { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'USD' },
         { '@type': 'Offer', name: 'Team', price: '26', priceCurrency: 'USD', description: 'Per user / month, billed annually' }
       ],
-      featureList: 'AI documentation generation, LLM-as-a-Judge quality scoring, ChatGPT/Claude/Gemini ranking prediction, GitHub/GitLab/Bitbucket integration, DITA/Markdown/PDF/Word export, release notes automation, CI/CD documentation automation'
+      featureList: 'AI documentation generation, LLM-as-a-Judge quality scoring, AI-search readiness evaluation, human review and approval, GitHub/GitLab/Bitbucket integration, Markdown/PDF/Word/HTML/DITA export, release notes and CI/CD documentation automation, AI Quality Report exports (PDF/HTML/PowerPoint)'
     },
     { '@type': 'Organization', name: SITE_NAME, url: SITE_URL, logo: SITE_URL + '/icon.svg' },
     { '@type': 'WebSite', name: SITE_NAME, url: SITE_URL, description: DEFAULT_DESC }
@@ -85,17 +85,17 @@ const FAQ_LD = JSON.stringify({
   '@type': 'FAQPage',
   mainEntity: [
     ['What is Docify?',
-      'Docify is an AI documentation generator that turns your GitHub, GitLab, or Bitbucket repository into standards-grade technical documentation — API references, user guides, release notes, and more — exported to DITA, PDF, Word, HTML, or Markdown. Every document is scored by an AI quality judge before you publish.'],
-    ['How does the AI quality scoring work?',
-      'Every generated document is reviewed by an LLM judge across six weighted dimensions: style, consistency, completeness, readability, LLM readiness, and link integrity. Each finding ships with a one-click fix and a declared score gain, and a quality gate (85 by default) blocks anything below your bar.'],
-    ['What is AI ranking prediction?',
-      'Before you publish, Docify models how ChatGPT, Claude, and Google Gemini each weigh your content — metadata, structure, readability, completeness — and estimates the probability that each platform will retrieve and cite your page. The estimate is recomputed live as you apply fixes.'],
+      'Docify keeps technical documentation aligned with your product. Connect your GitHub, GitLab, or Bitbucket repositories, and Docify generates or updates documentation from your real source, validates its quality, style, links, and AI-search readiness, lets your team review and approve every change, and exports the result to Markdown, PDF, Word, HTML, DITA, and more.'],
+    ['How does documentation stay up to date automatically?',
+      'Automation pipelines run on every merge or push via webhook. Docify decides whether a change is meaningful to customers, updates the affected section of the existing document (never a duplicate), re-scores it, and either auto-publishes or holds it for human approval — so the release and its documentation ship together.'],
+    ['Does Docify document every code change?',
+      'No. Docify filters changes for customer relevance using repository rules, include/exclude patterns, metadata, style guides, and AI reasoning, and routes low-confidence decisions to a human. Internal refactors and implementation details do not become customer documentation.'],
+    ['What does the AI quality review check?',
+      'Each document is scored across weighted dimensions — LLM readiness, structure, clarity, completeness, terminology consistency, readability, style-guide compliance, and link integrity — with an overall score, a publish-readiness verdict, and a one-click or reviewer-approved fix for each finding.'],
+    ['What is AI search readiness?',
+      'Docify evaluates the signals that help machines find, understand, and cite your content — titles, metadata, structure, clarity, and completeness — and estimates how ready each major assistant is to retrieve it. It is a readiness signal you can improve, not a guarantee of ranking on any platform.'],
     ['Is my source code stored?',
-      'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and commit history, and never stores your source code. You can revoke access at any time.'],
-    ['Can documentation update automatically on every merge?',
-      'Yes. Automation pipelines regenerate documentation on every merge via webhook, re-score it with the AI judge, update the AI ranking outlook, and hold anything below the quality gate for review — so the release and its documentation ship together.'],
-    ['Who is Docify built for?',
-      'Developer platform teams, technical writers, product managers, and documentation teams at startups and enterprises — anyone who needs accurate, AI-ready developer documentation without the manual upkeep.']
+      'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and history, and does not store your source. You can revoke access at any time.']
   ].map(([q, a]) => ({
     '@type': 'Question',
     name: q,
@@ -123,7 +123,7 @@ export function injectMeta(html, path) {
     '<meta property="og:image" content="' + OG_IMAGE + '" />',
     '<meta property="og:image:width" content="1200" />',
     '<meta property="og:image:height" content="630" />',
-    '<meta property="og:image:alt" content="Docify — documentation that AI understands, trusts, and ranks" />',
+    '<meta property="og:image:alt" content="Docify — documentation that stays aligned with every meaningful product change" />',
     '<meta name="twitter:card" content="summary_large_image" />',
     '<meta name="twitter:title" content="' + esc(meta.title) + '" />',
     '<meta name="twitter:description" content="' + esc(meta.desc) + '" />',
