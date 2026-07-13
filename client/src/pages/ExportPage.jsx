@@ -121,7 +121,7 @@ export default function ExportPage() {
                     : report ? 'Download AI quality report' : 'Preparing report…'}
                   <span className="ico">▾</span>
                 </button>
-                {menuOpen && <div className="qr-scrim" onClick={() => setMenuOpen(false)} />}
+                {(menuOpen || cfgOpen) && <div className="qr-scrim" onClick={() => { setMenuOpen(false); setCfgOpen(false); }} />}
                 {menuOpen && (
                   <div className="qr-menu" role="menu">
                     <button className="qr-mi" role="menuitem" onClick={() => dlReport('pdf')}>PDF report<span className="helper">Management-ready, printable</span></button>
@@ -131,22 +131,29 @@ export default function ExportPage() {
                     <button className="qr-mi" role="menuitem" onClick={() => { setMenuOpen(false); setCfgOpen(true); }}>Configure report…<span className="helper">Preset: {PRESET_LABEL[preset]}</span></button>
                   </div>
                 )}
+                {cfgOpen && (
+                  <div className="qr-cfg-pop" role="dialog" aria-label="Configure report">
+                    <div className="row row--between" style={{ alignItems: 'baseline' }}>
+                      <b className="body01">Report preset</b>
+                      <button className="linkbtn" onClick={() => setCfgOpen(false)}>Done</button>
+                    </div>
+                    {PRESETS.map(([id, label, desc]) => (
+                      <label key={id} className={'qr-preset' + (preset === id ? ' is-on' : '')}>
+                        <input type="radio" name="qrpreset" checked={preset === id} onChange={() => setPreset(id)} />
+                        <span><b>{label}</b><span className="helper" style={{ display: 'block' }}>{desc}</span></span>
+                      </label>
+                    ))}
+                    <div className="qr-sep" />
+                    <p className="helper" style={{ margin: '2px 0 8px' }}>Download {PRESET_LABEL[preset]} as:</p>
+                    <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                      <button className="btn btn--tertiary btn--sm btn--center" disabled={!!busyFmt} onClick={() => dlReport('pdf')}>PDF</button>
+                      <button className="btn btn--tertiary btn--sm btn--center" disabled={!!busyFmt} onClick={() => dlReport('html')}>HTML</button>
+                      <button className="btn btn--tertiary btn--sm btn--center" disabled={!!busyFmt} onClick={() => dlReport('pptx')}>PowerPoint</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-            {cfgOpen && (
-              <div className="qr-cfg mt3">
-                <div className="row row--between" style={{ alignItems: 'baseline' }}>
-                  <b className="body01">Report preset</b>
-                  <button className="linkbtn" onClick={() => setCfgOpen(false)}>Done</button>
-                </div>
-                {PRESETS.map(([id, label, desc]) => (
-                  <label key={id} className={'qr-preset' + (preset === id ? ' is-on' : '')}>
-                    <input type="radio" name="qrpreset" checked={preset === id} onChange={() => setPreset(id)} />
-                    <span><b>{label}</b><span className="helper" style={{ display: 'block' }}>{desc}</span></span>
-                  </label>
-                ))}
-              </div>
-            )}
             <p className="helper mt5">
               Includes the complete AI judge review, scores, broken-link analysis, style-guide results, applied
               fixes, and the publish-readiness assessment — the same data across every format.

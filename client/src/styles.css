@@ -1402,13 +1402,15 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 /* AI quality report — split-button download menu (Export page) */
 .qr-split{position:relative;width:100%}
 .qr-split-main{width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
-.qr-scrim{position:fixed;inset:0;z-index:40}
-.qr-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 8px 24px rgba(0,0,0,.16)}
+/* Menu + configure popover must sit ABOVE the fixed bottom nav (z-index 90),
+   and scroll internally so the bottom ribbon can never clip them. */
+.qr-scrim{position:fixed;inset:0;z-index:190}
+.qr-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:200;background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:min(56vh,340px);overflow:auto}
 .qr-mi{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;background:none;border:0;padding:10px 14px;cursor:pointer;font:inherit;color:var(--text-primary)}
 .qr-mi:hover{background:var(--layer-hover)}
 .qr-mi .helper{font-size:12px}
-.qr-sep{height:1px;background:var(--border-subtle);margin:2px 0}
-.qr-cfg{border:1px solid var(--border-subtle);padding:12px 14px;background:var(--layer-01)}
+.qr-sep{height:1px;background:var(--border-subtle);margin:6px 0}
+.qr-cfg-pop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:200;background:var(--background);border:1px solid var(--border-subtle);box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px 14px;max-height:min(70vh,460px);overflow:auto}
 .qr-preset{display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:6px;cursor:pointer}
 .qr-preset:hover{background:var(--layer-hover)}
 .qr-preset.is-on{background:var(--layer-hover)}
