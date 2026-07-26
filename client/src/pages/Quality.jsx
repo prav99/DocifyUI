@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, Notif, Score, IcCheck, IcInfo, HelpLink } from '../ui.jsx';
 import InlineReviewEditor from '../review/InlineReviewEditor.jsx';
+import posthog from '../posthog.js';
 
 const CAT_DESC = {
   'LLM readiness': 'Whether AI systems can find, summarize, and cite this document.',
@@ -201,6 +202,11 @@ export default function Quality() {
       setFixing((f) => { const n = { ...f }; delete n[issueId]; return n; });
       setReport(d.report);
       const newOverall = d.report.overall != null ? d.report.overall : d.report.aiScore;
+      posthog.capture('quality_fix_applied', {
+        score_before: prevOverall,
+        score_after: newOverall,
+        score_delta: newOverall - prevOverall,
+      });
       if (!opts.quietToast) {
         toast('success', 'Fixed in the document', 'Content re-rendered · overall ' + prevOverall + ' → ' + newOverall);
       }
@@ -208,6 +214,7 @@ export default function Quality() {
     } catch (e) {
       clearInterval(stepper);
       setFixing((f) => { const n = { ...f }; delete n[issueId]; return n; });
+      posthog.captureException(e, { event: 'quality_fix_error' });
       toast('error', 'Could not apply fix', e.message);
       throw e;
     }
@@ -229,6 +236,14 @@ export default function Quality() {
         last = await applyFix(iss.id, { quietToast: true });
       }
       const newOverall = last.overall != null ? last.overall : last.aiScore;
+      if (!fixAllStop.current) {
+        posthog.capture('quality_fix_all_applied', {
+          fixes_applied: open.length,
+          score_before: prevOverall,
+          score_after: newOverall,
+          score_delta: newOverall - prevOverall,
+        });
+      }
       toast('success', fixAllStop.current ? 'Stopped' : 'All fixes applied',
         'Overall ' + prevOverall + ' → ' + newOverall + ' · content and every export regenerated');
     } catch { /* per-fix toast already shown */ }

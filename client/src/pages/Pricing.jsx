@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, HelpLink } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
+import posthog from '../posthog.js';
 
 const ROWS = [
   ['Sources', '1 source', 'All sources', 'All sources'],
@@ -31,6 +32,7 @@ export default function Pricing() {
 
   async function choose(plan) {
     setFlow({ plan });
+    posthog.capture('plan_selected', { plan, billing_cycle: annual ? 'annual' : 'monthly' });
     if (plan === 'team') return nav(user ? '/checkout' : '/signup');
     if (plan === 'free') {
       if (user) { try { await api('/billing/checkout', { method: 'POST', body: { plan: 'free' } }); } catch { /* ignore */ } }

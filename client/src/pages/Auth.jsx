@@ -5,6 +5,7 @@ import { useAuth, useFlow, toast } from '../store.jsx';
 import { IcCheck, SrcMark, HelpLink } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
 import { SUPPORT_EMAIL, supportMailto } from '../config.js';
+import posthog from '../posthog.js';
 
 // Detect which providers have REAL OAuth configured on the server.
 function useProviders() {
@@ -99,9 +100,14 @@ export function Signup() {
         return;
       }
       login(d.token, d.user);
+      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined });
+      posthog.capture('signed_up', { method: 'email' });
       toast('success', 'Account created', 'Welcome to Docify');
       nav(dest || '/source');
-    } catch (e) { toast('error', 'Signup failed', e.message); }
+    } catch (e) {
+      posthog.captureException(e, { event: 'signup_error', method: 'email' });
+      toast('error', 'Signup failed', e.message);
+    }
     finally { setBusy(false); }
   }
 
@@ -119,6 +125,8 @@ export function Signup() {
     try {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email: sentTo, code: otp.trim() } });
       login(d.token, d.user);
+      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined });
+      posthog.capture('signed_up', { method: 'email_otp' });
       toast('success', 'Account activated', 'Welcome to Docify');
       nav(dest || '/source');
     } catch (e) { toast('error', 'Verification failed', e.message); }
@@ -131,6 +139,8 @@ export function Signup() {
     try {
       const d = await api('/auth/login', { method: 'POST', body: { email, password } });
       login(d.token, d.user);
+      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined, plan: d.user.plan || undefined });
+      posthog.capture('logged_in', { method: 'email' });
       toast('success', 'Logged in', 'Welcome back');
       nav(dest || '/dashboard');
     } catch (e) {
@@ -139,6 +149,7 @@ export function Signup() {
         try { await api('/auth/resend', { method: 'POST', body: { email } }); } catch { /* ignore */ }
         toast('info', 'Verification needed', 'We sent a fresh 6-digit code to ' + email);
       } else {
+        posthog.captureException(e, { event: 'login_error', method: 'email' });
         toast('error', 'Login failed', e.message);
       }
     }
@@ -151,6 +162,8 @@ export function Signup() {
     try {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email, code: otp.trim() } });
       login(d.token, d.user);
+      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined, plan: d.user.plan || undefined });
+      posthog.capture('logged_in', { method: 'email_otp' });
       toast('success', 'Verified and logged in', 'Welcome to Docify');
       nav(dest || '/dashboard');
     } catch (e) { toast('error', 'Verification failed', e.message); }
@@ -384,6 +397,8 @@ export function OAuthComplete() {
     api('/auth/me')
       .then((d) => {
         login(token, d.user);
+        posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined, plan: d.user.plan || undefined });
+        posthog.capture('oauth_completed', { provider: prov });
         setFlow((f) => ({
           autoSrc: true,
           sources: (f.sources || []).includes(prov) ? f.sources : [...(f.sources || []), prov]

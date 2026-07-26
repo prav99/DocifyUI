@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, HelpLink } from '../ui.jsx';
+import posthog from '../posthog.js';
 
 export default function Checkout() {
   const nav = useNavigate();
@@ -24,11 +25,18 @@ export default function Checkout() {
         body: { plan: 'team', cycle: flow.billing, seats, taxId }
       });
       setState('done');
+      posthog.capture('payment_completed', {
+        plan: 'team',
+        billing_cycle: flow.billing,
+        seats,
+        amount: subtotal,
+      });
       toast('success', 'Payment successful', 'Team plan is active — receipt sent to your email');
       refresh();
       setTimeout(() => nav('/dashboard'), 1200);
     } catch (e) {
       setState('idle');
+      posthog.captureException(e, { event: 'payment_error', plan: 'team' });
       toast('error', 'Payment failed', e.message);
     }
   }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, download } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
+import posthog from '../posthog.js';
 
 /* Smoothly eased progress: snaps up to the real backend % quickly, then gently
    creeps within a long-running stage so the bar always feels alive — the
@@ -123,11 +124,21 @@ export default function Generate() {
         if (d.generation.status === 'complete') {
           if (!doneToasted.current) {
             doneToasted.current = true;
+            posthog.capture('generation_completed', {
+              format: d.generation.format,
+              doc_type_count: (d.generation.docTypes || []).length,
+            });
             toast('success', 'Document generated', (d.generation.title || 'Document') + ' is ready for quality review');
           }
           return; // stop polling
         }
-        if (d.generation.status === 'failed') return;
+        if (d.generation.status === 'failed') {
+          posthog.capture('generation_failed', {
+            format: d.generation.format,
+            stage: d.generation.stage || undefined,
+          });
+          return;
+        }
         timer = setTimeout(poll, 700);
       } catch {
         timer = setTimeout(poll, 1500);
