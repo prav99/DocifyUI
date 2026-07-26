@@ -4,6 +4,7 @@ import { api, download, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
 import { buildChips } from './Generate.jsx';
+import posthog from '../posthog.js';
 
 const PRESET_LABEL = { executive: 'Executive summary', full: 'Full audit report', technical: 'Technical quality report' };
 const PRESETS = [
@@ -47,8 +48,16 @@ export default function ExportPage() {
   async function dl(kind, fmt) {
     try {
       const name = await download('/generations/' + gen.id + '/download' + (kind === 'report' ? '?kind=report&fmt=' + fmt : ''));
+      posthog.capture('document_downloaded', {
+        format: gen.format,
+        quality_score: overall,
+        gate_passed: gatePassed,
+      });
       toast('success', 'Download started', name);
-    } catch (e) { toast('error', 'Download failed', e.message); }
+    } catch (e) {
+      posthog.captureException(e, { event: 'document_download_error', format: gen.format });
+      toast('error', 'Download failed', e.message);
+    }
   }
 
   // AI quality report — one data source, three formats, chosen preset.
@@ -56,8 +65,16 @@ export default function ExportPage() {
     setMenuOpen(false); setBusyFmt(fmt);
     try {
       const name = await download('/generations/' + gen.id + '/download?kind=report&fmt=' + fmt + '&preset=' + preset);
+      posthog.capture('quality_report_downloaded', {
+        report_format: fmt,
+        report_preset: preset,
+        quality_score: overall,
+      });
       toast('success', 'AI quality report ready', name);
-    } catch (e) { toast('error', 'Report generation failed', e.message + ' — try again'); }
+    } catch (e) {
+      posthog.captureException(e, { event: 'quality_report_download_error', report_format: fmt });
+      toast('error', 'Report generation failed', e.message + ' — try again');
+    }
     finally { setBusyFmt(null); }
   }
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, Modal, SrcMark, IcCheck, HelpLink, RepoHubCta } from '../ui.jsx';
+import posthog from '../posthog.js';
 
 // How each source gets configured.
 const KIND = {
@@ -893,8 +894,16 @@ export default function Source() {
         srcScope, extraRepos, jiraIssues,
         openapiSpecs, notionPages, notionChildren, confluencePages, confluenceChildren
       });
+      posthog.capture('source_configured', {
+        source_count: sources.length,
+        source_types: sources,
+        primary_source: primary || sources[0],
+      });
       nav('/doctype');
-    } catch (e) { toast('error', 'Could not save sources', e.message); }
+    } catch (e) {
+      posthog.captureException(e, { event: 'source_configure_error' });
+      toast('error', 'Could not save sources', e.message);
+    }
     finally { setBusy(false); }
   }
 
@@ -903,6 +912,7 @@ export default function Source() {
     try {
       await api('/waitlist', { method: 'POST', body: { email: wlEmail, provider: waitlistFor.id } });
       setFlow((f) => ({ waitlisted: { ...f.waitlisted, [waitlistFor.id]: true } }));
+      posthog.capture('waitlist_joined', { provider: waitlistFor.id });
       toast('success', 'Added to waitlist', 'We will email ' + wlEmail + ' at launch');
       setWaitlistFor(null);
     } catch (e) { toast('error', 'Could not join waitlist', e.message); }
