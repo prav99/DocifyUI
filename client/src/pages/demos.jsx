@@ -13,7 +13,7 @@ import { DemoShell, TitleSlate, CountTo } from '../demoKit.jsx';
    ========================================================================= */
 
 /* ---------- Up-next pointer: elegant cross-navigation between films ---------- */
-function NextPointer({ target, kicker, title }) {
+export function NextPointer({ target, kicker, title }) {
   const go = () => {
     const el = document.getElementById(target);
     if (el) el.scrollIntoView({ block: 'center' });
@@ -130,14 +130,14 @@ const AUTO_SCENES = [
   },
   {
     label: 'Up next', dur: 6000, sfx: 'chime',
-    vo: 'Your code changes. Your documentation updates automatically. Next — AI readiness.',
+    vo: 'Your code changes. Your documentation updates automatically. Next — human review.',
     render: () => (
       <div>
         <div style={{ padding: '4px 0 10px' }}>
           <span className="jd-verdict">Your code changes. Your documentation updates automatically.</span>
         </div>
-        <NextPointer target="film-ai" kicker="AI READINESS"
-          title="See how Docify checks your documentation for AI Readiness" />
+        <NextPointer target="film-review" kicker="HUMAN REVIEW"
+          title="AI proposes. Your team decides — see the review workflow" />
       </div>
     )
   }
@@ -223,14 +223,14 @@ const AICOMPAT_SCENES = [
   },
   {
     label: 'Up next', dur: 6000, sfx: 'chime',
-    vo: 'Documentation people can understand — and AI can discover. Next — the complete generation workflow.',
+    vo: 'Documentation people can understand — and AI can discover. Next — documents, versions, and approvals.',
     render: () => (
       <div>
         <div style={{ padding: '4px 0 10px' }}>
           <span className="jd-verdict">Documentation people understand — and AI can discover.</span>
         </div>
-        <NextPointer target="film-generate" kicker="GENERATE ON DEMAND"
-          title="Explore the complete document-generation workflow" />
+        <NextPointer target="film-docs" kicker="DOCUMENTS & VERSIONS"
+          title="Every version, approval, and audit trail — in one lookup" />
       </div>
     )
   }

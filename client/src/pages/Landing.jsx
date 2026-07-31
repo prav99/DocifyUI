@@ -4,15 +4,20 @@ import { LogoMark } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
 import { SUPPORT_EMAIL, supportMailto } from '../config.js';
 import { AutomationDemo, AICompatDemo, GenerateDemo } from './demos.jsx';
+import { ConnectDemo } from './films/ConnectFilm.jsx';
+import { ReviewDemo } from './films/ReviewFilm.jsx';
+import { StandardizeDemo } from './films/StandardizeFilm.jsx';
+import { DocumentsDemo } from './films/DocumentsFilm.jsx';
+import { ReportingDemo } from './films/ReportingFilm.jsx';
 
 /* ---------- Series meter: which of the three product demo films this is ---------- */
-function SeriesMeter({ step }) {
+function SeriesMeter({ step, total = 8 }) {
   return (
-    <div className="filmmeter" aria-label={'Product film ' + step + ' of 3'}>
-      {[1, 2, 3].map((i) => (
+    <div className="filmmeter" aria-label={'Product film ' + step + ' of ' + total}>
+      {Array.from({ length: total }, (_, i) => i + 1).map((i) => (
         <span key={i} className={'filmmeter-seg' + (i === step ? ' on' : i < step ? ' done' : '')} />
       ))}
-      <span className="filmmeter-label mono">{step} / 3</span>
+      <span className="filmmeter-label mono">{step} / {total}</span>
     </div>
   );
 }
@@ -676,7 +681,7 @@ export default function Landing() {
       <div className="page featlist" id="connect" style={{ paddingTop: 48, paddingBottom: 0 }}>
         <Reveal>
           <div className="featrow">
-            <div className="illuwrap"><IlluSource /></div>
+            <div id="film-connect"><SeriesMeter step={1} /><div className="mt3"><ConnectDemo /></div></div>
             <div>
               <p className="eyebrow eyebrow--blue mb3">CONNECT YOUR ECOSYSTEM</p>
               <h2 className="feathead">One place for every repository you document</h2>
@@ -730,7 +735,7 @@ export default function Landing() {
         </Reveal>
         <div id="film-generate" />
         <Reveal delay={80}>
-          <SeriesMeter step={1} />
+          <SeriesMeter step={2} />
           <div className="vidwrap mt3"><GenerateDemo /></div>
         </Reveal>
       </div>
@@ -751,8 +756,9 @@ export default function Landing() {
 
       {/* 5 · Automate after meaningful changes (Film — Automation) */}
       <div className="page" id="automate" style={{ paddingTop: 40, paddingBottom: 32 }}>
+        <div id="film-automation" />
         <Reveal>
-          <SeriesMeter step={2} />
+          <SeriesMeter step={3} />
           <p className="eyebrow eyebrow--blue mb3">AUTOMATE MEANINGFUL CHANGES</p>
           <h2 className="feathead">This is where the per-release cost actually falls</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 660 }}>
@@ -787,7 +793,7 @@ export default function Landing() {
       <div className="page featlist" id="review" style={{ paddingTop: 8, paddingBottom: 0 }}>
         <Reveal>
           <div className="featrow">
-            <div className="illuwrap"><IlluReview /></div>
+            <div id="film-review"><SeriesMeter step={4} /><div className="mt3"><ReviewDemo /></div></div>
             <div>
               <p className="eyebrow eyebrow--blue mb3">HUMAN CONTROL</p>
               <h2 className="feathead">AI proposes. Your team decides.</h2>
@@ -831,7 +837,7 @@ export default function Landing() {
               </div>
               <button className="btn btn--tertiary mt5" onClick={() => nav('/standardize')}>Open Standardize<span className="ico">→</span></button>
             </div>
-            <div className="illuwrap"><IlluStandardize /></div>
+            <div id="film-standardize"><SeriesMeter step={5} /><div className="mt3"><StandardizeDemo /></div></div>
           </div>
         </Reveal>
       </div>
@@ -864,7 +870,7 @@ export default function Landing() {
         </Reveal>
         <div id="film-ai" />
         <Reveal delay={80}>
-          <SeriesMeter step={3} />
+          <SeriesMeter step={6} />
           <div className="vidwrap mt3"><AICompatDemo /></div>
         </Reveal>
       </div>
@@ -920,7 +926,7 @@ export default function Landing() {
                 ))}
               </div>
             </div>
-            <div className="illuwrap"><IlluReadiness /></div>
+            <div id="film-docs"><SeriesMeter step={7} /><div className="mt3"><DocumentsDemo /></div></div>
           </div>
         </Reveal>
       </div>
@@ -929,7 +935,7 @@ export default function Landing() {
       <div className="page featlist" id="reporting" style={{ paddingTop: 8, paddingBottom: 0 }}>
         <Reveal>
           <div className="featrow">
-            <div className="illuwrap"><IlluReport /></div>
+            <div id="film-reporting"><SeriesMeter step={8} /><div className="mt3"><ReportingDemo /></div></div>
             <div>
               <p className="eyebrow eyebrow--blue mb3">MANAGEMENT REPORTING</p>
               <h2 className="feathead">A management-ready quality report, in one click</h2>
