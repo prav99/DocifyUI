@@ -61,10 +61,11 @@ app.use((req, res, next) => {
 });
 
 // SEO: exactly one canonical host. Requests to the *.up.railway.app domain
-// are 301-redirected to the custom domain so Google never sees duplicates.
+// or to www.docifydocai.com are 301-redirected to the bare custom domain so
+// Google, Bing, and AI crawlers never see duplicate hosts.
 app.use((req, res, next) => {
   const host = String(req.headers.host || '');
-  if (host.endsWith('.up.railway.app')) {
+  if (host.endsWith('.up.railway.app') || host === 'www.docifydocai.com') {
     return res.redirect(301, SITE_URL + req.originalUrl);
   }
   next();
