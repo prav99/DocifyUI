@@ -1,12 +1,12 @@
 # Docify (docifydocai.com)
 
-> Docify is an AI documentation platform: it generates standards-grade technical and business documentation from code commits, scores every document with an LLM-as-a-Judge quality framework, and predicts how likely ChatGPT, Claude, and Google Gemini are to retrieve and cite the content — before it is published.
+> Docify is an AI documentation platform: it generates standards-grade technical and business documentation from code commits, scores every document with an LLM-as-a-Judge quality framework, and estimates how ready the content is for ChatGPT, Claude, and Google Gemini to retrieve and cite — a modeled readiness signal, not a ranking guarantee — before it is published.
 
 ## What Docify does
 
 - Generates API references, quick starts, user guides, installation guides, release notes, and business documents directly from GitHub, GitLab, or Bitbucket repositories (read-only access; source code is never stored).
 - Cross-examines every generated page with an LLM judge against an enterprise documentation rubric: structure, titles, metadata, clarity, examples, and citation-readiness.
-- Predicts per-model AI retrieval and citation probability (ChatGPT, Claude, Gemini) and shows the exact fixes that raise the score.
+- Estimates per-assistant AI search readiness (ChatGPT, Claude, Gemini) as a modeled signal and shows the exact fixes that raise the score.
 - Exports to DITA, Markdown, HTML, DocBook, ePub, PDF, and Word.
 - Automation pipelines regenerate, re-judge, and republish affected documents on every merge (CI/CD integration, webhooks for GitHub/GitLab/Bitbucket).
 

@@ -74,6 +74,8 @@ function HeroVisual() {
       <circle className="pulse" cx="40" cy="70" r="7" fill="#0f62fe" />
       <circle className="pulse pd2" cx="40" cy="180" r="7" fill="#4589ff" />
       <circle className="pulse pd3" cx="40" cy="290" r="7" fill="#42be65" />
+      {/* a merge travelling down the rail into the pipeline, on loop */}
+      <circle className="hv-traveler" cx="40" cy="70" r="4" fill="#78a9ff" />
       <line className="flowline" x1="47" y1="70" x2="96" y2="70" stroke="#393939" strokeWidth="2" strokeDasharray="4 4" />
       <line className="flowline" x1="47" y1="180" x2="96" y2="180" stroke="#393939" strokeWidth="2" strokeDasharray="4 4" />
       <line className="flowline" x1="47" y1="290" x2="96" y2="290" stroke="#393939" strokeWidth="2" strokeDasharray="4 4" />
@@ -94,6 +96,9 @@ function HeroVisual() {
         <rect className="hv-line" style={{ animationDelay: '.98s' }} x="118" y="246" width="70" height="7" fill="#4589ff" />
         <rect className="hv-line" style={{ animationDelay: '1.04s' }} x="118" y="260" width="170" height="5" fill="#393939" />
         <rect className="hv-line" style={{ animationDelay: '1.1s' }} x="118" y="272" width="130" height="5" fill="#393939" />
+        {/* one section rewritten in place each cycle — the update-on-merge story */}
+        <rect className="hv-rewrite" x="112" y="208" width="200" height="16" fill="#0f62fe" opacity="0" />
+        <rect className="hv-rewrite hvr2" x="112" y="254" width="200" height="16" fill="#0f62fe" opacity="0" />
       </g>
       <g className="pop">
         <g className="floaty">
@@ -340,6 +345,7 @@ function IlluReport() {
    Sticky page-journey navigation
    =================================================================== */
 const NAV_SECTIONS = [
+  ['cost', 'Your cost'],
   ['overview', 'Overview'],
   ['connect', 'Connect'],
   ['generate', 'Generate'],
@@ -434,24 +440,123 @@ export const FAQS = [
   {
     q: 'Is my source code stored?',
     a: 'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and history, and does not store your source. You can revoke access at any time.'
+  },
+  {
+    q: 'How quickly does Docify pay for itself?',
+    a: 'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. Team costs $26 per user per month on annual billing ($32 monthly). At a typical loaded engineering cost of $75–120 per hour, that is roughly 13–21 minutes of engineering time per user per month — the break-even point: Docify pays for itself if it returns that much documentation work per seat. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is to run the free plan — five generations, no card — against a real release and compare the result with what that release usually costs you.'
   }
 ];
 
 const PROVIDERS = ['GitHub', 'GitLab', 'Bitbucket'];
 const FMTS = ['Markdown', 'PDF', 'Word', 'HTML', 'DITA', 'DocBook', 'ePub'];
+/* Each pain is a cost — tagged with the currency it is paid in. */
 const PROBLEMS = [
-  ['Code outruns the docs', 'Every merge can change behaviour customers depend on. Manual updates never keep pace.'],
-  ['Internal details leak out', 'Not every commit belongs in customer documentation — refactors and internals should stay internal.'],
-  ['Releases wait on writing', 'Manual source analysis and drafting delay the release, or the docs ship late and wrong.'],
-  ['Quality varies by author', 'Tone, terminology, and structure drift between writers, teams, and quarters.'],
-  ['Stale content erodes trust', 'A 404 quick start or an old screenshot tells customers your product is unreliable.'],
-  ['Machines can’t use it', 'Poorly structured content is hard for site search and AI assistants to retrieve and cite.']
+  ['Outdated pages get costlier with time', 'Every page the code outruns gets fixed eventually, usually by a senior engineer under deadline. Deferring the work raises its price; it never cancels it.', 'risk'],
+  ['Senior hours at senior rates', 'The people who understand a change are the most expensive people you employ. Every page they draft is a loaded engineering hour spent on work a pipeline can start for them.', 'money'],
+  ['Releases held at the door', 'Launches wait on drafting, or docs ship late and wrong. Either way the delay is paid for: by the release, or by the customers reading it.', 'time'],
+  ['Onboarding drag', 'New engineers ramp by reading. When the docs describe last quarter’s product, ramp time stretches by weeks: full salary at partial output.', 'money'],
+  ['Stale pages bill through support', 'A 404 quick start or an outdated screenshot converts directly into tickets, escalations, and evaluations that quietly end — none of it ever attributed to documentation.', 'money'],
+  ['Unretrievable means uncited', 'Buyers and users increasingly ask AI assistants first. Content that machines cannot parse and cite loses those moments to whoever wrote clearer pages.', 'risk']
 ];
+const CURRENCY_TAG = { time: 'tag--blue', money: 'tag--green', risk: 'tag--amber' };
+
+/* ===================================================================
+   Documentation cost estimator — every figure comes from the visitor's
+   own inputs. No savings claim is ever computed or displayed; only the
+   current-process estimate, the Docify price, and the break-even hours.
+   =================================================================== */
+const fmtUSD = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+function CalcField({ label, note, value, onChange, min, max, step = 1, prefix = '', suffix = '' }) {
+  return (
+    <div className="calcfield">
+      <div className="row row--between" style={{ alignItems: 'baseline', gap: 12 }}>
+        <label className="label01">{label}</label>
+        <span className="calcval mono">{prefix}{value.toLocaleString('en-US')}{suffix}</span>
+      </div>
+      <input type="range" className="calcrange" min={min} max={max} step={step} value={value}
+        aria-label={label} onChange={(e) => onChange(Number(e.target.value))} />
+      <p className="helper t2">{note}</p>
+    </div>
+  );
+}
+
+function CostCalculator() {
+  const [people, setPeople] = useState(5);
+  const [releases, setReleases] = useState(4);
+  const [hours, setHours] = useState(11);
+  const [rate, setRate] = useState(95);
+  const [annual, setAnnual] = useState(true);
+  const seat = annual ? 26 : 32;
+  const current = releases * hours * rate;
+  const docify = people * seat;
+  const breakevenH = docify / rate;
+  const breakevenLabel = breakevenH >= 1
+    ? breakevenH.toFixed(breakevenH >= 10 ? 0 : 1) + ' hours'
+    : Math.max(1, Math.round(breakevenH * 60)) + ' minutes';
+  const monthlyHours = releases * hours;
+  const maxBar = Math.max(current, docify, 1);
+  return (
+    <div className="calc" role="group" aria-label="Documentation cost estimator">
+      <div className="calcgrid">
+        <div className="calcinputs">
+          <p className="label01 t2 mb4">YOUR NUMBERS — EVERY ONE AN ADJUSTABLE ASSUMPTION</p>
+          <CalcField label="People who touch documentation" note="Seats you would licence — engineers plus writers."
+            value={people} onChange={setPeople} min={1} max={50} />
+          <CalcField label="Releases per month" note="Merges that change customer-visible behaviour."
+            value={releases} onChange={setReleases} min={1} max={30} />
+          <CalcField label="Team hours on docs per release" note="11 is our internal working assumption, not a measured customer result. Adjust it to your reality."
+            value={hours} onChange={setHours} min={1} max={40} suffix=" hrs" />
+          <CalcField label="Loaded hourly cost" note="Loaded = salary plus benefits and overhead. Senior engineers are typically ~$75–120/hr."
+            value={rate} onChange={setRate} min={50} max={200} step={5} prefix="$" />
+        </div>
+        <div className="calcout">
+          <div className="calcrow">
+            <div className="calctile">
+              <p className="label01 t2">YOUR CURRENT PROCESS</p>
+              <p className="calcnum mono">{fmtUSD(current)}<span className="calcper">/month</span></p>
+              <p className="helper t2 mono">{releases} releases × {hours} hrs × {fmtUSD(rate)}</p>
+              <div className="calcbar"><div style={{ width: (current / maxBar) * 100 + '%' }} /></div>
+              <p className="helper t2">Your estimate, from your inputs.</p>
+            </div>
+            <div className="calctile calctile--docify">
+              <p className="label01 t2">DOCIFY TEAM, SAME PEOPLE</p>
+              <p className="calcnum mono">{fmtUSD(docify)}<span className="calcper">/month</span></p>
+              <p className="helper t2 mono">{people} {people === 1 ? 'seat' : 'seats'} × ${seat}
+                <button className="calccycle" onClick={() => setAnnual((v) => !v)}>
+                  {annual ? 'annual billing · see monthly' : 'monthly billing · see annual'}
+                </button>
+              </p>
+              <div className="calcbar"><div className="ok" style={{ width: Math.max((docify / maxBar) * 100, 1.5) + '%' }} /></div>
+              <p className="helper t2">List price. No usage maths, no hidden tiers.</p>
+            </div>
+          </div>
+          <div className="calcverdict">
+            <p className="body01">
+              At {fmtUSD(rate)}/hour, Docify’s {fmtUSD(docify)}/month equals{' '}
+              <strong className="mono">{breakevenLabel}</strong> of your team’s time
+              <span className="t2"> ({fmtUSD(docify)} ÷ {fmtUSD(rate)})</span>. Your current process
+              above runs <strong className="mono">{monthlyHours} hours</strong> a month. If Docify
+              gives back more than {breakevenLabel} of those, the subscription is covered — measure
+              it on the free plan.
+            </p>
+          </div>
+        </div>
+      </div>
+      <p className="helper t2 mt5" style={{ maxWidth: 720 }}>
+        Every figure above comes from your inputs, not from measurements of ours. The defaults are
+        industry-typical planning assumptions. Docify is new and we do not yet publish customer
+        outcomes, so we will not dress modelled arithmetic up as evidence. Adjust anything; the
+        totals update.
+      </p>
+    </div>
+  );
+}
 
 export default function Landing() {
   usePageMeta({
     title: 'Docify — Automated Technical Documentation from GitHub, GitLab & Bitbucket',
-    description: 'Docify keeps documentation aligned with every meaningful product change: connect GitHub, GitLab, or Bitbucket, generate or auto-update docs from your code, validate quality, style, links, and AI-search readiness, review and approve changes, and export to Markdown, PDF, Word, HTML, and DITA.',
+    description: 'Manual documentation drains engineering hours every release and delays shipping. Docify connects GitHub, GitLab, or Bitbucket read-only, updates the affected docs on merge, gates quality before publish, keeps a human approving every change, and exports to Markdown, PDF, Word, HTML, and DITA.',
     path: '/'
   });
   const nav = useNavigate();
@@ -464,7 +569,7 @@ export default function Landing() {
     ld.text = JSON.stringify({
       '@context': 'https://schema.org', '@type': 'SoftwareApplication',
       name: 'Docify', applicationCategory: 'DeveloperApplication', operatingSystem: 'Web',
-      description: 'Automated technical documentation from GitHub, GitLab, and Bitbucket — generate, auto-update, validate quality and AI-search readiness, review and approve, and export.',
+      description: 'Cuts the engineering cost of keeping documentation current: generates and auto-updates docs from GitHub, GitLab, and Bitbucket on merge, validates quality and AI-search readiness, and keeps a human approving every change.',
       url: 'https://docifydocai.com/', offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
     });
     document.head.appendChild(ld);
@@ -480,42 +585,75 @@ export default function Landing() {
         <div className="gridlines" />
         <div className="heroinner">
           <div>
-            <p className="eyebrow mb3">DOCIFY · DOCUMENTATION THAT KEEPS UP</p>
-            <h1 className="display">Documentation that stays aligned with every meaningful product change.</h1>
+            <p className="eyebrow mb3">DOCIFY · CUT THE COST OF KEEPING DOCS CURRENT</p>
+            <h1 className="display">Your code already knows what the docs should say. Let it do the writing.</h1>
             <p className="lead t2 mt5" style={{ maxWidth: 560 }}>
-              Docify connects the repositories your team already uses, generates or updates the right
-              documentation when your product changes, validates its quality and AI-search readiness,
-              and keeps approved content current — with a human in control at every step.
+              Documentation is usually paid for in engineering hours: tracking changes, rewriting pages,
+              chasing reviews, at loaded rates of roughly $75–120 an hour. Docify connects your
+              repositories, generates and updates documentation automatically when the product changes,
+              holds it to a quality gate, and keeps a human on every approval. The hours go down;
+              the standard doesn’t.
             </p>
             <div className="row mt7" style={{ flexWrap: 'wrap' }}>
-              <button className="btn btn--primary" onClick={() => nav('/signup')}>Start generating<span className="ico">→</span></button>
-              <button className="btn btn--ghostdark" onClick={() => nav('/automation')}>Explore automation</button>
+              <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free — 5 documents<span className="ico">→</span></button>
+              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('cost'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Estimate your cost</button>
               <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('automate'); if (el) el.scrollIntoView(); }}>Watch the workflow</button>
             </div>
             <p className="helper mt5" style={{ color: '#8d8d8d' }}>
-              Read-only access · your source code is never stored · no credit card required
+              Read-only access · your source code is never stored · free plan includes 5 generations · no credit card required
             </p>
           </div>
           <HeroVisual />
         </div>
       </section>
 
-      {/* 2 · The problem */}
+      {/* 2 · The cost of the status quo — the estimator */}
+      <div className="page" id="cost" style={{ paddingTop: 72, paddingBottom: 0 }}>
+        <Reveal>
+          <p className="eyebrow eyebrow--blue mb3">THE COST OF THE STATUS QUO</p>
+          <h2 className="feathead" style={{ maxWidth: 720 }}>What does your current documentation process cost?</h2>
+          <p className="lead t2 mt5" style={{ maxWidth: 660 }}>
+            Nobody signs an invoice for manual documentation, which is why it rarely comes up in a
+            cost review. The spend is real all the same: engineers re-reading code they understood
+            at merge time, releases queued behind writing, questions routed to the busiest people on
+            the team, new hires ramping on pages that describe last quarter’s product. Put your own
+            numbers in below and see what it adds up to.
+          </p>
+        </Reveal>
+        <Reveal delay={100}><div className="mt6"><CostCalculator /></div></Reveal>
+        <div className="grid3 mt6" style={{ alignItems: 'stretch' }}>
+          {[['What one release costs', 'At a typical loaded rate of $75–120/hr and 11 hours of documentation work, a single release carries $825–$1,320 in engineering time before anyone reviews a word. Typical figures, not measured results.'],
+            ['What break-even looks like', 'A Docify seat is $26 per month on the annual plan — roughly 13 to 21 minutes of one engineer’s loaded time at typical rates. If automation returns half an hour per user per month, the seat is covered. That is arithmetic, not a case study.'],
+            ['What never gets invoiced', 'Stale pages do not send a bill. They collect payment through support tickets, longer onboarding, abandoned evaluations, and audit findings — costs that renew with every release you ship, and never appear attributed to documentation.']].map(([t, d], i) => (
+            <Reveal key={t} delay={i * 80}>
+              <div className="tile valtile" style={{ padding: 22, height: '100%' }}>
+                <p className="h02">{t}</p>
+                <p className="body01 t2 mt3">{d}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+
+      {/* 3 · The problem */}
       <div className="page" id="overview" style={{ paddingTop: 72, paddingBottom: 0 }}>
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">THE PROBLEM</p>
-          <h2 className="feathead" style={{ maxWidth: 720 }}>Software changes continuously. Documentation can’t keep up by hand.</h2>
+          <h2 className="feathead" style={{ maxWidth: 720 }}>Why documentation falls behind — and what that quietly costs</h2>
           <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
-            Teams can’t manually track every change, decide what customers need to know, rewrite the
-            affected pages, and hold the quality bar — on every release. So docs fall behind, and both
-            people and AI assistants lose trust in them.
+            No team can manually track every change, decide what customers need to know, rewrite the
+            affected pages, and hold the quality bar on every release. So the work lands on engineers,
+            and the cost shows up in three currencies: time, money, and risk.
           </p>
         </Reveal>
         <div className="grid3 mt7" style={{ alignItems: 'stretch' }}>
-          {PROBLEMS.map(([t, d], i) => (
+          {PROBLEMS.map(([t, d, cur], i) => (
             <Reveal key={t} delay={i * 70}>
               <div className="tile valtile" style={{ padding: 22, height: '100%' }}>
-                <p className="h02">{t}</p>
+                <div className="row row--between" style={{ alignItems: 'baseline', gap: 12 }}>
+                  <p className="h02">{t}</p>
+                  <span className={'tag ' + CURRENCY_TAG[cur]}>{cur}</span>
+                </div>
                 <p className="body01 t2 mt3">{d}</p>
               </div>
             </Reveal>
@@ -526,9 +664,9 @@ export default function Landing() {
             <p className="label01 t2 mb3">WHAT DOCIFY DOES</p>
             <p className="deftext">
               Docify connects your repositories, identifies the changes that matter to customers,
-              generates or updates the correct documentation, validates quality, style, links, and
-              AI readiness, and lets your team review, rewrite, compare, and approve — then exports,
-              publishes, and keeps it current.
+              updates the correct documentation, validates quality, style, links, and AI readiness,
+              and lets your team review and approve — so the recurring cost of keeping docs true
+              stops being paid in engineering hours.
             </p>
           </div>
         </Reveal>
@@ -543,11 +681,13 @@ export default function Landing() {
               <p className="eyebrow eyebrow--blue mb3">CONNECT YOUR ECOSYSTEM</p>
               <h2 className="feathead">One place for every repository you document</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
-                Connect GitHub, GitLab, and Bitbucket — multiple accounts, organisations, groups, and
-                workspaces, public or private — and manage them from one central catalogue. Connection
-                health is visible at a glance, and the same repository selection is reusable across
-                generation, automation, and standardization. Access is read-only, and your source is
-                never stored.
+                The first cost of documentation is finding the source: which repository, which
+                organisation, which account. Docify removes that overhead once. Connect GitHub,
+                GitLab, and Bitbucket — multiple accounts, organisations, groups, and workspaces,
+                public or private — into one central catalogue with connection health at a glance,
+                reusable across generation, automation, and standardization. Access is read-only and
+                your source is never stored, so there is no security review standing between your
+                team and starting.
               </p>
               <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
                 {PROVIDERS.map((p) => <span key={p} className="tag tag--outline">{p}</span>)}
@@ -567,11 +707,13 @@ export default function Landing() {
           <div className="featrow">
             <div>
               <p className="eyebrow eyebrow--blue mb3">GENERATE ON DEMAND</p>
-              <h2 className="feathead">Guided generation, from source to export</h2>
+              <h2 className="feathead">The blank page is the most expensive page</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
-                Select your sources, choose a document type, pick one or several output formats, and
-                generate. Preview each format separately, run the AI quality review, edit inline, and
-                export — every document written in one governed voice, held to an open standard.
+                A first draft written by an engineer is senior time spent on excavation and structure,
+                not the product. Docify writes that draft from your real code. Select sources, choose
+                a document type, pick one or several output formats, and generate; preview each format
+                separately, run the AI quality review, edit inline, and export. The excavation hours
+                go away; the judgement stays with your team.
               </p>
               <ol className="flowsteps mt5" aria-label="Generation workflow">
                 {[['1', 'Select sources', 'Repositories, endpoints, and issues from your catalogue'],
@@ -612,12 +754,13 @@ export default function Landing() {
         <Reveal>
           <SeriesMeter step={2} />
           <p className="eyebrow eyebrow--blue mb3">AUTOMATE MEANINGFUL CHANGES</p>
-          <h2 className="feathead">A merge lands — the right documentation follows</h2>
+          <h2 className="feathead">This is where the per-release cost actually falls</h2>
           <p className="lead t2 mt3" style={{ maxWidth: 660 }}>
-            Docify does not blindly turn every code line into documentation. It decides what’s meaningful
-            to customers using repository rules, include/exclude patterns, metadata, and AI reasoning —
-            then updates the existing document at the best-matching section, validates it in the
-            background, and either auto-publishes or holds it for approval.
+            A webhook fires on merge. A relevance filter decides whether customers are affected and
+            skips internal-only changes, so nobody pays to document a refactor. The affected section
+            of the existing document is updated in place, never duplicated. A quality gate scores the
+            result, then it either auto-publishes or waits for a human. The documentation toll on each
+            release shrinks to the minutes it takes to approve.
           </p>
           <ol className="flowsteps" aria-label="Workflow after a merge">
             {[['1', 'Change lands', 'Webhook fires on a push or merged pull request'],
@@ -649,11 +792,12 @@ export default function Landing() {
               <p className="eyebrow eyebrow--blue mb3">HUMAN CONTROL</p>
               <h2 className="feathead">AI proposes. Your team decides.</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
-                Automatic fixes arrive as proposed changes, never silent overwrites. Select any word,
-                sentence, paragraph, or section and edit it manually, ask AI to rewrite it, apply a
-                different style guide, or compare alternatives. Accept or reject each change, add
-                comments, request changes, or approve and publish — with inline and side-by-side diffs,
-                undo/redo, and a full audit trail. It’s governance, not just generation.
+                Unreviewed automation is a risk you pay for later; re-reviewing whole documents is time
+                you pay for now. Docify charges neither. Every automatic change arrives as a proposal
+                with inline and side-by-side diffs, so reviewers read what changed, not the entire
+                document. Edit any span manually, ask AI to rewrite it, apply a style guide, accept,
+                reject, comment, request changes, or approve and publish — every decision versioned in
+                a full audit trail.
               </p>
               <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
                 {['Accept / reject', 'Manual edit', 'AI rewrite', 'Apply a style guide', 'Compare versions', 'Comments', 'Request changes', 'Approve & publish'].map((c) => (
@@ -671,13 +815,14 @@ export default function Landing() {
           <div className="featrow">
             <div>
               <p className="eyebrow eyebrow--blue mb3">STANDARDIZE AT SCALE</p>
-              <h2 className="feathead">One house style across every project and author</h2>
+              <h2 className="feathead">Inconsistency is rework on an instalment plan</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
-                Take documentation written by anyone, in any state, and rebuild it to one consistent
-                standard. Apply reusable style guides and terminology, organisation and repository
-                rules, and your own custom instruction files. In the hybrid editor you can select any
-                span and improve clarity, change tone, shorten or expand, or apply a chosen style guide —
-                and every edit, manual or AI, tracks in a single unified diff.
+                Every off-style page gets paid for again when someone fixes it. Standardize retires
+                that debt continuously instead. Rebuild documentation written by anyone, in any state,
+                to one house standard using reusable style guides, terminology rules, organisation and
+                repository rules, and your own instruction files. In the hybrid editor, select any span
+                and improve clarity, change tone, or apply a chosen style guide — every edit, manual or
+                AI, tracked in a single unified diff.
               </p>
               <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
                 {['Reusable style guides', 'Terminology rules', 'Org & repo rules', 'Custom instruction files', 'Unified diff'].map((c) => (
@@ -700,11 +845,12 @@ export default function Landing() {
               <p className="eyebrow eyebrow--blue mb3">QUALITY & AI READINESS</p>
               <h2 className="feathead">Validated before it ships — and readable by machines</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
-                Every document is scored by an AI judge across weighted dimensions, each finding paired
-                with a fix and a projected gain, and blocked by a quality gate if it falls short. Docify
-                also evaluates AI-search readiness — the structure, metadata, clarity, and completeness
-                that help assistants find and cite your content. It’s a readiness signal you can improve,
-                not a guarantee of ranking on any platform.
+                Publishing an error costs more than catching it; being invisible to assistants costs
+                quietly. Docify scores every document across weighted dimensions, pairs each finding
+                with a one-click fix and a projected gain, and holds anything below the gate. It also
+                models AI search readiness — how well assistants such as ChatGPT, Claude, and Gemini
+                can find and cite the content. It is a signal you can improve, deliberately capped
+                below 100% — never a ranking promise, and we will not sell it as one.
               </p>
             </div>
           </div>
@@ -760,12 +906,13 @@ export default function Landing() {
           <div className="featrow">
             <div>
               <p className="eyebrow eyebrow--blue mb3">DOCUMENTS & HISTORY</p>
-              <h2 className="feathead">The complete documentation lifecycle, not a one-off</h2>
+              <h2 className="feathead">“Which version is live, and who approved it?” becomes a lookup</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
-                Every generated and corrected document lives in one Documents dashboard. See approval
-                status and the audit trail, browse previous versions, compare old and new side by side,
-                and restore any version. Approved content flows back into automation — so the pipeline
-                always builds on the version your team signed off.
+                Your team currently answers that question by archaeology, at engineering rates. In
+                Docify every document carries its approval status, full version history, side-by-side
+                comparisons, one-click restore, and a complete audit trail of who changed what and who
+                signed it off. Approved content flows back into automation — so the pipeline always
+                builds on the version your team signed off.
               </p>
               <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
                 {['Version history', 'Compare versions', 'Restore', 'Approval status', 'Audit trail', 'Reuse in automation'].map((c) => (
@@ -787,10 +934,11 @@ export default function Landing() {
               <p className="eyebrow eyebrow--blue mb3">MANAGEMENT REPORTING</p>
               <h2 className="feathead">A management-ready quality report, in one click</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
-                Export the full AI Quality Report as PDF, HTML, or PowerPoint — one data source, three
-                formats. Each includes an executive summary, score breakdown, quality findings,
-                broken-link analysis, style compliance, applied fixes, remaining risks, and a
-                publish-readiness decision. Built for technical teams and senior management alike.
+                Status decks about documentation are documentation work too — usually a manager’s
+                afternoon. Docify exports the full AI Quality Report as PDF, HTML, or PowerPoint in
+                one click: executive summary, score breakdown, findings, broken-link analysis, style
+                compliance, applied fixes, remaining risks, and a publish-readiness decision. One data
+                source, three formats, zero assembly.
               </p>
               <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <span className="tag tag--outline">PDF</span>
@@ -809,9 +957,9 @@ export default function Landing() {
         <div className="page" style={{ padding: '0 24px' }}>
           <Reveal>
             <div className="grid3">
-              <div><p className="metricnum"><CountUp to={3} suffix=" providers" /></p><p className="body01 t2 mt3">GitHub, GitLab, and Bitbucket — multiple accounts, orgs, groups, and workspaces from one catalogue.</p></div>
-              <div><p className="metricnum"><CountUp to={7} suffix=" formats" /></p><p className="body01 t2 mt3">Markdown, PDF, Word, HTML, DITA, DocBook, and ePub — previewed and exported separately.</p></div>
-              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Documents below the quality gate reach customers — they’re held for review, not published.</p></div>
+              <div><p className="metricnum">≥ <CountUp to={85} /></p><p className="body01 t2 mt3">The quality score a document must reach before the gate allows it to publish. Below the bar, it waits for a human, not a customer.</p></div>
+              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Lines of your source code stored. Repositories are read at generation time through a read-only grant you can revoke, and discarded.</p></div>
+              <div><p className="metricnum">$<CountUp to={26} /></p><p className="body01 t2 mt3">Per user per month on the annual Team plan — list price, with a free plan to test on a real release first. The estimator above compares it with your current process.</p></div>
             </div>
           </Reveal>
         </div>
@@ -844,15 +992,15 @@ export default function Landing() {
       <div className="page" id="teams" style={{ paddingTop: 0, paddingBottom: 56 }}>
         <Reveal>
           <p className="eyebrow eyebrow--blue mb3">VALUE, ROLE BY ROLE</p>
-          <h2 className="feathead mb6">Built for the whole documentation lifecycle</h2>
+          <h2 className="feathead mb6">What each role gets back</h2>
         </Reveal>
         <div className="grid3" style={{ alignItems: 'stretch' }}>
-          {[['Developers', 'Merge code — the affected docs update automatically. No manual writing tax.'],
-            ['Technical writers', 'Source is gathered and drafted for you; you review, rewrite, and refine — not excavate.'],
-            ['Documentation managers', 'Scores, gates, approvals, and run history: visibility and governance across every team.'],
-            ['Product teams', 'Releases and their documentation ship together, filtered to what customers actually need.'],
-            ['Engineering leaders', 'A consistent quality bar and audit trail across every repo and author.'],
-            ['Governance & compliance', 'Read-only access, versioned approvals, and management-ready quality reports.']].map(([t, d], i) => (
+          {[['Developers', 'Merge your code and move on. The affected section updates itself, and you review a short diff instead of drafting a page.'],
+            ['Technical writers', 'Source arrives gathered and drafted. Your time goes to judgement, structure, and voice — the work you were actually hired for.'],
+            ['Documentation managers', 'Scores, gates, run history, and approval status give you visibility without the weekly status-chasing round.'],
+            ['Product teams', 'Releases and their documentation ship together, filtered to what customers actually need to know.'],
+            ['Engineering leaders', 'One quality bar and one audit trail across every repository and author — without senior hours going to routine drafting.'],
+            ['Governance & compliance', 'Read-only access, versioned approvals, and exportable quality reports are the default state, not a scramble before each audit.']].map(([t, d], i) => (
             <Reveal key={t} delay={i * 80}>
               <div className="tile valtile" style={{ padding: 24, height: '100%' }}>
                 <p className="h02">{t}</p>
@@ -895,10 +1043,15 @@ export default function Landing() {
         <div style={{ maxWidth: 1056, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
             <p className="eyebrow mb3">GET STARTED</p>
-            <h2 className="h04" style={{ color: '#fff', maxWidth: 640 }}>Your product keeps changing. Your documentation can keep up.</h2>
+            <h2 className="h04" style={{ color: '#fff', maxWidth: 680 }}>Documentation will always take time. It doesn’t have to take this much.</h2>
+            <p className="helper mt4" style={{ color: '#c6c6c6', maxWidth: 640, lineHeight: 1.6 }}>
+              Run the estimator with your own figures, then test the output on your own repository —
+              five free generations, no credit card. If the numbers work, Docify Team is $26 per user
+              per month billed annually ($32 monthly).
+            </p>
             <div className="row mt6" style={{ flexWrap: 'wrap' }}>
-              <button className="btn btn--primary" onClick={() => nav('/signup')}>Start generating<span className="ico">→</span></button>
-              <button className="btn btn--ghostdark" onClick={() => nav('/automation')}>Explore automation</button>
+              <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free — 5 documents<span className="ico">→</span></button>
+              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('cost'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Estimate your cost</button>
             </div>
           </Reveal>
         </div>
