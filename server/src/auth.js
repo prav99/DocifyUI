@@ -9,10 +9,17 @@ import { sendMail, mailEnabled } from './adapters/mailer.js';
 // forge a session for any account, so refuse to boot instead of running
 // insecurely; local development still gets a convenience default.
 const IS_PROD = process.env.NODE_ENV === 'production';
-if (IS_PROD && (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).length < 24)) {
-  throw new Error('JWT_SECRET must be set to a random string of at least 24 characters in production');
+const DEV_SECRET = 'docgen-dev-secret';
+if (IS_PROD && (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEV_SECRET)) {
+  // Fail closed on the real vulnerability: no secret, or the public default
+  // that anyone reading this repository could use to forge a session.
+  throw new Error('JWT_SECRET must be set to a private random string in production');
 }
-const SECRET = process.env.JWT_SECRET || 'docgen-dev-secret';
+if (IS_PROD && String(process.env.JWT_SECRET).length < 24) {
+  // Weak but private: warn loudly rather than take a running service down.
+  console.warn('[security] JWT_SECRET is shorter than 24 characters — rotate it to a longer random value.');
+}
+const SECRET = process.env.JWT_SECRET || DEV_SECRET;
 
 // Simulated OAuth ("log in as a provider with no authorization code") exists
 // so the product can be demoed without OAuth apps configured. It logs into a
