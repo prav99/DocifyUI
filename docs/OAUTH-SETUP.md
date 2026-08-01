@@ -1,8 +1,14 @@
 # Docify — Real OAuth Setup Runbook
 
-**Goal:** turn on real GitHub / GitLab / Bitbucket sign-in on the live site
-(`https://docifydocai.com`), so users authenticate through the provider and
-Docify reads *their* repositories instead of the built-in demo account.
+**Goal:** turn on real Google / GitHub / GitLab / Bitbucket sign-in on the live
+site (`https://docifydocai.com`), so users authenticate through the provider
+and Docify reads *their* repositories instead of the built-in demo account.
+
+> **Google is different from the code hosts.** "Continue with Google" is
+> sign-in only: it authenticates the person (OpenID Connect, `openid email
+> profile` scopes), creates or matches their account by verified email, and
+> stores **no** Google tokens. It never touches repositories — ideal for
+> executives and evaluators who want to explore before connecting a code host.
 
 ## Why this is needed (read first)
 
@@ -30,6 +36,7 @@ that part.
 | Thing | Value |
 |---|---|
 | Production URL | `https://docifydocai.com` |
+| Google redirect URI | `https://docifydocai.com/api/auth/google/callback` |
 | GitHub callback URL | `https://docifydocai.com/api/auth/github/callback` |
 | GitLab callback URL | `https://docifydocai.com/api/auth/gitlab/callback` |
 | Bitbucket callback URL | `https://docifydocai.com/api/auth/bitbucket/callback` |
@@ -37,6 +44,26 @@ that part.
 ---
 
 ## Step 1 — Register the OAuth apps
+
+### Google
+1. Go to **Google Cloud Console → APIs & Services**
+   (`https://console.cloud.google.com/apis/credentials`). Create a project
+   (e.g. "Docify") if you don't have one.
+2. First configure the **OAuth consent screen** (Branding):
+   - **User type:** External
+   - **App name:** Docify · **Support email:** your support address
+   - **Authorized domain:** `docifydocai.com`
+   - Scopes: only the non-sensitive defaults (`openid`, `email`, `profile`) —
+     nothing to add manually; **do not** request any Drive/Gmail scopes.
+   - Publish the app (leaving it in "Testing" limits sign-in to allowlisted
+     test accounts and shows scary warnings to everyone else).
+3. Then **Credentials → Create credentials → OAuth client ID**:
+   - **Application type:** Web application
+   - **Name:** Docify Web
+   - **Authorized JavaScript origins:** `https://docifydocai.com`
+   - **Authorized redirect URIs:** `https://docifydocai.com/api/auth/google/callback`
+     (for local development also add `http://localhost:4000/api/auth/google/callback`)
+4. Copy the **Client ID** and **Client secret**.
 
 ### GitHub
 1. Go to **GitHub → Settings → Developer settings → OAuth Apps → New OAuth App**
@@ -89,6 +116,8 @@ Open your Docify service in Railway → **Variables** tab → add these.
 
 | Variable | From |
 |---|---|
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `GITHUB_CLIENT_ID` | GitHub Client ID |
 | `GITHUB_CLIENT_SECRET` | GitHub Client secret |
 | `GITLAB_CLIENT_ID` | GitLab Application ID |
@@ -125,7 +154,11 @@ been committed or pushed automatically.)
 ## Step 4 — Verify it works
 
 1. Open `https://docifydocai.com/api/auth/providers` in a browser. You should see
-   `true` for each provider you configured, e.g. `{"github":true,...}`.
+   `true` for each provider you configured, e.g. `{"github":true,"google":true,...}`.
+   - **Google:** on the signup page click **Continue with Google**, pick an
+     account, and you should land on the dashboard signed in. Check
+     Settings → Sign-in & security shows Google as connected. No repository
+     source should appear anywhere (Google is sign-in only).
 2. Go to the sign-in page, click **Continue with GitHub**. You should now be
    redirected to **github.com** to authorize Docify (this is the step that was
    missing before).

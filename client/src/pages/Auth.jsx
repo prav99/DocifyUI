@@ -9,9 +9,13 @@ import posthog from '../posthog.js';
 
 // Detect which providers have REAL OAuth configured on the server.
 function useProviders() {
-  const [prov, setProv] = useState({ github: false });
+  // `ready` distinguishes "the server says Google is off" from "we haven't
+  // asked yet" — without it, an early click shows a false "not configured".
+  const [prov, setProv] = useState({ github: false, ready: false });
   useEffect(() => {
-    api('/auth/providers').then(setProv).catch(() => {});
+    api('/auth/providers')
+      .then((p) => setProv({ ...p, ready: true }))
+      .catch(() => setProv((p) => ({ ...p, ready: true })));
   }, []);
   return prov;
 }
@@ -22,6 +26,32 @@ const PROVIDERS = [
   { id: 'bitbucket', mark: 'BB', name: 'Continue with Bitbucket', sub: 'Atlassian workspaces' }
 ];
 
+// Official Google "G" (branding guidelines require the four-color mark).
+export const GoogleG = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+  </svg>
+);
+
+// One-click sign-in for evaluators and business users — no GitHub account or
+// password needed. Rendered on both the signup and login modes.
+export function GoogleButton({ busy, ready = true, onClick, label = 'Continue with Google' }) {
+  // Disabled until the provider list has loaded: an enabled button whose click
+  // does nothing reads as a broken page.
+  const pending = busy || !ready;
+  const text = busy ? 'Redirecting to Google…' : label;
+  return (
+    <button type="button" className="gbtn" disabled={pending} onClick={onClick}
+      aria-label={text} aria-busy={pending || undefined}>
+      {pending ? <span className="gspin" aria-hidden="true" /> : <GoogleG />}
+      <span>{text}</span>
+    </button>
+  );
+}
+
 const VALUE_POINTS = [
   'One authorization — sign-in and source access in a single step',
   'Read-only scope: repository contents and commit history, nothing more',
@@ -31,7 +61,7 @@ const VALUE_POINTS = [
 export function Signup() {
   usePageMeta({
     title: 'Start Free — Create Your Account',
-    description: 'Sign up with GitHub, GitLab, or Bitbucket in one step. Your first verified document is about three minutes away. Free plan, no credit card required.',
+    description: 'Sign up with Google in one click, or with GitHub, GitLab, or Bitbucket in one step. Your first verified document is about three minutes away. Free plan, no credit card required.',
     path: '/signup'
   });
   const nav = useNavigate();
@@ -48,6 +78,7 @@ export function Signup() {
   const [sentTo, setSentTo] = useState(''); // verification code sent to this address
   const [otp, setOtp] = useState('');
   const [needOtp, setNeedOtp] = useState(false); // login path: account exists but is unverified
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   // Entry points: TopBar "Login" arrives as /signup#login; the email
   // verification link arrives as #verified=1|0 (redirected from /login).
@@ -60,6 +91,15 @@ export function Signup() {
     if (v === '1') toast('success', 'Email verified', 'Your account is active — log in below');
     if (v === '0') toast('error', 'Verification link invalid', 'It may have expired — sign up again or resend');
     window.history.replaceState(null, '', '/signup');
+  }, []);
+
+  // Coming back from the provider with the browser Back button restores this
+  // page from the bfcache with its old state — the button would otherwise
+  // stay disabled on "Redirecting to Google…" forever.
+  useEffect(() => {
+    const restore = (e) => { if (e.persisted) setGoogleBusy(false); };
+    window.addEventListener('pageshow', restore);
+    return () => window.removeEventListener('pageshow', restore);
   }, []);
 
   const validEmail = /.+@.+\..+/.test(email);
@@ -86,6 +126,25 @@ export function Signup() {
     // set in the deployment environment (see docs/OAUTH-SETUP.md).
     toast('error', label + ' sign-in isn’t available yet',
       label + ' OAuth has not been configured on the server. Use email sign-up below, or ask an administrator to connect ' + label + '.');
+  }
+
+  function googleAuth() {
+    if (!providers.ready) return; // button is disabled until then — never a silent no-op
+    if (!providers.google) {
+      // Same fail-honest pattern as the code hosts: never fabricate a session.
+      toast('error', 'Google sign-in isn’t available yet',
+        'Google OAuth has not been configured on the server. Use email below, or ask an administrator to enable it (see docs/OAUTH-SETUP.md).');
+      return;
+    }
+    // Write the destination on every attempt — including clearing it when
+    // there is none, so an abandoned earlier attempt cannot redirect this one.
+    try {
+      if (dest) sessionStorage.setItem('authDest', dest);
+      else sessionStorage.removeItem('authDest');
+    } catch { /* ignore */ }
+    posthog.capture('google_auth_started', { mode: authMode });
+    setGoogleBusy(true);
+    window.location.href = '/api/auth/oauth/google';
   }
 
   async function emailSignup() {
@@ -206,6 +265,8 @@ export function Signup() {
             </div>
             <p className="body01 t2 mt3">Log in to reach your dashboard, documents, and pipelines.</p>
             <div className="mt6">
+              <GoogleButton busy={googleBusy} ready={providers.ready} onClick={googleAuth} />
+              <div className="ordivider" role="separator" aria-label="or continue with email">or continue with email</div>
               <div className="field">
                 <label htmlFor="liEmail">Email</label>
                 <input id="liEmail" className="input" type="email" placeholder="you@company.com"
@@ -221,6 +282,12 @@ export function Signup() {
               <button className="btn btn--primary" style={{ width: '100%' }} disabled={busy} onClick={loginSubmit}>
                 Log in<span className="ico">→</span>
               </button>
+              {/* Shown unconditionally: the server deliberately will not say
+                  which method an address uses, so this must not depend on the
+                  entered email. */}
+              <p className="helper mt3">
+                Signed up with Google? Use <b>Continue with Google</b> above — a Google account has no password here until you set one.
+              </p>
               {needOtp && (
                 <div className="tile mt5" style={{ padding: 16 }}>
                   <p className="h01">Enter the verification code</p>
@@ -269,10 +336,15 @@ export function Signup() {
           <HelpLink topic="login" />
         </div>
         <p className="body01 t2 mt3">
-          Signing in with a code host also authorizes that source — one step instead of two.
+          Just exploring? Continue with Google — you can connect a code host whenever you&apos;re ready.
         </p>
 
-        <div className="seg mt6" role="tablist">
+        <div className="mt6">
+          <GoogleButton busy={googleBusy} ready={providers.ready} onClick={googleAuth} />
+        </div>
+        <div className="ordivider" role="separator" aria-label="or">or</div>
+
+        <div className="seg" role="tablist">
           <button role="tab" className={mode === 'oauth' ? 'on' : ''} onClick={() => setMode('oauth')}>
             With a code host
           </button>
@@ -294,6 +366,7 @@ export function Signup() {
               </button>
             ))}
             <p className="helper">
+              Signing in with a code host also authorizes that source — one step instead of two.
               We only request read access to repository contents and commit history. We never store your source code.
             </p>
           </div>
@@ -384,31 +457,81 @@ export function OAuthComplete() {
   const { login } = useAuth();
   const { setFlow } = useFlow();
   const [err, setErr] = useState('');
+  // Where to send the user after a FAILED attempt. A failed link attempt
+  // started from Settings must not dead-end an already-signed-in user on the
+  // signup form.
+  const [errBack, setErrBack] = useState({ to: '/signup', label: '← Back to signup' });
   useEffect(() => {
     const h = new URLSearchParams(window.location.hash.slice(1));
     const token = h.get('token');
     const error = h.get('error');
     const prov = h.get('provider') || 'github';
+    // kind=identity: a sign-in-only provider (Google). No repository source
+    // was authorized, so the source flow and its messaging don't apply.
+    const isIdentity = h.get('kind') === 'identity';
+    const isNew = h.get('new') === '1';
+    const isLink = h.get('linked') === '1';
+    // The server discarded a password that was set on this address before
+    // anyone had proven they own the mailbox. Say so — silently removing a
+    // sign-in method would look like a bug the next time they try it.
+    const pwReset = h.get('pwreset') === '1';
     const provName = prov.charAt(0).toUpperCase() + prov.slice(1);
     window.history.replaceState(null, '', '/oauth/complete'); // don't leave the token in history
-    if (error) { setErr(error); return; }
-    if (!token) { nav('/signup'); return; }
+    // A cancelled or failed attempt must not leave a destination behind: the
+    // next, unrelated sign-in would silently inherit it.
+    const takeDest = () => {
+      let d = '';
+      try { d = sessionStorage.getItem('authDest') || ''; sessionStorage.removeItem('authDest'); } catch { /* ignore */ }
+      return d;
+    };
+    if (error) {
+      const d = takeDest();
+      // The stash is the only reliable signal that this was a link attempt —
+      // a failed link and a failed sign-in produce the same hash otherwise.
+      if (d.startsWith('/settings')) setErrBack({ to: d, label: '← Back to settings' });
+      setErr(error);
+      return;
+    }
+    if (!token) { takeDest(); nav('/signup'); return; }
     setToken(token);
     api('/auth/me')
       .then((d) => {
         login(token, d.user);
         posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined, plan: d.user.plan || undefined });
+        const stashed = takeDest();
+        if (isIdentity) {
+          // Linking from Settings is neither a signup nor a login — the user
+          // was already authenticated.
+          posthog.capture(isLink ? 'identity_linked' : isNew ? 'signed_up' : 'logged_in', { method: prov });
+          if (isLink) {
+            toast('success', provName + ' connected', 'You can now sign in to this account with ' + provName);
+          } else if (isNew) {
+            toast('success', 'Welcome to Docify', 'Your account is ready — explore the dashboard to get started');
+          } else {
+            toast('success', 'Welcome back', 'Signed in with ' + provName);
+          }
+          if (pwReset) {
+            toast('warning', 'Password removed for your security',
+              'This address had a password set before it was verified. Set a new one in Settings → Sign-in & security.');
+          }
+          // Business evaluators land on the dashboard: its empty states walk
+          // them through the product, and repositories connect only when a
+          // workflow actually needs one.
+          nav(stashed || '/dashboard');
+          return;
+        }
         posthog.capture('oauth_completed', { provider: prov });
         setFlow((f) => ({
           autoSrc: true,
           sources: (f.sources || []).includes(prov) ? f.sources : [...(f.sources || []), prov]
         }));
         toast('success', provName + ' connected', 'Authorized as a read-only source');
-        let stashed = '';
-        try { stashed = sessionStorage.getItem('authDest') || ''; sessionStorage.removeItem('authDest'); } catch { /* ignore */ }
         nav(stashed || '/source');
       })
-      .catch(() => setErr('Could not complete sign-in — please try again.'));
+      .catch(() => {
+        takeDest(); // this attempt is over — don't leak the destination forward
+        setErr('Could not complete sign-in — please try again.');
+      });
   }, [nav, login]);
   return (
     <div className="page page--narrow">
@@ -416,7 +539,7 @@ export function OAuthComplete() {
         <>
           <h1 className="h04">Sign-in didn&apos;t complete</h1>
           <p className="body01 t2 mt3">{err}</p>
-          <p className="body01 mt5"><a onClick={() => nav('/signup')}>← Back to signup</a></p>
+          <p className="body01 mt5"><a onClick={() => nav(errBack.to)}>{errBack.label}</a></p>
         </>
       ) : (
         <p className="body01 t2">Completing sign-in…</p>

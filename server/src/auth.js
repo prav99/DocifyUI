@@ -174,21 +174,41 @@ async function fetchProfile(provider, token) {
 }
 
 export function sign(userId) {
-  return jwt.sign({ uid: userId }, SECRET, { expiresIn: '7d' });
+  return jwt.sign({ uid: userId, typ: 'session' }, SECRET, { expiresIn: '7d' });
+}
+
+// OAuth round-trip state is signed with a SEPARATE key derived from the
+// session secret. A state token must never be usable as a session token:
+// same-secret signing would make every anonymously-obtainable state a valid
+// bearer credential.
+const STATE_SECRET = crypto.createHmac('sha256', SECRET).update('docify-oauth-state-v1').digest('hex');
+export function signState(payload, expiresIn = '10m') {
+  return jwt.sign(payload, STATE_SECRET, { expiresIn });
+}
+export function verifyState(token) {
+  return jwt.verify(token, STATE_SECRET);
 }
 
 export function requireAuth(req, res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   try {
-    req.uid = jwt.verify(token, SECRET).uid;
+    const p = jwt.verify(token, SECRET);
+    // Only session tokens authenticate. Sessions issued before `typ` existed
+    // carry just {uid} and stay valid; anything with a non-session type, or
+    // without a subject, is rejected — a missing uid would otherwise reach
+    // Prisma as `where: { userId: undefined }`, which matches every row.
+    if (!p || !p.uid || (p.typ && p.typ !== 'session') || p.t || p.v) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    req.uid = p.uid;
     next();
   } catch {
     res.status(401).json({ error: 'Unauthorized' });
   }
 }
 
-async function bootstrapUser(user) {
+export async function bootstrapUser(user) {
   await prisma.automation.upsert({
     where: { userId: user.id },
     update: {},
@@ -211,19 +231,24 @@ function isAdminEmail(email) {
   return configured.includes(String(email || '').toLowerCase());
 }
 
-function publicUser(u) {
+export function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, oauthProvider: u.oauthProvider,
     emailVerified: !!u.emailVerified,
+    hasPassword: !!u.passwordHash,
     plan: u.plan, billingCycle: u.billingCycle, seats: u.seats,
     isAdmin: isAdminEmail(u.email)
   };
 }
 
+// Compared against when an account has no password, so every login attempt
+// costs the same bcrypt work regardless of which accounts exist.
+const DUMMY_HASH = bcrypt.hashSync('docify-timing-equalizer', 10);
+
 /* ---- Corporate signup policy (configurable via .env) ---- */
 const FREE_DOMAINS = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'proton.me', 'protonmail.com', 'gmx.com', 'mail.com'];
 
-function domainPolicyError(email) {
+export function domainPolicyError(email) {
   const domain = String(email).split('@')[1] || '';
   const allowed = (process.env.ALLOWED_EMAIL_DOMAINS || '')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -320,7 +345,10 @@ authRouter.post('/signup', async (req, res) => {
 authRouter.get('/verify', async (req, res) => {
   try {
     const { v } = jwt.verify(String(req.query.token || ''), SECRET);
-    await prisma.user.update({ where: { email: String(v) }, data: { emailVerified: true } });
+    await prisma.user.update({
+      where: { email: String(v) },
+      data: { emailVerified: true, emailVerifiedAt: new Date(), otpHash: '', otpExpires: null }
+    });
     res.redirect(CLIENT_ORIGIN + '/login#verified=1');
   } catch {
     res.redirect(CLIENT_ORIGIN + '/login#verified=0');
@@ -333,9 +361,12 @@ authRouter.post('/verify-otp', async (req, res) => {
   const code = String((req.body || {}).code || '').trim();
   const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
   if (!user) return res.status(400).json({ error: 'Unknown email — sign up first' });
-  if (user.emailVerified) {
-    await bootstrapUser(user);
-    return res.json({ token: sign(user.id), user: publicUser(user) });
+  // An already-verified account must NOT be handed a session just for knowing
+  // the address: that would make every passwordless account (Google sign-in,
+  // code-host sign-in) takeoverable by anyone who knows the email. A pending
+  // code is still honoured below, because entering it proves mailbox access.
+  if (user.emailVerified && !user.otpHash) {
+    return res.status(400).json({ error: 'This email is already verified — log in instead' });
   }
   if (!user.otpHash || !user.otpExpires || new Date(user.otpExpires) < new Date()) {
     return res.status(400).json({ error: 'Code expired — request a new one' });
@@ -350,7 +381,8 @@ authRouter.post('/verify-otp', async (req, res) => {
   }
   const updated = await prisma.user.update({
     where: { id: user.id },
-    data: { emailVerified: true, otpHash: '', otpExpires: null, otpAttempts: 0 }
+    // emailVerifiedAt records a REAL proof of mailbox access (see schema).
+    data: { emailVerified: true, emailVerifiedAt: new Date(), otpHash: '', otpExpires: null, otpAttempts: 0 }
   });
   await bootstrapUser(updated);
   res.json({ token: sign(updated.id), user: publicUser(updated) });
@@ -386,7 +418,19 @@ authRouter.post('/login', async (req, res) => {
   }
   const finalEmail = String(email || '').trim().toLowerCase();
   const user = await prisma.user.findUnique({ where: { email: finalEmail } });
-  if (!user || !user.passwordHash || !(await bcrypt.compare(String(password || ''), user.passwordHash))) {
+  // Always spend one bcrypt comparison, even when there is no hash to check.
+  // Returning early would make "no such account" and "Google-only account"
+  // measurably faster than a wrong password — a timing oracle that undoes the
+  // uniform error message below.
+  const hashToCheck = (user && user.passwordHash) || DUMMY_HASH;
+  const passwordOk = await bcrypt.compare(String(password || ''), hashToCheck);
+  if (!user || !user.passwordHash || !passwordOk) {
+    // Deliberately identical for "no such account", "wrong password", and
+    // "this account has no password" — naming the provider here would turn
+    // the login form into an account- and identity-provider oracle. The UI
+    // shows an unconditional "signed up with Google? use that button" hint
+    // instead, which tells the honest user the same thing without confirming
+    // anything to an attacker.
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   if (mailEnabled() && !user.emailVerified) {
@@ -397,15 +441,20 @@ authRouter.post('/login', async (req, res) => {
 });
 
 // Which providers have REAL OAuth configured (vs the simulated flow).
+// `google` is an identity provider handled in identity.js; its availability
+// is reported here so the client has one place to ask.
 authRouter.get('/providers', (req, res) => {
-  res.json({ github: realProv('github'), gitlab: realProv('gitlab'), bitbucket: realProv('bitbucket') });
+  res.json({
+    github: realProv('github'), gitlab: realProv('gitlab'), bitbucket: realProv('bitbucket'),
+    google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+  });
 });
 
 // Step 1 of real OAuth: send the user to the provider's consent screen.
 authRouter.get('/oauth/:provider(github|gitlab|bitbucket)', (req, res) => {
   const provider = req.params.provider;
   if (!realProv(provider)) return res.status(404).json({ error: provider + ' OAuth is not configured — see README' });
-  const state = jwt.sign({ t: 'oauth', p: provider }, SECRET, { expiresIn: '10m' });
+  const state = signState({ t: 'oauth', p: provider });
   res.redirect(authorizeUrl(provider, state));
 });
 
@@ -414,8 +463,8 @@ authRouter.get('/:provider(github|gitlab|bitbucket)/callback', async (req, res) 
   const provider = req.params.provider;
   try {
     const { code, state } = req.query;
-    const st = jwt.verify(String(state || ''), SECRET); // CSRF protection
-    if (st.p !== provider) throw new Error('State mismatch');
+    const st = verifyState(String(state || '')); // CSRF protection
+    if (st.t !== 'oauth' || st.p !== provider) throw new Error('State mismatch');
     const tok = await exchangeCode(provider, code);
     const accessToken = tok && tok.access_token;
     if (!accessToken) throw new Error((tok && tok.error_description) || 'Token exchange failed');

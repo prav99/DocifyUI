@@ -16,6 +16,9 @@ model User {
   name          String       @default("")
   passwordHash  String?
   emailVerified Boolean      @default(false)
+  // Set ONLY by a real verification event (email link or OTP). `emailVerified`
+  // alone is not proof: signup auto-verifies when SMTP is unconfigured.
+  emailVerifiedAt DateTime?
   otpHash       String       @default("") // bcrypt hash of the current signup OTP
   otpExpires    DateTime?
   otpAttempts   Int          @default(0)
@@ -31,6 +34,27 @@ model User {
   automation    Automation?
   profiles      AutomationProfile[]
   syncDocs      SyncDoc[]
+  identities    Identity[]
+}
+
+// A federated sign-in identity (Google today; Microsoft/Apple/Okta later).
+// Distinct from Source: identities authenticate the person and store NO
+// provider tokens; Sources authorize repository access and hold credentials.
+model Identity {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String // google | microsoft | apple | ...
+  subject   String // the provider's stable account id (OIDC `sub` claim)
+  email     String   @default("") // email as reported by the provider at link time
+  name      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@unique([provider, subject])
+  // One account per provider per user: without this a second linked Google
+  // account becomes a hidden sign-in path the Settings UI cannot revoke.
+  @@unique([userId, provider])
+  @@index([userId])
 }
 
 model Source {

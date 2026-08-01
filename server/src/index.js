@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authRouter } from './auth.js';
+import { identityRouter } from './identity.js';
 import { apiRouter } from './api.js';
 import { injectMeta, SITE_URL } from './seo-meta.js';
 
@@ -108,6 +109,14 @@ app.use('/api', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMI
 app.use('/api/auth/signup', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/login', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/verify-otp', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
+// Identity-provider (Google) sign-in and password management get the same
+// strict budget as the other credential endpoints. The limit belongs on the
+// flow's ENTRY point, not the callback: a 429 there would answer an
+// already-consented user with raw JSON instead of a friendly redirect, and
+// the callback is already gated by a signed, single-use state.
+app.use('/api/auth/oauth/google', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
+app.use('/api/auth/link/google', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
+app.use('/api/auth/set-password', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 // Model-spending routes: a much lower per-account ceiling so a single token
 // cannot fan out into an unbounded Anthropic bill. Runs after auth populates
 // req.uid (the apiRouter attaches it before these paths resolve).
@@ -122,6 +131,7 @@ app.use('/api/sync/documents', (req, res, next) => (
 // external monitors); this minimal liveness ping moved to /api/ping.
 app.get('/api/ping', (req, res) => res.json({ ok: true, service: 'docgen-api', pid: process.pid }));
 app.use('/api/auth', authRouter);
+app.use('/api/auth', identityRouter); // Google (and future IdP) sign-in — disjoint routes, same prefix
 app.use('/api', apiRouter);
 
 // Serve the built client in production (npm run build at repo root, then npm start).

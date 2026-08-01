@@ -22,7 +22,7 @@ export const PAGE_META = {
   },
   '/signup': {
     title: 'Start Free — Create Your Account | ' + SITE_NAME,
-    desc: 'Sign up with GitHub, GitLab, or Bitbucket in one step. Your first verified document is about three minutes away. Free plan, no credit card required.'
+    desc: 'Sign up with Google in one click, or with GitHub, GitLab, or Bitbucket in one step. Your first verified document is about three minutes away. Free plan, no credit card required.'
   },
   '/docs': {
     title: 'Product Docs & Guides | ' + SITE_NAME,

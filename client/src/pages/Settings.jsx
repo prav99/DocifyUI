@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
-import { toast } from '../store.jsx';
+import { toast, useAuth } from '../store.jsx';
 import { NavBar, SrcMark, HelpLink } from '../ui.jsx';
+import { GoogleG } from './Auth.jsx';
 
 export default function Settings() {
   const nav = useNavigate();
-  const [tab, setTab] = useState('sources');
+  const { refresh } = useAuth();
+  // /settings#account deep-links the security tab — where the Google linking
+  // round-trip returns to.
+  const [tab, setTab] = useState(() => (window.location.hash === '#account' ? 'account' : 'sources'));
   const [sources, setSources] = useState([]);
   const [members, setMembers] = useState([]);
   const [billing, setBilling] = useState(null);
@@ -14,11 +18,25 @@ export default function Settings() {
   // Organization writing profile — merged into every generation's policy.
   const [wp, setWp] = useState(null);
   const [wpBusy, setWpBusy] = useState(false);
+  // Sign-in & security: linked identities + password state.
+  const [sec, setSec] = useState(null);
+  const [secErr, setSecErr] = useState('');
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
+
+  // A failure must surface: silently swallowing it leaves the tab on
+  // "Loading sign-in methods…" forever.
+  const loadSec = () => api('/auth/identities')
+    .then((d) => { setSec(d); setSecErr(''); })
+    .catch((e) => setSecErr(e.message || 'Could not load your sign-in methods'));
 
   useEffect(() => {
     api('/sources').then((d) => setSources(d.sources)).catch(() => {});
     api('/team').then((d) => setMembers(d.members)).catch(() => {});
     api('/billing').then(setBilling).catch(() => {});
+    loadSec();
     api('/style-profile').then((d) => setWp({
       guide: d.profile.guide || 'docify',
       voice: d.profile.voice || '',
@@ -46,6 +64,42 @@ export default function Settings() {
     finally { setWpBusy(false); }
   }
 
+  async function linkGoogle() {
+    try {
+      const d = await api('/auth/link/google', { method: 'POST' });
+      // Full-page redirect to the consent screen; come back to this tab.
+      try { sessionStorage.setItem('authDest', '/settings#account'); } catch { /* ignore */ }
+      window.location.href = d.url;
+    } catch (e) { toast('error', 'Could not start Google linking', e.message); }
+  }
+
+  async function unlinkIdentity(id, provider) {
+    try {
+      await api('/auth/identities/' + id, { method: 'DELETE' });
+      toast('success', provider + ' disconnected', 'That sign-in method has been removed');
+      loadSec();
+    } catch (e) { toast('error', 'Could not disconnect', e.message); }
+  }
+
+  async function savePassword() {
+    if (pwBusy) return;
+    if (pwNew.length < 8) return toast('error', 'Password too short', 'Use at least 8 characters');
+    if (pwNew !== pwConfirm) return toast('error', 'Passwords don’t match', 'Retype the confirmation');
+    setPwBusy(true);
+    try {
+      await api('/auth/set-password', {
+        method: 'POST',
+        body: sec && sec.hasPassword ? { password: pwNew, currentPassword: pwCurrent } : { password: pwNew }
+      });
+      toast('success', sec && sec.hasPassword ? 'Password changed' : 'Password set',
+        'You can now also log in with your email and this password');
+      setPwCurrent(''); setPwNew(''); setPwConfirm('');
+      loadSec();
+      refresh(); // keep the cached user (hasPassword) in sync
+    } catch (e) { toast('error', 'Could not save password', e.message); }
+    finally { setPwBusy(false); }
+  }
+
   async function invite() {
     if (!invEmail.includes('@')) return toast('error', 'Enter a valid email', 'An address is required to send an invite');
     try {
@@ -64,7 +118,7 @@ export default function Settings() {
           <HelpLink topic="settings" />
         </div>
         <div className="tabs mt7">
-          {[['sources', 'Connected sources'], ['writing', 'Writing style'], ['team', 'Team'], ['billing', 'Billing']].map(([id, label]) => (
+          {[['sources', 'Connected sources'], ['writing', 'Writing style'], ['team', 'Team'], ['billing', 'Billing'], ['account', 'Sign-in & security']].map(([id, label]) => (
             <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
@@ -202,6 +256,89 @@ export default function Settings() {
               </>
             )}
           </div>
+        )}
+
+        {tab === 'account' && (
+          secErr ? (
+            <div className="stack" style={{ maxWidth: 720 }}>
+              <p className="body01">Could not load your sign-in methods — {secErr}</p>
+              <button className="btn btn--tertiary btn--field" style={{ alignSelf: 'flex-start' }}
+                onClick={() => { setSecErr(''); loadSec(); }}>Try again</button>
+            </div>
+          ) : !sec ? <p className="body01 t2">Loading sign-in methods…</p> : (
+            <div className="stack" style={{ maxWidth: 720 }}>
+              <p className="body01 t2">
+                Ways you can sign in to this account. Keep at least one — add a second so you&apos;re never locked out.
+              </p>
+
+              {/* Google identity */}
+              <div className="tile tile--white row row--between" style={{ padding: '16px 24px' }}>
+                <div className="row">
+                  <span className="srcmark"><GoogleG size={22} /></span>
+                  <div>
+                    <p className="h01">Google</p>
+                    {(() => {
+                      const g = sec.identities.find((i) => i.provider === 'google');
+                      return <p className="helper mono">{g ? g.email : 'Not connected'}</p>;
+                    })()}
+                  </div>
+                </div>
+                <div className="row">
+                  {(() => {
+                    const g = sec.identities.find((i) => i.provider === 'google');
+                    if (g) return (
+                      <>
+                        <span className="tag tag--green">Connected</span>
+                        <button className="linkbtn" onClick={() => unlinkIdentity(g.id, 'Google')}>Disconnect</button>
+                      </>
+                    );
+                    if (!sec.available.google) return <span className="tag tag--gray">Not configured on this server</span>;
+                    return <button className="btn btn--tertiary btn--field" onClick={linkGoogle}>Connect Google</button>;
+                  })()}
+                </div>
+              </div>
+
+              {/* Email + password */}
+              <div className="tile tile--white" style={{ padding: '16px 24px' }}>
+                <div className="row row--between">
+                  <div>
+                    <p className="h01">Email &amp; password</p>
+                    <p className="helper">
+                      {sec.hasPassword
+                        ? 'A password is set — you can log in with your email address.'
+                        : 'No password yet — add one to also log in with your email address.'}
+                    </p>
+                  </div>
+                  {sec.hasPassword
+                    ? <span className="tag tag--green">Enabled</span>
+                    : <span className="tag tag--gray">Not set</span>}
+                </div>
+                <div className="mt5" style={{ maxWidth: 380 }}>
+                  {sec.hasPassword && (
+                    <div className="field">
+                      <label htmlFor="pwCurrent">Current password</label>
+                      <input id="pwCurrent" className="input" type="password" autoComplete="current-password"
+                        value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} />
+                    </div>
+                  )}
+                  <div className="field">
+                    <label htmlFor="pwNew">{sec.hasPassword ? 'New password (8+ characters)' : 'Password (8+ characters)'}</label>
+                    <input id="pwNew" className="input" type="password" autoComplete="new-password"
+                      value={pwNew} onChange={(e) => setPwNew(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pwConfirm">Confirm password</label>
+                    <input id="pwConfirm" className="input" type="password" autoComplete="new-password"
+                      value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && savePassword()} />
+                  </div>
+                  <button className="btn btn--primary btn--field" disabled={pwBusy} onClick={savePassword}>
+                    {pwBusy ? 'Saving…' : sec.hasPassword ? 'Change password' : 'Set password'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
         )}
       </div>
       <NavBar back="/automation" />

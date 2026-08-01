@@ -303,6 +303,17 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .provbtn:hover{border-color:var(--button-primary);box-shadow:inset 0 0 0 1px var(--button-primary);transform:translateX(3px)}
 .provbtn .pm{width:36px;height:36px;background:#161616;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:13px;flex:none}
 .provbtn .parrow{margin-left:auto;color:var(--button-primary);font-size:16px}
+/* "Continue with Google" — follows Google's sign-in branding (white button,
+   #747775 border, four-color G) while keeping the app's square corners. */
+.gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;height:48px;padding:0 16px;background:#fff;border:1px solid #747775;border-radius:0;cursor:pointer;font-family:inherit;font-size:15px;font-weight:500;color:#1f1f1f;letter-spacing:.16px;transition:background .11s var(--ease),box-shadow .11s var(--ease)}
+.gbtn:hover{background:#f8faff;box-shadow:0 1px 3px rgba(60,64,67,.18)}
+.gbtn:focus-visible{outline:2px solid var(--button-primary);outline-offset:2px}
+.gbtn:disabled{opacity:.65;cursor:default;box-shadow:none}
+.gspin{width:18px;height:18px;border:2px solid #dadce0;border-top-color:#4285F4;border-radius:50%;animation:gspin .8s linear infinite;flex:none}
+@keyframes gspin{to{transform:rotate(360deg)}}
+/* Divider with a centered label ("or continue with email") */
+.ordivider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--text-secondary);font-size:11px;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
+.ordivider::before,.ordivider::after{content:"";flex:1;height:1px;background:var(--border-subtle)}
 .strength{display:flex;gap:4px;margin-top:8px}
 .strength span{height:3px;flex:1;background:var(--border-subtle);transition:background .15s var(--ease)}
 .strength .s1{background:#da1e28}.strength .s2{background:#f1c21b}.strength .s3{background:#24a148}

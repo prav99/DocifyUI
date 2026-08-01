@@ -5,6 +5,12 @@
       "name": "docify-dev",
       "url": "http://localhost:5173",
       "port": 5173
+    },
+    {
+      "name": "docify",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["-c", "NODE_OPTIONS=--experimental-detect-module npm run dev"],
+      "port": 5173
     }
   ]
 }
