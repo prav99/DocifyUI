@@ -1455,3 +1455,10 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 /* ============ Landing: single-column feature block (film band below copy) ============ */
 .featsolo{padding:48px 0 8px}
 .featsolo>div:first-child{max-width:660px}
+
+/* ============ Film player: fullscreen mode ============ */
+.demo-window:fullscreen{display:flex;flex-direction:column;background:var(--background);overflow:auto}
+.demo-window:fullscreen .demo-body{flex:1;width:100%;max-width:1240px;margin:0 auto}
+.demo-window:fullscreen .demo-stage{font-size:16px;padding:40px}
+.demo-window:fullscreen .jd-cap,.demo-window:fullscreen .demo-bar{max-width:1240px;width:100%;margin:0 auto}
+.demo-window:-webkit-full-screen{display:flex;flex-direction:column;background:var(--background);overflow:auto}

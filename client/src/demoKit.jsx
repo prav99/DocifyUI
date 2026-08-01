@@ -188,6 +188,10 @@ export function CountTo({ from = 0, to = 96, delay = 1200, dur = 3000 }) {
   return <>{v}</>;
 }
 
+/* Only one film may speak at a time: starting any film pauses whichever
+   other film is currently playing (two overlapping voiceovers is chaos). */
+let activeFilmPause = null;
+
 /* =========================================================================
    DemoShell — the whole player. Feed it scenes; it does the rest.
    scenes: [{ label, vo, dur, render() }]
@@ -198,6 +202,11 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
   const [started, setStarted] = useState(false);
   const [sound, setSound] = useState(true);
   const [runId, setRunId] = useState(0);
+  const [fs, setFs] = useState(false);
+  const windowRef = useRef(null);
+  const playingRef = useRef(false);
+  const pauseRef = useRef(null);
+  useEffect(() => { playingRef.current = playing; }, [playing]);
 
   useEffect(() => {
     if (!playing) return undefined;
@@ -217,16 +226,84 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
     return () => { alive = false; clearTimeout(tMin); clearTimeout(tGuard); };
   }, [scene, playing, sound, runId]); // eslint-disable-line
 
-  useEffect(() => () => { stopAllAudio(); }, []);
+  useEffect(() => () => { stopAllAudio(); if (activeFilmPause === pauseRef) activeFilmPause = null; }, []);
 
-  const play = () => { setStarted(true); setPlaying(true); if (sound) musicStart(); setRunId((n) => n + 1); };
-  const pause = () => { setPlaying(false); stopAllAudio(); };
+  const pause = () => {
+    setPlaying(false); stopAllAudio();
+    if (activeFilmPause === pauseRef) activeFilmPause = null;
+  };
+  pauseRef.current = pause;
+  const claimPlayback = () => {
+    if (activeFilmPause && activeFilmPause !== pauseRef) { try { activeFilmPause.current(); } catch { /* ignore */ } }
+    activeFilmPause = pauseRef;
+  };
+  const play = () => { claimPlayback(); setStarted(true); setPlaying(true); if (sound) musicStart(); setRunId((n) => n + 1); };
   const jump = (i) => {
+    claimPlayback();
     setStarted(true); setPlaying(true);
     if (sound) musicStart();
     try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
     setScene(i); setRunId((n) => n + 1);
   };
+
+  // Auto-pause the moment the player scrolls (mostly) out of view — a film
+  // narrating from off-screen is noise, not a demo. IntersectionObserver
+  // where available, plus a rAF-throttled scroll fallback for environments
+  // that suspend IO, plus a tab-visibility pause.
+  useEffect(() => {
+    const el = windowRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver(([e]) => {
+      if (e.intersectionRatio < 0.3 && playingRef.current) pauseRef.current();
+    }, { threshold: [0, 0.3] });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [started]);
+  useEffect(() => {
+    const outOfView = () => {
+      const el = windowRef.current;
+      if (!el) return false;
+      if (document.fullscreenElement === el || document.webkitFullscreenElement === el) return false;
+      const r = el.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      const visible = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+      return visible < Math.min(r.height, vh) * 0.3;
+    };
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (playingRef.current && outOfView()) pauseRef.current();
+      });
+    };
+    const onVis = () => { if (document.hidden && playingRef.current) pauseRef.current(); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('visibilitychange', onVis);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  // Fullscreen expand/exit for the whole player window.
+  const toggleFull = () => {
+    const el = windowRef.current;
+    if (!el) return;
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl === el) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    }
+  };
+  useEffect(() => {
+    const on = () => setFs((document.fullscreenElement || document.webkitFullscreenElement) === windowRef.current);
+    document.addEventListener('fullscreenchange', on);
+    document.addEventListener('webkitfullscreenchange', on);
+    return () => { document.removeEventListener('fullscreenchange', on); document.removeEventListener('webkitfullscreenchange', on); };
+  }, []);
   const toggleSound = () => {
     setSound((v) => {
       const nv = !v;
@@ -239,7 +316,7 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
   // Resting state: a designed light poster card — no black void while scrolling.
   if (!started && posterMeta) {
     return (
-      <div className="demo-window">
+      <div className="demo-window" ref={windowRef}>
         <div className="demo-chrome">
           <span className="demo-shellname">Docify</span>
           <span className="crumb">{crumb}</span>
@@ -259,7 +336,7 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
   }
 
   return (
-    <div className="demo-window">
+    <div className="demo-window" ref={windowRef}>
       {!started && (
         <button className="vid-poster" onClick={play} aria-label={'Play ' + name + ' demo with sound'}>
           <span className="vid-playbtn">▶</span>
@@ -293,6 +370,7 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
         </button>
         <button className="demo-ctl" onClick={() => { pause(); setScene(0); setStarted(false); }} aria-label="Stop">■</button>
         <button className="demo-ctl demo-ctl--wide" onClick={toggleSound}>{sound ? 'Sound on' : 'Muted'}</button>
+        <button className="demo-ctl" onClick={toggleFull} aria-label={fs ? 'Exit full screen' : 'Expand to full screen'} title={fs ? 'Exit full screen' : 'Full screen'}>{fs ? '⤡' : '⤢'}</button>
         <div className="demo-track">
           {scenes.map((s, i) => (
             <button key={s.label} className="demo-seg" onClick={() => jump(i)} aria-label={s.label}>
