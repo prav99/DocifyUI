@@ -418,3 +418,69 @@ Implemented in `client/src/pages/films/OverviewFilm.jsx`.
 # Layout revision — 1 Aug 2026 (landscape fix)
 
 All five chapter films that previously sat inside half-width feature columns now render as **full-width landscape bands** beneath their section copy — same treatment as the original three chapters. This removes the vertical-format cramping, restores full reading width for every section's text, and makes all nine films visually consistent. Verified: no horizontal overflow at 375px; text columns capped at 640-660px for readability.
+
+
+# Master Overview Film v2 — extended to 2:32 (1 Aug 2026)
+
+Now I have everything I need — the current film, the engine contract, and the motifs to reuse (AutomationDemo's merge-loop chain + Pipe validation steps; AICompatDemo's dimension bars + score card). Producing the plan and full file.
+
+## Production plan v2
+
+**Kept vs added.** The approved 8-scene backbone survives intact: scenes 1–6 (Hook, Docs drift, The hours, Release hold, Enter Docify, Generate) are kept verbatim in structure and motif, with only the "ninety seconds" framing updated to "the complete overview" and slightly longer scene floors for breathing room. The old scene 7 ("Stay current") is expanded into two deeper beats — scene 7 "Merge detected" (the trigger chain told as a story, reusing AutomationDemo's merge→webhook loop boxes and its Pipe motif for the AI diff analysis) and scene 8 "Validated & published" (in-place update, quality gate, link/style validation, and the configurable auto-publish/approval routing, keeping the existing read-only honesty line word-for-word). Three wholly new beats follow: scene 9 "Trust the workflow" (the payoff — struck-through developer task list collapsing to one 5-minute review item), scene 10 "The savings" (animated manual-vs-Docify ROI cards using CountTo and staggered demo-mrow/mbar/mfill bars, numbers locked to the landing estimator's $95/hr and 11 hrs/release, labeled illustrative), and scene 11 "Quality proven" (AICompatDemo's dimension-bar motif with the honest "modeled signal" AI-readiness framing). The old close becomes scene 12, extended with the new full-tour NextPointer. Poster updated to "THE COMPLETE OVERVIEW / 2½ min".
+
+**Storyboard — all 12 scenes**
+
+| # | Scene | Dur | On-screen | Motion | VO (words) |
+|---|-------|-----|-----------|--------|------------|
+| 1 | Hook | 10.0s | TitleSlate: "Manual documentation: the invisible tax." | Slate fade-in, logo mark | "Every team pays it…" (24) |
+| 2 | Docs drift | 12.0s | payments-guide.md "4 months ago" + 3 merged-PR loop boxes → "docs updated: 0" | Staggered loopbox pops, late red counter | "Your docs drift…" (22) |
+| 3 | The hours | 12.0s | score--bad CountTo→11 hrs + 4 cost rows (40 min…6.5 hrs) | Counter ease-out, rows cascade | "So engineers become…" (22) |
+| 4 | Release hold | 12.0s | Launch checklist: 2 green, "Docs updated?" red → HOLD → "slipping to Thursday" | Rows cascade, late slip line | "And at release time…" (22) |
+| 5 | Enter Docify | 11.0s | jd-verdict pivot + repo→AI→approve loop + read-only line | Whoosh, loop reveal, late helper | "Docify ends the tax…" (20) |
+| 6 | Generate | 12.5s | Repo picker ✓, 11-type chips, yaml draft lines, quality CountTo→94 | Chips stagger, yaml typewriter, counter | "Point it at a repo…" (24) |
+| 7 | Merge detected (NEW) | 14.0s | "Developer merges PR #221" → "Docify detects · webhook · 1.2s" → "AI reads the diff" loop; analysis Pipe: 3 files / relevance ✓ / target § Webhooks | Loop boxes chain, Pipe spinners→checks, late zero-effort helper | "A developer merges…" (23) |
+| 8 | Validated & published (NEW) | 14.0s | § Webhooks updated in place, gate 92 ≥ 85 ✓, validation Pipe, policy split: auto-publish **or** hold for approval → published v8; read-only line kept verbatim; "routing is your call" note | Issue card, gate tag late-pops, Pipe checks, routing loop | "The section updates…" (23) |
+| 9 | Trust the workflow (NEW) | 13.0s | BEFORE list struck through (write/update/answer) → AFTER single "Review a diff · ~5 min"; jd-verdict "Merge your code. The documentation follows." | Before rows cascade struck, after card lands, verdict | "Once your team trusts…" (20) |
+| 10 | The savings (NEW) | 15.0s | MANUAL card: CountTo→11 hrs, 3 people, ~$1,045 @ $95/hr, days later. DOCIFY card: CountTo→45 min, gen 4 min, ~$71, same day. 3 effort bars (100%/4%/7%) + "≈ 93% less effort" chip + "illustrative example" helper | Dual counters staggered, bars fill in sequence, chip pop | "The math: manual…" (26) |
+| 11 | Quality proven (NEW) | 13.0s | score--good CountTo→92 "gated ≥ 85" + dimension bars Structure 94 / Clarity 91 / Completeness 89 + AI-readiness 88 card with "modeled signal" helper | Counter, bars fill staggered, late readiness card | "Every publish is scored…" (22) |
+| 12 | Outcomes | 13.0s | 4 outcome chips, jd-verdict, NextPointer → film-connect "THE FULL TOUR" | Chips stagger, verdict, pointer | "Docs ship with the release…" (24) |
+
+**Timed VO script** (~2.6 words/sec; 272 words ≈ 105s of speech — well under the 165s ceiling; scene floors govern pacing)
+
+| Cue | VO |
+|-----|----|
+| 0:00 | Every team pays it — the hours spent writing, fixing, and re-explaining documentation by hand. This is the complete overview of getting them back. |
+| 0:10 | Your docs drift the moment code moves. Payments guide: four months old. Meanwhile, three pull requests just merged. The gap only widens. |
+| 0:22 | So engineers become the documentation. Explaining auth over chat. Rewriting the quickstart. Answering the same question again. Eleven hours — this release alone. |
+| 0:34 | And at release time, everything queues behind one checklist item: docs updated? The code is ready. The launch waits on the writing. |
+| 0:46 | Docify ends the tax. Connect your repository read-only. AI writes the documentation from the code itself. Your team approves every word. |
+| 0:57 | Point it at a repo and generate — eleven document types, from API references to runbooks — every section drafted from real source, scoring ninety-four. |
+| 1:10 | A developer merges pull request two twenty-one. Docify detects it in seconds, reads the diff, and decides which document — with zero human effort. |
+| 1:24 | The section updates in place, clears the quality gate and link checks, then follows your policy — publish automatically, or hold for team approval. |
+| 1:38 | Once your team trusts the gate and the approval flow, hand-maintained documentation simply ends. Merge your code — the documentation follows. |
+| 1:51 | The math: manual documentation takes three people and eleven hours per release. With Docify — four minutes of generation, forty-five minutes of review, published the same day. |
+| 2:06 | Every publish is scored across structure, clarity, and completeness, gated at eighty-five, and checked for AI readiness — a modeled signal, always improvable. |
+| 2:19 | Docs ship with the release. Hours come back every sprint. Every publish gated. Each step has its own thirty-second chapter — take the full tour. |
+
+**Duration budget** (scene minimums; engine waits for max(dur, narration))
+
+| Scene | ms |
+|-------|-----|
+| 1 Hook | 10,000 |
+| 2 Docs drift | 12,000 |
+| 3 The hours | 12,000 |
+| 4 Release hold | 12,000 |
+| 5 Enter Docify | 11,000 |
+| 6 Generate | 12,500 |
+| 7 Merge detected | 14,000 |
+| 8 Validated & published | 14,000 |
+| 9 Trust the workflow | 13,000 |
+| 10 The savings | 15,000 |
+| 11 Quality proven | 13,000 |
+| 12 Outcomes | 13,000 |
+| **Total** | **151,500 ms ≈ 2:32** ✓ (within 150–165s) |
+
+ROI numbers locked to the landing estimator: $95/hr × 11 hrs = $1,045 manual; 45 min review ≈ $71; 49 min vs 660 min ≈ 93% effort reduction — all labeled "illustrative example." No "auto PR," no repo writes anywhere; scene 8 keeps the existing read-only line verbatim.
+
+## Code
+Implemented in `client/src/pages/films/OverviewFilm.jsx`.

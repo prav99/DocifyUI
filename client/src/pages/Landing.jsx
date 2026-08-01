@@ -599,7 +599,7 @@ export default function Landing() {
             <div className="row mt7" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free — 5 documents<span className="ico">→</span></button>
               <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('cost'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Estimate your cost</button>
-              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-overview'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Watch the 90-second demo</button>
+              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-overview'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Watch the product demo</button>
             </div>
             <p className="helper mt5" style={{ color: '#8d8d8d' }}>
               Read-only access · your source code is never stored · free plan includes 5 generations · no credit card required
@@ -618,7 +618,7 @@ export default function Landing() {
             It hides in engineering time: writing pages by hand, updating them after every release,
             answering the same questions in chat, and holding launches until the docs are ready.
             Meanwhile the pages quietly go stale, and readers stop trusting them. Watch the
-            90-second overview, then put your own numbers into the estimator.
+            complete overview, then put your own numbers into the estimator.
           </p>
         </Reveal>
         <Reveal delay={60}>
