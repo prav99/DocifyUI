@@ -689,7 +689,7 @@ export default function Landing() {
           <div className="featrow">
             <div>
               <p className="eyebrow eyebrow--blue mb3">GENERATE ON DEMAND</p>
-              <h2 className="feathead">The blank page is the most expensive page</h2>
+              <h2 className="feathead">Start with a finished draft, not a blank page</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 A first draft written by an engineer is senior time spent on excavation and structure,
                 not the product. Docify writes that draft from your real code. Select sources, choose
