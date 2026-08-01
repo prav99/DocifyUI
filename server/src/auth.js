@@ -211,6 +211,9 @@ export async function requireAuth(req, res, next) {
   // carry just {uid} and stay valid; anything with a non-session type, or
   // without a subject, is rejected — a missing uid would otherwise reach
   // Prisma as `where: { userId: undefined }`, which matches every row.
+  if (!p || !p.uid || (p.typ && p.typ !== 'session') || p.t || p.v) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   // The account must still exist. A JWT stays cryptographically valid for its
   // full 7 days, so without this a deleted account could keep working — and
   // because several user-scoped tables have no foreign key to User, ordinary

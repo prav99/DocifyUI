@@ -19,4 +19,5 @@ DocGen_QA_Test_Report.docx
 _review_harness/
 
 # Throwaway database created by server/test/isolation.test.js
-server/test/isolation-test.db*
+# Throwaway test databases (one per run, named by pid) — never commit them.
+server/test/isolation-test*
