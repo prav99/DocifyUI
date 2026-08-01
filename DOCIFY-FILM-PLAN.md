@@ -346,3 +346,75 @@ Implemented in `client/src/pages/films/ReportingFilm.jsx` (verified building and
 
 
 ---
+
+
+# The Master Overview Film (90 seconds) — added 1 Aug 2026
+
+Placed full-width inside the merged Problem section (`#cost`), directly under the intro copy — the first thing a visitor can play. Standalone (not numbered in the 8-chapter rail); its Up-next card starts the full tour at Chapter 1.
+
+## Production plan
+
+### Storyboard table
+
+| # | Scene | Dur | On-screen | Camera / motion note | VO |
+|---|-------|-----|-----------|---------------------|-----|
+| 1 | Hook | 10.0s | Dark TitleSlate, blue rule, kicker "THE 90-SECOND OVERVIEW", title "Manual documentation: the invisible tax." | Slate cascade: mark → kicker → title → sub via `fadeup` at .2/.6/1.0/1.7s (built into `.slate-*`) | "Every team pays it — the hours spent writing, fixing, and re-explaining documentation by hand. This is the ninety-second overview of getting them back." (23w) |
+| 2 | Docs drift | 11.0s | Amber `demo-issue`: "payments-guide.md · last updated 4 months ago"; below, a `demo-loop` of PR #198 → #204 → #214 merged, staggered in; late red "docs updated: 0" | Stale doc lands first (`fadeup`), PR boxes pop in left-to-right (`lgin` at .8/1.4/2.0s), the zero lands last (`demo-late`) — the gap literally widens on screen | "Your docs drift the moment code moves. Payments guide: four months old. Meanwhile, three pull requests just merged. The gap only widens." (22w) |
+| 3 | The hours | 11.0s | Left: red `score` tile counting 0 → 11 "Engineering hours · this release". Right: four cost rows with time tags (40 min / 3 hrs / 25 min / 6.5 hrs) | Rows stagger in (`fadeup` .3/.9/1.5/2.1s); `CountTo` ramps as rows stack — the counter reads as the sum of the rows | "So engineers become the documentation. Explaining auth over chat. Rewriting the quickstart. Answering the same question again. Eleven hours — this release alone." (22w) |
+| 4 | Release hold | 11.0s | Release 2.4 checklist: build ✓, security ✓, "Docs updated?" red/blocked; `demo-loop` "ship 2.4 → HOLD → slipping to Thursday" | Green rows land fast, the red row lands last and heavier (delay 1.4s, error border); HOLD box is inverse-red, "slipping" fades late (`demo-late`) | "And at release time, everything queues behind one checklist item: docs updated? The code is ready. The launch waits on the writing." (22w) |
+| 5 | Enter Docify | 10.0s | Turn moment: mono kicker "ENTER DOCIFY", blue `jd-verdict` "Connect read-only. AI writes from the code. Humans approve.", then a 3-box loop restating it | `popscale` on the verdict (the film's tonal pivot), loop boxes + `popin` check follow; whoosh sfx marks the turn | "Docify ends the tax. Connect your repository read-only. AI writes the documentation from the code itself. Your team approves every word." (21w) |
+| 6 | Generate | 11.5s | Repo picker row "acme/payments-api · read-only ✓", chips of doc types (+5 more), generated preview lines typing into a code panel, quality `score` counting 0 → 94 | `pickrow` highlight on repo; chips `fadeup` stagger from 0.7s; preview `demo-yline`s at 2.2–3.7s; `CountTo` 94 fires at 4.2s as the payoff | "Point it at a repo and generate — eleven document types, from API references to runbooks — every section drafted from real source, scoring ninety-four." (23w) |
+| 7 | Stay current | 11.5s | `demo-loop`: PR #221 merged → webhook · 1.2s → § updated in place; green issue card "gate 92 ≥ 85 ✓"; second loop: Human review → Approve → published · v8. Helper states Docify never writes to the repo | Success sfx; gate tag `demo-late` at 1.4s; publish check `popin` at 2s via `demo-loopcheck`; arrows pulse with `slidearrowx` throughout | "Then it stays current. A merge fires a webhook, the affected section updates in place, clears the quality gate, and a human approves — version eight, published." (26w) |
+| 8 | Outcomes | 10.0s | Four filled outcome chips; `jd-verdict` "Documentation that stays in sync with your code."; NextPointer → `film-connect`, "THE FULL TOUR" | Chips `fadeup`+`chipon` stagger .1/.5/.9/1.3s; verdict `popscale`; nextcard `fadeup` invites the scroll onward; chime resolves the score | "Docs ship with the release. Hours come back every sprint. Quality gated on every publish. Documentation that stays in sync with your code." (23w) |
+
+### Full voiceover script (timed)
+
+- 0:00–0:10 — Every team pays it — the hours spent writing, fixing, and re-explaining documentation by hand. This is the ninety-second overview of getting them back.
+- 0:10–0:21 — Your docs drift the moment code moves. Payments guide: four months old. Meanwhile, three pull requests just merged. The gap only widens.
+- 0:21–0:32 — So engineers become the documentation. Explaining auth over chat. Rewriting the quickstart. Answering the same question again. Eleven hours — this release alone.
+- 0:32–0:43 — And at release time, everything queues behind one checklist item: docs updated? The code is ready. The launch waits on the writing.
+- 0:43–0:53 — Docify ends the tax. Connect your repository read-only. AI writes the documentation from the code itself. Your team approves every word.
+- 0:53–1:05 — Point it at a repo and generate — eleven document types, from API references to runbooks — every section drafted from real source, scoring ninety-four.
+- 1:05–1:16 — Then it stays current. A merge fires a webhook, the affected section updates in place, clears the quality gate, and a human approves — version eight, published.
+- 1:16–1:26 — Docs ship with the release. Hours come back every sprint. Quality gated on every publish. Documentation that stays in sync with your code.
+
+### On-screen text inventory
+
+- Slate: THE 90-SECOND OVERVIEW / Manual documentation: the invisible tax. / sub line / sound note
+- S2: payments-guide.md · last updated 4 months ago · PR #198/#204/#214 merged · docs updated: 0 · "Every merge widens the gap…"
+- S3: Engineering hours · this release · 11 · Explain auth over chat 40 min · Rewrite the quickstart by hand 3 hrs · Answer the same question — again 25 min · Reverse-engineer the webhook flow 6.5 hrs
+- S4: Release 2.4 — launch checklist · Build & unit tests ✓ passed · Security review ✓ passed · Docs updated? ⏳ blocked · ship 2.4 → HOLD → slipping to Thursday
+- S5: ENTER DOCIFY · Connect read-only. AI writes from the code. Humans approve. · your repo · read-only → AI drafts from source → human approves · publish
+- S6: acme/payments-api (GitHub) · read-only ✓ connected · doc-type chips (API reference … + 5 more) · 4 generated preview lines · Quality score 94 · six dimensions checked
+- S7: PR #221 merged → webhook · 1.2s → § Webhooks updated in place · payments-guide.md → § Webhooks · gate 92 ≥ 85 ✓ · "Docify never writes to your repository — it updates the hosted documentation." · Human review → Approve · published · v8 · team notified
+- S8: 4 outcome chips · Documentation that stays in sync with your code. · UP NEXT / THE FULL TOUR / Explore every workflow — 8 chapters, 30 seconds each
+
+Honesty rule enforced: no "auto PR" anywhere; S7 explicitly states read-only + hosted-doc update.
+
+### Motion / transition notes (existing keyframes only)
+
+- Scene cuts: `demo-stage` remounts per scene (`key`), giving a free `fadeup .4s` on every cut; DemoShell adds a 450ms beat between scenes.
+- `fadeup`: slate cascade (S1), issue cards (S2/S3/S4/S7), chips (S6/S8), nextcard (S8). Staggers via inline `animationDelay`, 0.3–0.7s steps.
+- `lgin`: PR boxes S2 (.8/1.4/2.0s), yaml preview lines S6 (`demo-yline` 2.2/2.7/3.2/3.7s), all `demo-late` payoffs (2.3s class default, overridden where noted).
+- `popin`: `demo-loopcheck` publish confirmations (S5, S7 at 2s), `demo-pipecheck` if reused.
+- `popscale`: both `jd-verdict` moments (S5 pivot, S8 close) at .3s class default.
+- `chipon`: filled chips S6 selected type + S8 outcome chips (fadeup+chipon pair, single inline delay applies to both — same pattern as GenerateDemo).
+- `pickrow` + `slidearrowx`: repo-select highlight (S6) and pulsing loop arrows (S2/S5/S7).
+- `spin`: not needed — no long "processing" beat; generation progress is carried by yline typing + CountTo instead.
+
+### Music & SFX map
+
+- Score: engine ambient pad is automatic — `musicStart()` on play, 3-chord WebAudio progression rotating every 9s under a lowpass LFO; fades in over 4s, ducks under VO by design (0.03 gain).
+- S1 `whoosh` (film open), S2 `click`, S3 `click`, S4 `click` (three UI beats through the pain act), S5 `whoosh` (the turn — mirrors S1, brackets the problem act), S6 `click`, S7 `success` (resolution chord on the publish), S8 `chime` (outro bell into the nextcard).
+
+### Duration budget
+
+10.0 + 11.0 + 11.0 + 11.0 + 10.0 + 11.5 + 11.5 + 10.0 = **86.0s** minimum scene time (engine also waits for narration per scene; guard-capped). Within the 80–90s window.
+
+## Code
+Implemented in `client/src/pages/films/OverviewFilm.jsx`.
+
+
+# Layout revision — 1 Aug 2026 (landscape fix)
+
+All five chapter films that previously sat inside half-width feature columns now render as **full-width landscape bands** beneath their section copy — same treatment as the original three chapters. This removes the vertical-format cramping, restores full reading width for every section's text, and makes all nine films visually consistent. Verified: no horizontal overflow at 375px; text columns capped at 640-660px for readability.

@@ -1451,3 +1451,7 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .hv-rewrite.hvr2{animation-delay:6.7s}
 @keyframes hvrewrite{0%,100%{opacity:0}4%{opacity:.3}10%{opacity:.14}16%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.hv-traveler,.hv-rewrite{animation:none!important;opacity:0}}
+
+/* ============ Landing: single-column feature block (film band below copy) ============ */
+.featsolo{padding:48px 0 8px}
+.featsolo>div:first-child{max-width:660px}

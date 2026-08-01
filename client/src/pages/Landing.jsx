@@ -9,6 +9,7 @@ import { ReviewDemo } from './films/ReviewFilm.jsx';
 import { StandardizeDemo } from './films/StandardizeFilm.jsx';
 import { DocumentsDemo } from './films/DocumentsFilm.jsx';
 import { ReportingDemo } from './films/ReportingFilm.jsx';
+import { OverviewFilm } from './films/OverviewFilm.jsx';
 
 /* ---------- Series meter: which of the three product demo films this is ---------- */
 function SeriesMeter({ step, total = 8 }) {
@@ -350,8 +351,7 @@ function IlluReport() {
    Sticky page-journey navigation
    =================================================================== */
 const NAV_SECTIONS = [
-  ['cost', 'Your cost'],
-  ['overview', 'Overview'],
+  ['cost', 'The problem'],
   ['connect', 'Connect'],
   ['generate', 'Generate'],
   ['automate', 'Automate'],
@@ -456,12 +456,9 @@ const PROVIDERS = ['GitHub', 'GitLab', 'Bitbucket'];
 const FMTS = ['Markdown', 'PDF', 'Word', 'HTML', 'DITA', 'DocBook', 'ePub'];
 /* Each pain is a cost — tagged with the currency it is paid in. */
 const PROBLEMS = [
-  ['Outdated pages get costlier with time', 'Every page the code outruns gets fixed eventually, usually by a senior engineer under deadline. Deferring the work raises its price; it never cancels it.', 'risk'],
-  ['Senior hours at senior rates', 'The people who understand a change are the most expensive people you employ. Every page they draft is a loaded engineering hour spent on work a pipeline can start for them.', 'money'],
-  ['Releases held at the door', 'Launches wait on drafting, or docs ship late and wrong. Either way the delay is paid for: by the release, or by the customers reading it.', 'time'],
-  ['Onboarding drag', 'New engineers ramp by reading. When the docs describe last quarter’s product, ramp time stretches by weeks: full salary at partial output.', 'money'],
-  ['Stale pages bill through support', 'A 404 quick start or an outdated screenshot converts directly into tickets, escalations, and evaluations that quietly end — none of it ever attributed to documentation.', 'money'],
-  ['Unretrievable means uncited', 'Buyers and users increasingly ask AI assistants first. Content that machines cannot parse and cite loses those moments to whoever wrote clearer pages.', 'risk']
+  ['Docs go stale fast', 'Every release changes behaviour. Pages written last quarter quietly stop being true — and readers stop trusting them.', 'risk'],
+  ['Senior time on routine writing', 'The people who understand a change are your most expensive. Drafting and updating pages eats their hours, release after release.', 'money'],
+  ['Releases wait on writing', 'Launches queue behind documentation, or the docs ship late and wrong. Either way, somebody pays.', 'time']
 ];
 const CURRENCY_TAG = { time: 'tag--blue', money: 'tag--green', risk: 'tag--amber' };
 
@@ -602,7 +599,7 @@ export default function Landing() {
             <div className="row mt7" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free — 5 documents<span className="ico">→</span></button>
               <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('cost'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Estimate your cost</button>
-              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('automate'); if (el) el.scrollIntoView(); }}>Watch the workflow</button>
+              <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('film-overview'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Watch the 90-second demo</button>
             </div>
             <p className="helper mt5" style={{ color: '#8d8d8d' }}>
               Read-only access · your source code is never stored · free plan includes 5 generations · no credit card required
@@ -612,44 +609,20 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 2 · The cost of the status quo — the estimator */}
+      {/* 2 · Problem + cost, merged — pain first, then the estimator, then the bridge to the product */}
       <div className="page" id="cost" style={{ paddingTop: 72, paddingBottom: 0 }}>
         <Reveal>
-          <p className="eyebrow eyebrow--blue mb3">THE COST OF THE STATUS QUO</p>
-          <h2 className="feathead" style={{ maxWidth: 720 }}>What does your current documentation process cost?</h2>
+          <p className="eyebrow eyebrow--blue mb3">THE PROBLEM</p>
+          <h2 className="feathead" style={{ maxWidth: 720 }}>Manual documentation has a real cost. It just never shows up on an invoice.</h2>
           <p className="lead t2 mt5" style={{ maxWidth: 660 }}>
-            Nobody signs an invoice for manual documentation, which is why it rarely comes up in a
-            cost review. The spend is real all the same: engineers re-reading code they understood
-            at merge time, releases queued behind writing, questions routed to the busiest people on
-            the team, new hires ramping on pages that describe last quarter’s product. Put your own
-            numbers in below and see what it adds up to.
+            It hides in engineering time: writing pages by hand, updating them after every release,
+            answering the same questions in chat, and holding launches until the docs are ready.
+            Meanwhile the pages quietly go stale, and readers stop trusting them. Watch the
+            90-second overview, then put your own numbers into the estimator.
           </p>
         </Reveal>
-        <Reveal delay={100}><div className="mt6"><CostCalculator /></div></Reveal>
-        <div className="grid3 mt6" style={{ alignItems: 'stretch' }}>
-          {[['What one release costs', 'At a typical loaded rate of $75–120/hr and 11 hours of documentation work, a single release carries $825–$1,320 in engineering time before anyone reviews a word. Typical figures, not measured results.'],
-            ['What break-even looks like', 'A Docify seat is $26 per month on the annual plan — roughly 13 to 21 minutes of one engineer’s loaded time at typical rates. If automation returns half an hour per user per month, the seat is covered. That is arithmetic, not a case study.'],
-            ['What never gets invoiced', 'Stale pages do not send a bill. They collect payment through support tickets, longer onboarding, abandoned evaluations, and audit findings — costs that renew with every release you ship, and never appear attributed to documentation.']].map(([t, d], i) => (
-            <Reveal key={t} delay={i * 80}>
-              <div className="tile valtile" style={{ padding: 22, height: '100%' }}>
-                <p className="h02">{t}</p>
-                <p className="body01 t2 mt3">{d}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </div>
-
-      {/* 3 · The problem */}
-      <div className="page" id="overview" style={{ paddingTop: 72, paddingBottom: 0 }}>
-        <Reveal>
-          <p className="eyebrow eyebrow--blue mb3">THE PROBLEM</p>
-          <h2 className="feathead" style={{ maxWidth: 720 }}>Why documentation falls behind — and what that quietly costs</h2>
-          <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
-            No team can manually track every change, decide what customers need to know, rewrite the
-            affected pages, and hold the quality bar on every release. So the work lands on engineers,
-            and the cost shows up in three currencies: time, money, and risk.
-          </p>
+        <Reveal delay={60}>
+          <div id="film-overview" className="mt6"><div className="vidwrap"><OverviewFilm /></div></div>
         </Reveal>
         <div className="grid3 mt7" style={{ alignItems: 'stretch' }}>
           {PROBLEMS.map(([t, d, cur], i) => (
@@ -664,14 +637,15 @@ export default function Landing() {
             </Reveal>
           ))}
         </div>
+        <Reveal delay={100}><div className="mt7"><CostCalculator /></div></Reveal>
         <Reveal delay={100}>
           <div className="defblock mt7">
-            <p className="label01 t2 mb3">WHAT DOCIFY DOES</p>
+            <p className="label01 t2 mb3">HOW DOCIFY FIXES IT</p>
             <p className="deftext">
-              Docify connects your repositories, identifies the changes that matter to customers,
-              updates the correct documentation, validates quality, style, links, and AI readiness,
-              and lets your team review and approve — so the recurring cost of keeping docs true
-              stops being paid in engineering hours.
+              Docify connects to your repositories read-only, writes and updates documentation
+              automatically when the product changes, checks every page against a quality gate,
+              and lets your team approve each change before it publishes. The manual workflow
+              disappears; the standard stays.
             </p>
           </div>
         </Reveal>
@@ -680,12 +654,12 @@ export default function Landing() {
       {/* 3 · Connect the ecosystem */}
       <div className="page featlist" id="connect" style={{ paddingTop: 48, paddingBottom: 0 }}>
         <Reveal>
-          <div className="featrow">
-            <div id="film-connect"><SeriesMeter step={1} /><div className="mt3"><ConnectDemo /></div></div>
+          <div className="featsolo">
+
             <div>
               <p className="eyebrow eyebrow--blue mb3">CONNECT YOUR ECOSYSTEM</p>
               <h2 className="feathead">One place for every repository you document</h2>
-              <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
+              <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 The first cost of documentation is finding the source: which repository, which
                 organisation, which account. Docify removes that overhead once. Connect GitHub,
                 GitLab, and Bitbucket — multiple accounts, organisations, groups, and workspaces,
@@ -704,6 +678,9 @@ export default function Landing() {
             </div>
           </div>
         </Reveal>
+        <Reveal delay={80}>
+          <div id="film-connect"><SeriesMeter step={1} /><div className="vidwrap mt3"><ConnectDemo /></div></div>
+        </Reveal>
       </div>
 
       {/* 4 · Generate normally (Film — Generate) */}
@@ -713,7 +690,7 @@ export default function Landing() {
             <div>
               <p className="eyebrow eyebrow--blue mb3">GENERATE ON DEMAND</p>
               <h2 className="feathead">The blank page is the most expensive page</h2>
-              <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
+              <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 A first draft written by an engineer is senior time spent on excavation and structure,
                 not the product. Docify writes that draft from your real code. Select sources, choose
                 a document type, pick one or several output formats, and generate; preview each format
@@ -738,20 +715,6 @@ export default function Landing() {
           <SeriesMeter step={2} />
           <div className="vidwrap mt3"><GenerateDemo /></div>
         </Reveal>
-      </div>
-
-      {/* Works-with strip */}
-      <div className="page" style={{ paddingBottom: 0, paddingTop: 40 }}>
-        <div className="divider" style={{ marginTop: 0, marginBottom: 24 }} />
-        <Reveal>
-          <div className="row row--between" style={{ flexWrap: 'wrap', gap: 16 }}>
-            <p className="label01 t2">WORKS WITH</p>
-            <div className="logorow">
-              {PROVIDERS.map((s) => <span key={s}>{s}</span>)}<span>·</span>{FMTS.map((f) => <span key={f}>{f}</span>)}
-            </div>
-          </div>
-        </Reveal>
-        <div className="divider" style={{ marginBottom: 0, marginTop: 24 }} />
       </div>
 
       {/* 5 · Automate after meaningful changes (Film — Automation) */}
@@ -792,12 +755,12 @@ export default function Landing() {
       {/* 6 · Human control where it matters */}
       <div className="page featlist" id="review" style={{ paddingTop: 8, paddingBottom: 0 }}>
         <Reveal>
-          <div className="featrow">
-            <div id="film-review"><SeriesMeter step={4} /><div className="mt3"><ReviewDemo /></div></div>
+          <div className="featsolo">
+
             <div>
               <p className="eyebrow eyebrow--blue mb3">HUMAN CONTROL</p>
               <h2 className="feathead">AI proposes. Your team decides.</h2>
-              <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
+              <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 Unreviewed automation is a risk you pay for later; re-reviewing whole documents is time
                 you pay for now. Docify charges neither. Every automatic change arrives as a proposal
                 with inline and side-by-side diffs, so reviewers read what changed, not the entire
@@ -813,16 +776,19 @@ export default function Landing() {
             </div>
           </div>
         </Reveal>
+        <Reveal delay={80}>
+          <div id="film-review"><SeriesMeter step={4} /><div className="vidwrap mt3"><ReviewDemo /></div></div>
+        </Reveal>
       </div>
 
       {/* 7 · Standardize at scale */}
       <div className="page featlist" id="standardize" style={{ paddingTop: 8, paddingBottom: 0 }}>
         <Reveal>
-          <div className="featrow">
+          <div className="featsolo">
             <div>
               <p className="eyebrow eyebrow--blue mb3">STANDARDIZE AT SCALE</p>
               <h2 className="feathead">Inconsistency is rework on an instalment plan</h2>
-              <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
+              <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 Every off-style page gets paid for again when someone fixes it. Standardize retires
                 that debt continuously instead. Rebuild documentation written by anyone, in any state,
                 to one house standard using reusable style guides, terminology rules, organisation and
@@ -837,8 +803,11 @@ export default function Landing() {
               </div>
               <button className="btn btn--tertiary mt5" onClick={() => nav('/standardize')}>Open Standardize<span className="ico">→</span></button>
             </div>
-            <div id="film-standardize"><SeriesMeter step={5} /><div className="mt3"><StandardizeDemo /></div></div>
+
           </div>
+        </Reveal>
+        <Reveal delay={80}>
+          <div id="film-standardize"><SeriesMeter step={5} /><div className="vidwrap mt3"><StandardizeDemo /></div></div>
         </Reveal>
       </div>
 
@@ -850,7 +819,7 @@ export default function Landing() {
             <div>
               <p className="eyebrow eyebrow--blue mb3">QUALITY & AI READINESS</p>
               <h2 className="feathead">Validated before it ships — and readable by machines</h2>
-              <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
+              <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 Publishing an error costs more than catching it; being invisible to assistants costs
                 quietly. Docify scores every document across weighted dimensions, pairs each finding
                 with a one-click fix and a projected gain, and holds anything below the gate. It also
@@ -875,45 +844,14 @@ export default function Landing() {
         </Reveal>
       </div>
 
-      {/* AI search-readiness band (honest, no ranking guarantee) */}
-      <div className="page" style={{ paddingTop: 32, paddingBottom: 32 }}>
-        <Reveal>
-          <div className="moat">
-            <p className="eyebrow" style={{ color: '#78a9ff' }}>AI SEARCH READINESS</p>
-            <h2 className="h03 mt2" style={{ color: '#ffffff', maxWidth: 640 }}>
-              See how ready your docs are for AI search — and improve it.
-            </h2>
-            <p className="helper mt3" style={{ color: '#c6c6c6', maxWidth: 620 }}>
-              One document before and after its fixes — a modeled readiness score per assistant, based on
-              structure, metadata, clarity, and completeness. Recomputed as you apply fixes, and capped
-              below 100% because certainty would be a false claim. A signal you can act on, not a ranking
-              guarantee.
-            </p>
-            <div className="moatgrid mt5">
-              {[['ChatGPT', 49, 94], ['Claude', 51, 97], ['Google Gemini', 52, 84]].map(([n, from, to]) => (
-                <div key={n} className="moatcard">
-                  <div className="row row--between">
-                    <span className="h01" style={{ color: '#ffffff' }}>{n}</span>
-                    <span className="tag tag--green">+{to - from} pts</span>
-                  </div>
-                  <p className="moatpct mono"><CountUp to={to} /><span className="moatpctsign">%</span></p>
-                  <div className="moatbar"><div className={to >= 90 ? 'ok' : ''} style={{ width: to + '%' }} /></div>
-                  <span className="helper" style={{ color: '#8d8d8d' }}>was {from}% before fixes</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Reveal>
-      </div>
-
       {/* 9 · Documents, versions, lifecycle */}
       <div className="page featlist" id="lifecycle" style={{ paddingTop: 8, paddingBottom: 0 }}>
         <Reveal>
-          <div className="featrow">
+          <div className="featsolo">
             <div>
               <p className="eyebrow eyebrow--blue mb3">DOCUMENTS & HISTORY</p>
               <h2 className="feathead">“Which version is live, and who approved it?” becomes a lookup</h2>
-              <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
+              <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 Your team currently answers that question by archaeology, at engineering rates. In
                 Docify every document carries its approval status, full version history, side-by-side
                 comparisons, one-click restore, and a complete audit trail of who changed what and who
@@ -926,20 +864,23 @@ export default function Landing() {
                 ))}
               </div>
             </div>
-            <div id="film-docs"><SeriesMeter step={7} /><div className="mt3"><DocumentsDemo /></div></div>
+
           </div>
+        </Reveal>
+        <Reveal delay={80}>
+          <div id="film-docs"><SeriesMeter step={7} /><div className="vidwrap mt3"><DocumentsDemo /></div></div>
         </Reveal>
       </div>
 
       {/* 10 · Management reporting */}
       <div className="page featlist" id="reporting" style={{ paddingTop: 8, paddingBottom: 0 }}>
         <Reveal>
-          <div className="featrow">
-            <div id="film-reporting"><SeriesMeter step={8} /><div className="mt3"><ReportingDemo /></div></div>
+          <div className="featsolo">
+
             <div>
               <p className="eyebrow eyebrow--blue mb3">MANAGEMENT REPORTING</p>
               <h2 className="feathead">A management-ready quality report, in one click</h2>
-              <p className="lead t2 mt5" style={{ maxWidth: 480 }}>
+              <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
                 Status decks about documentation are documentation work too — usually a manager’s
                 afternoon. Docify exports the full AI Quality Report as PDF, HTML, or PowerPoint in
                 one click: executive summary, score breakdown, findings, broken-link analysis, style
@@ -956,6 +897,9 @@ export default function Landing() {
             </div>
           </div>
         </Reveal>
+        <Reveal delay={80}>
+          <div id="film-reporting"><SeriesMeter step={8} /><div className="vidwrap mt3"><ReportingDemo /></div></div>
+        </Reveal>
       </div>
 
       {/* Metrics band */}
@@ -970,29 +914,6 @@ export default function Landing() {
           </Reveal>
         </div>
       </section>
-
-      {/* 11 · Output formats matrix */}
-      <div className="page" id="integrations" style={{ paddingTop: 88, paddingBottom: 88 }}>
-        <Reveal>
-          <h2 className="feathead">Every source, every supported format</h2>
-          <p className="lead t2 mt3">Only what the product actually produces today. Supported means fully supported.</p>
-          <table className="matrix mt6">
-            <thead><tr><th>SOURCE</th>{FMTS.slice(0, 5).map((f) => <th key={f}>{f}</th>)}</tr></thead>
-            <tbody>
-              {PROVIDERS.map((s, r) => (
-                <tr key={s}><td>{s}</td>
-                  {FMTS.slice(0, 5).map((f, c) => (
-                    <td key={f}><span className="check checkpop" style={{ animationDelay: ((r * 5 + c) * 70) + 'ms' }}>✓</span></td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-            <span className="helper">Plus DocBook, ePub, XHTML, and MDX outputs · Jira, OpenAPI, and more sources supported in generation.</span>
-          </div>
-        </Reveal>
-      </div>
 
       {/* 12 · Role-based value */}
       <div className="page" id="teams" style={{ paddingTop: 0, paddingBottom: 56 }}>
@@ -1015,6 +936,29 @@ export default function Landing() {
             </Reveal>
           ))}
         </div>
+      </div>
+
+      {/* 11 · Output formats matrix */}
+      <div className="page" id="integrations" style={{ paddingTop: 88, paddingBottom: 88 }}>
+        <Reveal>
+          <h2 className="feathead">Every source, every supported format</h2>
+          <p className="lead t2 mt3">Only what the product actually produces today. Supported means fully supported.</p>
+          <table className="matrix mt6">
+            <thead><tr><th>SOURCE</th>{FMTS.slice(0, 5).map((f) => <th key={f}>{f}</th>)}</tr></thead>
+            <tbody>
+              {PROVIDERS.map((s, r) => (
+                <tr key={s}><td>{s}</td>
+                  {FMTS.slice(0, 5).map((f, c) => (
+                    <td key={f}><span className="check checkpop" style={{ animationDelay: ((r * 5 + c) * 70) + 'ms' }}>✓</span></td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="row mt5" style={{ flexWrap: 'wrap' }}>
+            <span className="helper">Plus DocBook, ePub, XHTML, and MDX outputs · Jira, OpenAPI, and more sources supported in generation.</span>
+          </div>
+        </Reveal>
       </div>
 
       {/* Trust & security */}
