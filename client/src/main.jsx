@@ -28,7 +28,7 @@ import Contact from './pages/Contact.jsx';
 import Status from './pages/Status.jsx';
 import Governance from './pages/Governance.jsx';
 import History from './pages/History.jsx';
-import { trackPageview, installClickTracking } from './analytics.js';
+import { trackPageview, installClickTracking, safeUrl } from './analytics.js';
 import posthog from './posthog.js';
 
 function Analytics() {
@@ -37,16 +37,13 @@ function Analytics() {
   React.useEffect(() => { installClickTracking(); }, []);
   React.useEffect(() => {
     trackPageview(loc.pathname + loc.search);
-    posthog.capture('$pageview', { $current_url: window.location.href });
+    posthog.capture('$pageview', { $current_url: safeUrl() });
   }, [loc.pathname, loc.search]);
-  // Identify the user on page refresh when already logged in.
+  // Identify the user on page refresh when already logged in. Analytics gets
+  // an opaque id and the plan only — never the customer's email or name.
   React.useEffect(() => {
     if (ready && user) {
-      posthog.identify(user.id || user.email, {
-        email: user.email,
-        name: user.name || undefined,
-        plan: user.plan || undefined,
-      });
+      posthog.identify(String(user.id || ''), { plan: user.plan || undefined });
     }
   }, [ready, user]);
   return null;

@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import { installCredentialEncryption } from './crypto.js';
 
 export const prisma = new PrismaClient();
+
+// Provider credentials (OAuth tokens, Jira/Confluence/Notion API keys) are
+// encrypted with AES-256-GCM at the database boundary — see crypto.js.
+installCredentialEncryption(prisma);
 
 // SQLite concurrency tuning for development / single-node deployments:
 // WAL lets readers proceed during writes; busy_timeout queues writers briefly

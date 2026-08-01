@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-If you believe you have found a security issue in DocGen, email **security@docgen.example**
+If you believe you have found a security issue in Docify, email **security@docifydocai.com**
 (replace with your monitored address before launch) with steps to reproduce.
 
 Please: do not access data that is not yours, do not degrade the service for others, and give

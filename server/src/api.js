@@ -189,8 +189,16 @@ async function verifyHookSecret(req, secret) {
     const want = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
     try { if (crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return true; } catch { /* length mismatch */ }
   }
-  if (req.get('X-Gitlab-Token') === secret) return true;
-  if (req.query.token === secret) return true;
+  // Constant-time comparison everywhere: a plain === leaks the secret one
+  // byte at a time through response timing.
+  const sameSecret = (given) => {
+    if (typeof given !== 'string' || given.length !== String(secret).length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(given), Buffer.from(String(secret))); } catch { return false; }
+  };
+  if (sameSecret(req.get('X-Gitlab-Token'))) return true;
+  // ?token= is deprecated: URLs land in access logs, proxies, and Referer
+  // headers. Kept for existing hooks; prefer the header form.
+  if (sameSecret(req.query.token)) return true;
   return false;
 }
 

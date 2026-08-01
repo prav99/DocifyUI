@@ -749,23 +749,27 @@ function applyFixes({ title, sections, fx }) {
       return [h, b];
     });
   }
+  // Structural fixes add the missing SECTION and mark what a human must fill
+  // in. They must never invent product facts (endpoints, limits, policies) —
+  // fabricated specifics in a customer's documentation are worse than a gap.
   if (fx.has('prereq') && !secs.some(([h]) => /before you begin|prerequisites/i.test(h))) {
     secs = [['Before you begin', bullets([
-      'An active account with an API key from the developer console.',
-      'The base URL for your environment (`https://api.acme.dev/v1`).',
-      'curl 8+ or an HTTP client of your choice.'
+      'TODO: credentials or account access a reader needs before starting.',
+      'TODO: the base URL or environment this guide applies to.',
+      'TODO: tools or runtime versions required.'
     ])], ...secs];
   }
   if (fx.has('limitations') && !secs.some(([h]) => /limitations/i.test(h))) {
     secs = [...secs, ['Limitations', bullets([
-      'Rate limit: 100 requests per second per API key.',
-      'Request body cap: 10 MB.',
-      'Refunds are accepted up to 180 days after the original charge.'
+      'TODO: rate limits or quotas that apply.',
+      'TODO: size or payload caps.',
+      'TODO: known constraints or unsupported cases.'
     ])]];
   }
   if (fx.has('example') && !secs.some(([h]) => /worked example/i.test(h))) {
     secs = [...secs, ['Worked example',
-      F + 'bash\ncurl -X POST https://api.acme.dev/v1/charges \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -d amount=2000 -d currency=usd -d source=src_123\n' + F]];
+      'TODO: add a runnable example for this endpoint or workflow.\n\n' +
+      F + 'bash\n# TODO: replace with a real request from this product\n' + F]];
   }
   return { title: t, sections: secs };
 }

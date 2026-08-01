@@ -27,14 +27,18 @@ process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
    balancer set TRUST_PROXY=1 so limits key on the real client IP. For a
    multi-node fleet move the counters to Redis — the middleware shape is the
    same. */
-function rateLimiter({ windowMs, max }) {
+function rateLimiter({ windowMs, max, keyBy }) {
   const hits = new Map();
   setInterval(() => {
     const now = Date.now();
     for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
   }, windowMs).unref();
   return (req, res, next) => {
-    const ip = req.ip || req.socket.remoteAddress || '?';
+    // Model-spending routes are keyed by account, not IP: one authenticated
+    // user behind one IP must not be able to run up an unbounded AI bill.
+    const ip = keyBy === 'user'
+      ? 'u:' + (req.uid || req.ip || '?')
+      : (req.ip || req.socket.remoteAddress || '?');
     const now = Date.now();
     let e = hits.get(ip);
     if (!e || e.reset < now) { e = { count: 0, reset: now + windowMs }; hits.set(ip, e); }
@@ -53,10 +57,19 @@ if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PRO
 app.disable('x-powered-by');
 
 /* ---------------- Security headers ---------------- */
+const IS_PROD = process.env.NODE_ENV === 'production';
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // HSTS: browsers refuse plain-http for a year once seen. Production only —
+  // it would break local http development.
+  if (IS_PROD) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // Never let a browser or intermediary cache an authenticated API response.
+  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
 });
 
@@ -71,7 +84,20 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+// CORS: the SPA is served from the same origin in production, so a wildcard
+// is unnecessary attack surface. Allow the configured client origin (and
+// localhost during development) instead of every site on the internet.
+const ALLOWED_ORIGINS = [process.env.CLIENT_ORIGIN, SITE_URL, 'https://www.docifydocai.com']
+  .filter(Boolean)
+  .concat(IS_PROD ? [] : ['http://localhost:5173', 'http://localhost:4000']);
+app.use(cors({
+  origin(origin, cb) {
+    // Same-origin and server-to-server requests send no Origin header.
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: false
+}));
 app.use(compression());
 // Keep the raw body so webhook HMAC signatures (X-Hub-Signature-256) can be
 // verified over the exact bytes the sender signed.
@@ -82,6 +108,15 @@ app.use('/api', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMI
 app.use('/api/auth/signup', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/login', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/verify-otp', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
+// Model-spending routes: a much lower per-account ceiling so a single token
+// cannot fan out into an unbounded Anthropic bill. Runs after auth populates
+// req.uid (the apiRouter attaches it before these paths resolve).
+const aiLimit = rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AI || 20), keyBy: 'user' });
+app.use('/api/generations', aiLimit);
+app.use('/api/sync/rewrite', aiLimit);
+app.use('/api/sync/documents', (req, res, next) => (
+  /\/(standardize|analyze|sync|simulate)$/.test(req.path) ? aiLimit(req, res, next) : next()
+));
 
 // /api/health now lives in apiRouter (component-level checks, 200 or 503 for
 // external monitors); this minimal liveness ping moved to /api/ping.

@@ -13,7 +13,11 @@ const j = (s, fb) => { try { return JSON.parse(s); } catch { return fb; } };
 function adminEmails() {
   const configured = String(process.env.ADMIN_EMAILS || 'praveen.jha004@gmail.com')
     .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-  const isLocalDev = String(process.env.DATABASE_URL || '').startsWith('file:');
+  // The seeded demo account has a published password, so it may only hold
+  // admin rights outside production. Gate on NODE_ENV, never on the database
+  // URL scheme: a production deployment could legitimately use SQLite.
+  const isLocalDev = process.env.NODE_ENV !== 'production'
+    && String(process.env.DATABASE_URL || '').startsWith('file:');
   return isLocalDev ? [...configured, 'demo@acme.dev'] : configured;
 }
 

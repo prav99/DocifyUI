@@ -14,8 +14,11 @@ export const mailEnabled = () => Boolean(cfg.host);
 
 export async function sendMail(to, subject, html, opts = {}) {
   if (!mailEnabled()) {
+    // Never log the body: it can carry verification links, one-time codes,
+    // and customer support messages.
     console.log('[mail:dev] to=' + to + ' subject=' + subject +
-      (opts.replyTo ? ' replyTo=' + opts.replyTo : '') + '\n' + html);
+      (opts.replyTo ? ' replyTo=' + opts.replyTo : '') +
+      ' (body suppressed, ' + String(html || '').length + ' chars)');
     return { dev: true };
   }
   const { default: nodemailer } = await import('nodemailer');

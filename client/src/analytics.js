@@ -9,11 +9,23 @@ function gtag() {
   window.gtag.apply(window, arguments);
 }
 
+// A URL safe to send to third-party analytics: the OAuth completion route
+// carries the session token in the fragment, and query strings can carry
+// invite/verification tokens. Never let either reach an analytics vendor.
+export function safeUrl() {
+  try {
+    const u = new URL(window.location.href);
+    u.hash = '';
+    ['token', 'code', 'state', 'key', 'secret'].forEach((p) => u.searchParams.delete(p));
+    return u.toString();
+  } catch { return window.location.origin; }
+}
+
 // Fire a GA4 page_view for the current route. Call this on every route change.
 export function trackPageview(path) {
   gtag('event', 'page_view', {
     page_path: path,
-    page_location: window.location.href,
+    page_location: safeUrl(),
     page_title: document.title,
   });
 }

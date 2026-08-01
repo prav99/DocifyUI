@@ -5,7 +5,19 @@ import { Router } from 'express';
 import { prisma } from './db.js';
 import { sendMail, mailEnabled } from './adapters/mailer.js';
 
+// Session signing key. In production a weak/absent secret would let anyone
+// forge a session for any account, so refuse to boot instead of running
+// insecurely; local development still gets a convenience default.
+const IS_PROD = process.env.NODE_ENV === 'production';
+if (IS_PROD && (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).length < 24)) {
+  throw new Error('JWT_SECRET must be set to a random string of at least 24 characters in production');
+}
 const SECRET = process.env.JWT_SECRET || 'docgen-dev-secret';
+
+// Simulated OAuth ("log in as a provider with no authorization code") exists
+// so the product can be demoed without OAuth apps configured. It logs into a
+// single shared demo account, so it must never be reachable in production.
+const DEMO_LOGIN_ENABLED = !IS_PROD && process.env.ALLOW_DEMO_LOGIN !== 'false';
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 const OAUTH_BASE = process.env.OAUTH_REDIRECT_BASE || 'http://localhost:4000';
 
@@ -243,7 +255,14 @@ export const authRouter = Router();
 // provider = mock OAuth (github|gitlab|bitbucket); doubles as source authorization.
 authRouter.post('/signup', async (req, res) => {
   const { email, password, provider, name } = req.body || {};
-  const providerEmail = provider ? 'praveen@acme.dev' : null;
+  if (provider && !DEMO_LOGIN_ENABLED) {
+    return res.status(400).json({
+      error: realProv(provider)
+        ? 'Use the ' + provider + ' authorization flow to sign up'
+        : 'This provider is not configured for sign-up'
+    });
+  }
+  const providerEmail = provider ? 'demo@docify.local' : null;
   const finalEmail = String(email || providerEmail || '').trim().toLowerCase();
   if (!finalEmail || !finalEmail.includes('@')) return res.status(400).json({ error: 'A valid email is required' });
   if (!provider && (!password || String(password).length < 8)) {
@@ -344,9 +363,16 @@ authRouter.post('/resend', async (req, res) => {
 authRouter.post('/login', async (req, res) => {
   const { email, password, provider } = req.body || {};
   if (provider) {
+    if (!DEMO_LOGIN_ENABLED) {
+      return res.status(400).json({
+        error: realProv(provider)
+          ? 'Use the ' + provider + ' authorization flow to sign in'
+          : 'This provider is not configured for sign-in'
+      });
+    }
     let user = await prisma.user.findFirst({ where: { oauthProvider: provider } });
     if (!user) {
-      user = await prisma.user.create({ data: { email: 'praveen@acme.dev', oauthProvider: provider } });
+      user = await prisma.user.create({ data: { email: 'demo@docify.local', oauthProvider: provider } });
       await bootstrapUser(user);
     }
     return res.json({ token: sign(user.id), user: publicUser(user) });
