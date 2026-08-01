@@ -879,18 +879,27 @@ export default function Source() {
         } else if (c.scope && c.scopeLabel) srcScope[id] = { scope: c.scope, label: c.scopeLabel };
         else if (c.sel && PICK_AFTER[id]) srcScope[id] = { scope: c.sel, label: PICK_AFTER[id] + ' ' + c.sel };
       }
+      // The catalogue knows each repository's REAL default branch. Carrying it
+      // forward is what stops a "master" repo from being documented as "main"
+      // — which reads an empty tree and produces a document grounded in
+      // nothing while still costing the customer a document.
+      const branchOf = (provider, name) => {
+        const hit = ((cat && cat.repos) || []).find((r) => r.provider === provider && r.name === name);
+        return (hit && hit.branch) || '';
+      };
       // Additional repositories (beyond the primary per host) travel with the
       // flow — each one gets its own generation with identical settings.
       const extraRepos = [];
       for (const id of hostIds) {
-        ((cfg[id] || {}).extra || []).forEach((e) => extraRepos.push({ provider: id, repo: e.repo }));
+        ((cfg[id] || {}).extra || []).forEach((e) => extraRepos.push({ provider: id, repo: e.repo, branch: branchOf(id, e.repo) }));
         // A second host's primary is also documented separately from the flow's
         // primary repository.
-        if (primary !== id && (cfg[id] || {}).sel) extraRepos.push({ provider: id, repo: cfg[id].sel });
+        if (primary !== id && (cfg[id] || {}).sel) extraRepos.push({ provider: id, repo: cfg[id].sel, branch: branchOf(id, cfg[id].sel) });
       }
       setFlow({
         provider: primary || sources[0],
         repo: pc.sel || pc.url || ((pc.specs || [])[0] ? pc.specs[0].title : null),
+        branch: (primary && pc.sel && branchOf(primary, pc.sel)) || '',
         srcScope, extraRepos, jiraIssues,
         openapiSpecs, notionPages, notionChildren, confluencePages, confluenceChildren
       });
@@ -933,6 +942,9 @@ export default function Source() {
             return (
               <div key={s.id}
                 className={'tile tile--click cbtile' + (on ? ' tile--selected' : '') + (s.avail ? '' : ' tile--disabled')}
+                role="checkbox" aria-checked={on} tabIndex={0}
+                aria-label={s.name + ' — ' + s.desc}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(s); } }}
                 onClick={() => toggle(s)}>
                 <span className="cb">{on ? <IcCheck c="#ffffff" /> : null}</span>
                 <div className="row row--between" style={{ paddingRight: 8 }}>
@@ -1020,20 +1032,43 @@ export default function Source() {
 
                     {loading ? (
                       <p className="helper mt5">Loading your repository catalogue…</p>
-                    ) : !anyRepos ? (
-                      <div className="notconn mt5">
-                        <div>
-                          <p className="body01"><b>No repositories available</b></p>
-                          <p className="helper mt2">
-                            Connect GitHub, GitLab, or Bitbucket repositories from the Repository Connections
-                            page before continuing. Your progress here is saved.
-                          </p>
+                    ) : !anyRepos ? (() => {
+                      // Repositories may exist under a host the user has not
+                      // selected. Saying "none available" then would be false —
+                      // and sends them to connect something already connected.
+                      const elsewhere = (cat ? cat.repos : []).filter((r) => !hostIds.includes(r.provider));
+                      const otherHosts = [...new Set(elsewhere.map((r) => r.provider))];
+                      return (
+                        <div className="notconn mt5">
+                          <div>
+                            <p className="body01"><b>{otherHosts.length ? 'No repositories under ' + hostIds.map((p) => byId(p).name).join(' or ') : 'No repositories available'}</b></p>
+                            <p className="helper mt2">
+                              {otherHosts.length
+                                ? 'Your catalogue has ' + elsewhere.length + ' repositor' + (elsewhere.length === 1 ? 'y' : 'ies') +
+                                  ' under ' + otherHosts.map((p) => byId(p).name).join(' and ') +
+                                  '. Select ' + (otherHosts.length === 1 ? 'that source' : 'those sources') + ' above, or connect ' +
+                                  hostIds.map((p) => byId(p).name).join('/') + ' repositories.'
+                                : 'Connect GitHub, GitLab, or Bitbucket repositories from the Repository Connections page before continuing. Your progress here is saved.'}
+                            </p>
+                          </div>
+                          {otherHosts.length ? (
+                            // SWAP, not add: leaving the repo-less host selected
+                            // keeps it "Needs setup" forever, so Continue stays
+                            // disabled and the button appears to do nothing.
+                            <button type="button" className="btn btn--primary btn--sm btn--center"
+                              onClick={() => setFlow((f) => ({
+                                sources: [...new Set([...(f.sources || []).filter((s) => !hostIds.includes(s)), ...otherHosts])]
+                              }))}>
+                              Switch to {otherHosts.map((p) => byId(p).name).join(' + ')}
+                            </button>
+                          ) : (
+                            <button type="button" className="btn btn--primary btn--sm btn--center" onClick={goConnections}>
+                              Go to Repository Connections
+                            </button>
+                          )}
                         </div>
-                        <button type="button" className="btn btn--primary btn--sm btn--center" onClick={goConnections}>
-                          Go to Repository Connections
-                        </button>
-                      </div>
-                    ) : null}
+                      );
+                    })() : null}
 
                     {!loading && hostIds.map((p) => {
                       const c = cfg[p] || {};

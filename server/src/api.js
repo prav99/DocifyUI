@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from './db.js';
 import { requireAuth, freshToken } from './auth.js';
-import { SOURCES, DOCTYPES, FORMATS, PLANS, PLAN_LIMITS, planLimits, CI_YAML, docTypeName, formatDef } from './catalog.js';
+import { SOURCES, DOCTYPES, FORMATS, PLANS, PLAN_LIMITS, planLimits, formatAllowed, CI_YAML, docTypeName, formatDef } from './catalog.js';
 import { rateLimiter } from './ratelimit.js';
 import { documentsUsedThisMonth, quotaError, reserveDocumentQuota, releaseDocumentQuota } from './quota.js';
 import { listRepos, listOrgRepos as ghOrgRepos, listBranches as ghBranches } from './adapters/github.js';
@@ -20,7 +20,7 @@ import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js
 import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, renderMarkdownPreview, FRAMEWORK } from './adapters/llm.js';
 import { buildReportModel, renderReportHtml, renderReportPdf, renderReportPptx, traceableReportName } from './adapters/report.js';
-import { fetchRepoFiles } from './adapters/repofiles.js';
+import { fetchRepoFiles, fetchRepoFilesResolved } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge, paymentsLive } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
@@ -51,7 +51,9 @@ apiRouter.get('/catalog', (req, res) => {
   const doctypes = Object.fromEntries(Object.entries(DOCTYPES).map(([track, list]) => [
     track, list.map((d) => ({ ...d, framework: FRAMEWORK[d.id] || null }))
   ]));
-  res.json({ sources: SOURCES, doctypes, formats: FORMATS, plans: PLANS });
+  // planLimits travels with the catalog so the client can show a locked format
+  // as locked, instead of letting someone pick it and hit a 402 afterwards.
+  res.json({ sources: SOURCES, doctypes, formats: FORMATS, plans: PLANS, planLimits: PLAN_LIMITS });
 });
 
 apiRouter.post('/waitlist', async (req, res) => {
@@ -467,6 +469,30 @@ apiRouter.post('/sources', async (req, res) => {
   }
 
   const existing = await prisma.source.findFirst({ where: { userId: req.uid, provider } });
+  // The pricing table sells "1 source" on Free and "All sources" above it.
+  // Reconnecting or updating an existing source is always allowed — only
+  // adding a NEW one beyond the plan's ceiling is refused.
+  //
+  // Deliberately NOT enforced on the OAuth callback (auth.js), which writes its
+  // own Source row: there the provider is the account's sign-in identity, and
+  // refusing it would lock the customer out of their own account. A paywall
+  // must never become an authentication failure.
+  const sourceCap = planLimits(req.user.plan).sources;
+  if (!existing && sourceCap != null) {
+    const held = await prisma.source.findMany({ where: { userId: req.uid }, select: { provider: true } });
+    if (held.length >= sourceCap) {
+      // Name what is already connected: "you have one source" is not
+      // actionable, and the row is often one the user never explicitly added
+      // (signing in with a code host connects it).
+      const names = held.map((s) => (SOURCES.find((x) => x.id === s.provider) || {}).name || s.provider);
+      return res.status(402).json({
+        error: 'The ' + (PLANS[req.user.plan] || PLANS.free).name + ' plan includes ' + sourceCap +
+          ' connected source' + (sourceCap === 1 ? '' : 's') + ', and you have ' + names.join(', ') +
+          ' connected. Disconnect it first, or upgrade to connect more at once.',
+        connected: names, upgrade: true
+      });
+    }
+  }
   const data = {
     userId: req.uid, provider,
     detail: storedDetail || 'OAuth read-only (contents + commit history)',
@@ -900,6 +926,14 @@ function serializeGen(g, opts = {}) {
         const fd = formatDef(g.track, f) || {};
         const key = t + '::' + f;
         const cell = { key, docType: t, docTypeName: docTypeName(g.track, t), format: f, name: fd.name || f.toUpperCase(), ext: fd.ext || '.txt' };
+        // A format the plan does not include is listed but not rendered:
+        // shipping its full text here would hand over exactly what the
+        // download gate refuses. The cell stays visible so the UI can show
+        // it as locked rather than pretending it does not exist.
+        if (opts.plan && !formatAllowed(opts.plan, f)) {
+          base.outputs[key] = { ...cell, title: '', content: '', preview: '', locked: true, error: null };
+          continue;
+        }
         try {
           const { title, content } = renderOne(g, t, f);
           base.outputs[key] = { ...cell, title, content, preview: renderPreviewFor(g, t, f), error: null };
@@ -963,9 +997,20 @@ function outlinePreviewHtml(title, content) {
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 async function runPipeline(genId) {
+  // Captured up front so the failure path can refund the reservation even when
+  // the row itself is unreadable — that is exactly when a customer is most
+  // likely to be charged for nothing.
+  let ownerId = '';
+  // A row that ALREADY holds a delivered document must never be refunded: an
+  // automation run updates the mapped document in place, and a crash-recovery
+  // resume can re-enter this function long after the original run succeeded.
+  // Refunding then would hand back documents the customer actually received.
+  let alreadyDelivered = false;
   try {
     const gen = await prisma.generation.findUnique({ where: { id: genId } });
     if (!gen) return;
+    ownerId = gen.userId;
+    alreadyDelivered = Boolean(gen.content);
     // Real stage tracking: each `mark` fires when actual work reaches that
     // boundary, writing step + stage label + detail + % (never a timer).
     const stages = pipelineStages({ provider: gen.provider, skillName: gen.skillName, instructions: gen.instructions, files: j(gen.files, []) });
@@ -987,9 +1032,25 @@ async function runPipeline(genId) {
     // Jira-only generations have no repository — an empty file set is valid
     // as long as Jira issue bundles (below) provide the source material.
     let repoFiles = [];
-    try { repoFiles = await fetchRepoFiles(gen.provider, gen.repo, gen.branch, srcToken); }
-    catch (e) { console.error('repo fetch skipped (' + gen.repo + '):', e.message); }
-    await mark('extract', repoFiles.length ? repoFiles.length + ' files read' : 'reading source');
+    // The branch that actually produced files — not necessarily the one asked
+    // for. Everything downstream (scope rules, docify.yaml lookup, the stored
+    // record) must use the REAL branch, or a repo whose trunk is "master"
+    // silently documents nothing while still consuming quota.
+    let usedBranch = gen.branch;
+    let branchNote = '';
+    try {
+      const got = await fetchRepoFilesResolved(gen.provider, gen.repo, gen.branch, srcToken);
+      repoFiles = got.files;
+      usedBranch = got.branch || gen.branch;
+      if (got.usedFallback) {
+        branchNote = 'Branch "' + got.requestedBranch + '" had no readable source, so Docify documented "' + got.branch + '" — this repository\'s default branch.';
+        console.warn('[branch] ' + gen.repo + ': ' + branchNote);
+      }
+    } catch (e) { console.error('repo fetch skipped (' + gen.repo + '):', e.message); }
+    if (usedBranch !== gen.branch) {
+      await prisma.generation.update({ where: { id: genId }, data: { branch: usedBranch } }).catch(() => {});
+    }
+    await mark('extract', repoFiles.length ? repoFiles.length + ' files read from ' + usedBranch : 'reading source');
     // Unified rules engine: the same rule sets + docify.yaml that govern
     // automation and Doc sync also scope NORMAL generation — files outside the
     // configured scan scope never reach the AI, and rule-set instructions /
@@ -1008,7 +1069,7 @@ async function runPipeline(genId) {
     let scopeNote = '';
     if (repoFiles.length) {
       try {
-        const eff = await resolveEffectiveConfig(gen.userId, gen.provider, gen.repo, gen.branch,
+        const eff = await resolveEffectiveConfig(gen.userId, gen.provider, gen.repo, usedBranch,
           { ruleSetId: String(j(gen.output, {}).ruleSetId || '') });
         scopedFiles = repoFiles.filter((f) => passesScan(f.path, eff.config));
         effInstructions = eff.instructions || '';
@@ -1036,7 +1097,24 @@ async function runPipeline(genId) {
         console.warn('[scope] ' + gen.repo + ': ' + scopeNote);
         await mark('extract', 'no files in scope');
       }
+    } else if (gen.repo && gen.repo.includes('/')) {
+      // No files at all, on the requested branch OR the repository's default.
+      // Say so plainly — but ONLY when the repository was the intended source.
+      // A Jira-, spec-, Notion- or Confluence-based generation legitimately has
+      // no repository files, and warning there would call a perfectly grounded
+      // document broken.
+      const oc = j(gen.output, {});
+      const hasOtherSource = ['jiraIssues', 'openapiSpecs', 'notionPages', 'confluencePages']
+        .some((k) => Array.isArray(oc[k]) && oc[k].length);
+      if (!hasOtherSource) {
+        scopeNote = 'No readable source files were found in ' + gen.repo + ' on "' + usedBranch +
+          '". Check the repository and branch, and that Docify has access to it — this document was built from its structure only, not your code.';
+        console.warn('[scope] ' + gen.repo + ': ' + scopeNote);
+      }
     }
+    // A silent branch switch would be its own honesty problem: tell the user
+    // which branch was actually read.
+    if (branchNote) scopeNote = scopeNote ? branchNote + ' ' + scopeNote : branchNote;
     // NON-REPOSITORY sources become real source material: every selected
     // Jira issue, OpenAPI spec, Notion page, and Confluence page is fetched
     // and normalized to markdown the AI reads alongside — or instead of —
@@ -1113,6 +1191,21 @@ async function runPipeline(genId) {
         guide: oc0.styleGuide || '' // per-pipeline style guide (falls back to tenant/default when '')
       });
     } catch (e) { console.error('writing policy skipped:', e.message); }
+    // The pricing page says free-plan documents are watermarked, so they are —
+    // applied server-side where the customer cannot switch it off.
+    const genOutput = j(gen.output, {});
+    let planForGen = 'free';
+    try {
+      const owner = await prisma.user.findUnique({ where: { id: gen.userId }, select: { plan: true } });
+      planForGen = (owner && owner.plan) || 'free';
+    } catch { /* default to the most restrictive */ }
+    // Unconditional: a user-supplied blank-but-truthy value (" ") would
+    // otherwise pass the || check and silently disable the watermark, since
+    // the exporters trim before deciding whether to stamp.
+    if (planLimits(planForGen).watermark) {
+      const own = String(genOutput.watermark || '').trim();
+      genOutput.watermark = own || 'Free plan';
+    }
     const genArgs = {
       track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
       repo: gen.repo,
@@ -1121,7 +1214,7 @@ async function runPipeline(genId) {
       skill: gen.skill || '', skillName: gen.skillName || '',
       style: stylePolicy ? compileStylePrompt(stylePolicy) : '',
       brief: { ...baseBrief, audience: baseBrief.audience || effAudience },
-      output: j(gen.output, {}), files: scopedFiles
+      output: genOutput, files: scopedFiles
     };
     if (idxOf('skill') >= 0) await mark('skill');
     if (idxOf('custom') >= 0) await mark('custom');
@@ -1215,7 +1308,9 @@ async function runPipeline(genId) {
     });
     // Audit trail: the resolved policy (without raw custom text) + the
     // consistency scores ride in the generation's output JSON.
-    const outWithPolicy = { ...j(gen.output, {}) };
+    // genOutput (not gen.output) so the free-plan watermark persists onto the
+    // row — every later download re-renders from here.
+    const outWithPolicy = { ...genOutput };
     if (stylePolicy) {
       const { _skillText, _manualText, ...auditPolicy } = stylePolicy;
       outWithPolicy.resolvedPolicy = auditPolicy;
@@ -1270,6 +1365,14 @@ async function runPipeline(genId) {
   } catch (e) {
     console.error('generation pipeline failed:', e && e.message);
     await prisma.generation.update({ where: { id: genId }, data: { status: 'failed', stage: 'Failed', stageDetail: String((e && e.message) || '').slice(0, 200) } }).catch(() => {});
+    // A failed run delivered nothing, so it must not consume the customer's
+    // monthly allowance. The reservation is keyed to this generation, so the
+    // refund is exact — and re-running the same id cannot double-refund,
+    // because a completed run never reaches this branch.
+    if (ownerId && !alreadyDelivered) {
+      try { await releaseDocumentQuota(ownerId, genId); }
+      catch (releaseErr) { console.error('quota refund skipped:', releaseErr.message); }
+    }
   }
 }
 
@@ -1297,6 +1400,11 @@ apiRouter.post('/generations', async (req, res) => {
   if (String(skill).length > 60000) return res.status(400).json({ error: 'SKILL.md is too large (60 KB max)' });
   if (track !== 'technical' && track !== 'marketing') return res.status(400).json({ error: 'Invalid track' });
   if (!Array.isArray(docTypes) || docTypes.length === 0) return res.status(400).json({ error: 'Select at least one document type' });
+  // Validate BEFORE reserving quota: an unknown document type used to run the
+  // whole pipeline and bill the customer a document for output nobody asked for.
+  const knownTypes = new Set((DOCTYPES[track] || []).map((d) => d.id));
+  const badType = docTypes.map(String).find((d) => !knownTypes.has(d));
+  if (badType) return res.status(400).json({ error: 'Unknown document type: ' + badType });
   // One or many output formats: `formats` (ordered, deduped) wins when sent;
   // the single `format` field keeps every existing client working unchanged.
   const requested = [...new Set((Array.isArray(formats) && formats.length ? formats : [format]).map(String))];
@@ -1305,16 +1413,28 @@ apiRouter.post('/generations', async (req, res) => {
     const def = formatDef(track, f);
     if (!def) return res.status(400).json({ error: 'Unknown format: ' + f });
     if (!def.ok) return res.status(400).json({ error: def.name + ' is not currently supported. We will add support for it in a future release.' });
+    // The pricing table sells export formats by tier; enforce that here, or
+    // the paid tiers advertise a difference the product does not deliver.
+    if (!formatAllowed(req.user.plan, f)) {
+      return res.status(402).json({
+        error: def.name + ' is not included in the ' + (PLANS[req.user.plan] || PLANS.free).name + ' plan. Upgrade to export it.',
+        format: f, upgrade: true
+      });
+    }
   }
   const primaryFormat = requested[0];
   const fmt = formatDef(track, primaryFormat);
   // Enforce the advertised monthly document cap before spending on the model.
+  // The generation id is minted here so the reservation carries it: a run that
+  // fails outright can then hand the documents back (see runPipeline).
+  const genId = 'gen_' + (await import('node:crypto')).randomBytes(12).toString('hex');
   const wanted = Math.max(1, docTypes.length);
-  const over = await reserveDocumentQuota(req.uid, req.user.plan, wanted, { trigger: 'manual' });
+  const over = await reserveDocumentQuota(req.uid, req.user.plan, wanted, { generationId: genId, trigger: 'manual' });
   if (over) return res.status(402).json({ ...over, upgrade: true });
   const steps = buildSteps({ provider, instructions, files, skillName });
   const gen = await prisma.generation.create({
     data: {
+      id: genId,
       userId: req.uid, repo: repo || provider, branch, track,
       provider: ['github', 'gitlab', 'bitbucket'].includes(provider) ? provider : 'github',
       docTypes: JSON.stringify(docTypes), format: primaryFormat, instructions,
@@ -1338,7 +1458,7 @@ apiRouter.get('/generations', async (req, res) => {
 apiRouter.get('/generations/:id', async (req, res) => {
   const g = await prisma.generation.findFirst({ where: { id: req.params.id, userId: req.uid } });
   if (!g) return res.status(404).json({ error: 'Not found' });
-  res.json({ generation: serializeGen(g, { withOutputs: true }) });
+  res.json({ generation: serializeGen(g, { withOutputs: true, plan: req.user.plan }) });
 });
 
 apiRouter.get('/generations/:id/download', async (req, res) => {
@@ -1349,6 +1469,15 @@ apiRouter.get('/generations/:id/download', async (req, res) => {
   let wanted = req.query.kind === 'report' ? g.format : String(req.query.fmt || g.format);
   // Never 400 a valid generation over a format quirk — fall back to its primary.
   if (!genFormats(g).includes(wanted)) wanted = g.format;
+  // A downgrade after generating must not keep handing out paid formats.
+  if (req.query.kind !== 'report' && !formatAllowed(req.user.plan, wanted)) {
+    const def = formatDef(g.track, wanted);
+    return res.status(402).json({
+      error: ((def && def.name) || wanted) + ' downloads are not included in the ' +
+        (PLANS[req.user.plan] || PLANS.free).name + ' plan. Upgrade to export it.',
+      upgrade: true
+    });
+  }
   // ?doc= downloads a single document type; omitted = the whole set (legacy).
   const types = j(g.docTypes, []);
   const wantDoc = req.query.doc ? String(req.query.doc) : null;
@@ -1513,11 +1642,77 @@ apiRouter.post('/quality/:id/fix', async (req, res) => {
   res.json({ report: ser, regenerated: true });
 });
 
+/* Re-runs the quality review against the CURRENT document text and rewrites
+   the stored findings. It used to sleep and return the same report while the
+   UI announced a re-verification, which was a claim the server never made
+   good on — after applying fixes the document really has changed, so the
+   review has to actually run again for the answer to mean anything. */
 apiRouter.post('/quality/:id/recheck', async (req, res) => {
   const rep = await prisma.qualityReport.findUnique({ where: { id: req.params.id }, include: { generation: true } });
   if (!rep || rep.generation.userId !== req.uid) return res.status(404).json({ error: 'Not found' });
-  await sleep(600); // simulated judge pass
-  res.json({ report: serializeReport(rep, rep.generation), verified: true });
+  const gen = rep.generation;
+  if (!gen.content) {
+    // Nothing to re-examine yet: say so rather than implying a fresh pass.
+    return res.status(409).json({ error: 'This document has not finished generating yet — re-check once it completes.' });
+  }
+  const report = judge({ content: gen.content, title: gen.title, repo: gen.repo, track: gen.track });
+  let structure = [];
+  try {
+    const s = generateDocument({
+      track: gen.track, docTypes: j(gen.docTypes, []), format: gen.format,
+      repo: gen.repo, instructions: gen.instructions, skill: gen.skill || '',
+      skillName: gen.skillName || '', brief: j(gen.brief, {}), output: j(gen.output, {}),
+      fixes: j(rep.fixedIds, []), aiDocs: j(gen.aiDocs, []).length ? j(gen.aiDocs, []) : null
+    });
+    structure = s.structure || [];
+  } catch (e) { console.error('recheck structure pass skipped:', e.message); }
+  let styleReport = null;
+  try {
+    // The policy must be RE-RESOLVED, not read back from gen.output: that copy
+    // went through JSON, which turns its terminology RegExps into {} — and
+    // String.match({}) matches almost any prose, so the stored copy invents
+    // terminology violations that were never in the document.
+    const tenant = await prisma.writingProfile.findUnique({ where: { userId: gen.userId } });
+    const oc = j(gen.output, {});
+    const policy = resolveWritingPolicy({
+      track: gen.track, docType: j(gen.docTypes, [])[0] || '', format: gen.format,
+      brief: j(gen.brief, {}), tenant, skillText: gen.skill || '',
+      instructions: gen.instructions || '', guide: oc.styleGuide || ''
+    });
+    if (policy) styleReport = styleAudit(gen.content, policy);
+  } catch (e) { console.error('recheck style audit skipped:', e.message); }
+  const styleRows = [
+    ...structure,
+    // Same shape the pipeline writes — styleAudit emits kind/preferred/
+    // detected/occurrences/action, so mapping label/detail produced blank rows
+    // that every one of them counted as a failure.
+    ...(styleReport ? styleReport.findings.map((f) => ({
+      t: (f.kind === 'terminology' ? 'Terminology: “' + f.detected + '” → “' + f.preferred + '”'
+        : f.kind === 'prohibited' ? 'Prohibited term: “' + f.detected + '”'
+        : f.kind === 'structure' ? 'Structure: ' + f.preferred
+        : 'Voice: ' + f.detected),
+      d: f.occurrences + ' occurrence' + (f.occurrences === 1 ? '' : 's') + ' — ' + f.action,
+      pass: /Auto-corrected/.test(f.action)
+    })) : []),
+    ...report.style
+  ];
+  // Accepted fixes are kept verbatim. Filtering them to what the fresh rubric
+  // still reports looks sensible and is exactly backwards: a fix that WORKED
+  // stops being reported, so it would be forgotten — and the next fix would
+  // re-render the document without it, silently deleting sections the customer
+  // had already accepted.
+  const updated = await prisma.qualityReport.update({
+    where: { id: rep.id },
+    data: {
+      issues: JSON.stringify(report.issues),
+      links: JSON.stringify(report.links),
+      style: JSON.stringify(styleRows),
+      fixedIds: rep.fixedIds
+    }
+  });
+  const ser = serializeReport(updated, gen);
+  await prisma.generation.update({ where: { id: gen.id }, data: { score: ser.overall } }).catch(() => {});
+  res.json({ report: ser, verified: true, rechecked: true });
 });
 
 /* Billing */
@@ -2303,8 +2498,37 @@ async function pipelineCapReached(req, res) {
   return true;
 }
 
+/* An automation profile runs on every merge, forever, reserving quota each
+   time — so an invalid document type here is more expensive than the same
+   mistake on the one-off wizard, where it is already rejected. Validated on
+   the way in, against the same catalog. */
+function invalidProfileConfig(config, plan = '') {
+  const cfg = config && typeof config === 'object' ? config : {};
+  const track = cfg.track === undefined ? 'technical' : cfg.track;
+  if (track !== 'technical' && track !== 'marketing') return 'Invalid track';
+  if (cfg.docTypes !== undefined) {
+    if (!Array.isArray(cfg.docTypes)) return 'docTypes must be a list';
+    const known = new Set((DOCTYPES[track] || []).map((d) => d.id));
+    const bad = cfg.docTypes.map(String).find((d) => !known.has(d));
+    if (bad) return 'Unknown document type: ' + bad;
+  }
+  for (const f of [].concat(cfg.formats || [], cfg.format ? [cfg.format] : [])) {
+    const def = formatDef(track, String(f));
+    if (!def) return 'Unknown format: ' + f;
+    if (!def.ok) return def.name + ' is not currently supported.';
+    // The same entitlement the wizard enforces — otherwise a pipeline becomes
+    // a standing loophole that emits a paid format on every merge.
+    if (plan && !formatAllowed(plan, String(f))) {
+      return def.name + ' is not included in the ' + (PLANS[plan] || PLANS.free).name + ' plan. Upgrade to automate it.';
+    }
+  }
+  return '';
+}
+
 apiRouter.post('/profiles', async (req, res) => {
   const { name, config } = req.body || {};
+  const bad = invalidProfileConfig(config, req.user.plan);
+  if (bad) return res.status(400).json({ error: bad });
   if (await pipelineCapReached(req, res)) return;
   const row = await prisma.automationProfile.create({
     data: {
@@ -2326,6 +2550,8 @@ apiRouter.put('/profiles/:id', async (req, res) => {
   const row = await ownProfile(req, res);
   if (!row) return;
   const { name, config, status } = req.body || {};
+  const badCfg = config === undefined ? '' : invalidProfileConfig(config, req.user.plan);
+  if (badCfg) return res.status(400).json({ error: badCfg });
   const data = {};
   if (typeof name === 'string' && name.trim()) data.name = name.trim().slice(0, 80);
   if (config && typeof config === 'object') data.config = JSON.stringify(config);

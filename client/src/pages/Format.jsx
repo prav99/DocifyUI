@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
-import { useFlow, toast } from '../store.jsx';
+import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, HelpLink } from '../ui.jsx';
 
 // Mirrors DEFAULT_OUTPUT on the server (server/src/adapters/llm.js).
@@ -23,10 +23,25 @@ const ACCENTS = [
 export default function Format() {
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
+  const { user } = useAuth();
   const [catalog, setCatalog] = useState(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState({ cover: true });
   useEffect(() => { getCatalog().then(setCatalog); }, []);
+  // The track's default format (DITA on technical) is not available on every
+  // plan. Land on the first format this account can actually export, so the
+  // step never opens with nothing selected and Generate greyed out.
+  useEffect(() => {
+    if (!catalog) return;
+    const opts = catalog.formats[flow.track] || [];
+    const caps = (catalog.planLimits || {})[(user && user.plan) || 'free'] || {};
+    const allowed = caps.formats == null ? null : caps.formats;
+    const current = (flow.formats && flow.formats.length ? flow.formats : (flow.format ? [flow.format] : []))
+      .filter((id) => opts.some((f) => f.id === id) && (allowed == null || allowed.includes(id)));
+    if (current.length) return;
+    const first = opts.find((f) => f.ok && (allowed == null || allowed.includes(f.id)));
+    if (first) setFlow({ formats: [first.id], format: first.id, genId: null });
+  }, [catalog, user, flow.track]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
   const oc = { ...OUT_DEFAULTS, ...(flow.outputCfg || {}) };
@@ -70,12 +85,23 @@ export default function Format() {
   );
 
   const list = catalog.formats[flow.track] || [];
-  // Multi-select: flow.formats is the ordered selection; flow.format mirrors
-  // the first pick so every existing consumer keeps working.
+  // Export formats are sold by tier, and the server enforces that. Reflecting
+  // it here means a locked format reads as locked instead of failing at the
+  // last step, after the customer has configured everything.
+  const planName = (user && user.plan) || 'free';
+  const planCaps = (catalog.planLimits || {})[planName] || {};
+  const allowedFormats = planCaps.formats == null ? null : planCaps.formats;
+  const isLocked = (id) => allowedFormats != null && !allowedFormats.includes(id);
+  const planLabel = ((catalog.plans || {})[planName] || {}).name || 'current';
   const selected = (flow.formats && flow.formats.length ? flow.formats : (flow.format ? [flow.format] : []))
-    .filter((id) => list.some((f) => f.id === id));
+    .filter((id) => list.some((f) => f.id === id) && !isLocked(id));
   const toggleFormat = (f) => {
     if (!f.ok) { toast('info', 'Coming soon', f.name + ' is on the roadmap — pick a supported format for now'); return; }
+    if (isLocked(f.id)) {
+      toast('info', f.name + ' is a paid format',
+        'The ' + planLabel + ' plan exports ' + (allowedFormats || []).map((x) => (list.find((y) => y.id === x) || {}).name || x).filter(Boolean).join(' and ') + '. Upgrade to unlock ' + f.name + '.');
+      return;
+    }
     const next = selected.includes(f.id) ? selected.filter((x) => x !== f.id) : [...selected, f.id];
     setFlow({ formats: next, format: next[0] || '', genId: null });
   };
@@ -92,7 +118,10 @@ export default function Format() {
       const instructions = [scopeNote && 'Focus on these source items — ' + scopeNote + '.', flow.instructions]
         .filter(Boolean).join('\n');
       const body = {
-        repo: flow.repo || flow.provider, branch: 'main', track: flow.track,
+        // The repository's real default branch, carried from the catalogue at
+        // the Source step. 'main' is only a last resort; the server re-resolves
+        // and corrects it if this branch turns out to hold no source.
+        repo: flow.repo || flow.provider, branch: flow.branch || 'main', track: flow.track,
         docTypes: flow.docTypes, format: selected[0], formats: selected,
         instructions, files: flow.files, provider: flow.provider || 'github',
         skillName: flow.skillName || '', skill: flow.skillContent || '',
@@ -115,7 +144,7 @@ export default function Format() {
       let started = 0;
       for (const ex of extras) {
         try {
-          await api('/generations', { method: 'POST', body: { ...body, repo: ex.repo, provider: ex.provider } });
+          await api('/generations', { method: 'POST', body: { ...body, repo: ex.repo, provider: ex.provider, branch: ex.branch || 'main' } });
           started += 1;
         } catch { /* one bad extra must not block the primary run */ }
       }
@@ -142,12 +171,20 @@ export default function Format() {
           {list.map((f) => {
             const idx = selected.indexOf(f.id);
             return (
-              <div key={f.id} className={'tile tile--click' + (idx >= 0 ? ' tile--selected' : '')}
+              <div key={f.id} className={'tile tile--click' + (idx >= 0 ? ' tile--selected' : '') + (isLocked(f.id) ? ' tile--disabled' : '')}
+                role="checkbox" aria-checked={idx >= 0} tabIndex={0}
+                aria-label={f.name + ' — ' + f.desc + (f.ok ? '' : ' (coming soon)') + (isLocked(f.id) ? ' (not included in your plan)' : '')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFormat(f); } }}
                 onClick={() => toggleFormat(f)}>
                 <div className="row row--between">
                   <p className="h01">{f.name}</p>
+                  {/* "Coming soon" wins over "Upgrade": no plan delivers a
+                      format that does not exist yet, so offering an upgrade
+                      for it would be selling something we cannot ship. */}
                   {idx >= 0 ? <span className="tag tag--blue">{selected.length > 1 ? '✓ ' + (idx + 1) : '✓'}</span>
-                    : f.ok ? null : <span className="tag tag--gray">Coming soon</span>}
+                    : !f.ok ? <span className="tag tag--gray">Coming soon</span>
+                    : isLocked(f.id) ? <span className="tag tag--gray">Upgrade</span>
+                    : null}
                 </div>
                 <p className="helper mt2">{f.desc}</p>
               </div>

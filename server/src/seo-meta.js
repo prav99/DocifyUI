@@ -72,7 +72,7 @@ const JSON_LD = JSON.stringify({
         { '@type': 'Offer', name: 'Starter', price: '24', priceCurrency: 'USD', description: 'Per month, billed annually' },
         { '@type': 'Offer', name: 'Team', price: '79', priceCurrency: 'USD', description: 'Per month, five seats included, billed annually' }
       ],
-      featureList: 'AI documentation generation, LLM-as-a-Judge quality scoring, AI-search readiness evaluation, human review and approval, GitHub/GitLab/Bitbucket integration, Markdown/PDF/Word/HTML/DITA export, release notes and CI/CD documentation automation, AI Quality Report exports (PDF/HTML/PowerPoint)'
+      featureList: 'AI documentation generation, rubric-based documentation quality scoring, AI-search readiness evaluation, human review and approval, GitHub/GitLab/Bitbucket integration, Markdown/PDF/Word/HTML/DITA export, release notes and CI/CD documentation automation, AI Quality Report exports (PDF/HTML/PowerPoint)'
     },
     { '@type': 'Organization', name: SITE_NAME, url: SITE_URL, logo: SITE_URL + '/icon.svg' },
     { '@type': 'WebSite', name: SITE_NAME, url: SITE_URL, description: DEFAULT_DESC }
@@ -159,7 +159,7 @@ ${faqHtml()}
 <p>Everything in Team plus custom style-guide rules, a DPA, and dedicated support with SLA. SSO (SAML/OIDC) and audit logs are available on request. <a href="/contact">Contact us</a>.</p>`,
   '/docs': () => `
 <h1>Docify documentation</h1>
-<p>How Docify works: connecting GitHub, GitLab, and Bitbucket; generating and auto-updating documentation from code; the AI quality review and AI-search readiness; human review and approval; automation pipelines; and every output format. Popular guides: <a href="/docs/llm-as-a-judge">LLM-as-a-Judge scoring</a>, <a href="/docs/ai-compatibility-checker">AI compatibility checker</a>, <a href="/docs/docs-from-commits">Documentation from code commits</a>, <a href="/docs/ci-pipeline-setup">CI pipeline setup</a>.</p>`,
+<p>How Docify works: connecting GitHub, GitLab, and Bitbucket; generating and auto-updating documentation from code; the AI quality review and AI-search readiness; human review and approval; automation pipelines; and every output format. Popular guides: <a href="/docs/llm-as-a-judge">AI-readiness scoring</a>, <a href="/docs/ai-compatibility-checker">AI compatibility checker</a>, <a href="/docs/docs-from-commits">Documentation from code commits</a>, <a href="/docs/ci-pipeline-setup">CI pipeline setup</a>.</p>`,
 };
 
 export function prerenderFor(path) {

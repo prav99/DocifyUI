@@ -99,6 +99,9 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .tile--white{background:var(--background);border:1px solid var(--border-subtle)}
 .tile--click{cursor:pointer;transition:background .07s var(--ease)}
 .tile--click:hover{background:var(--layer-hover)}
+/* Keyboard users need to see where they are — the wizard is completable
+   entirely from the keyboard, so the focus ring is not optional. */
+.tile--click:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .tile--selected{outline:2px solid var(--button-primary);outline-offset:-2px;background:var(--background)}
 .tile--disabled{opacity:.65}
 

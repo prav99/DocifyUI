@@ -104,6 +104,9 @@ export default function DocType() {
             const on = flow.docTypes.includes(d.id);
             return (
               <div key={d.id} className={'tile tile--click cbtile' + (on ? ' tile--selected' : '')}
+                role="checkbox" aria-checked={on} tabIndex={0}
+                aria-label={d.name + ' — ' + d.desc}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleType(d.id); } }}
                 onClick={() => toggleType(d.id)}>
                 <span className="cb">{on ? <IcCheck c="#ffffff" /> : null}</span>
                 <div className="row">

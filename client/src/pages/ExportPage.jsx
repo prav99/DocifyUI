@@ -24,6 +24,7 @@ export default function ExportPage() {
   const [busyFmt, setBusyFmt] = useState(null);        // format currently generating
   const [preset, setPreset] = useState('full');        // executive | full | technical
   const [cfgOpen, setCfgOpen] = useState(false);       // preset configuration popover
+  const [copied, setCopied] = useState(false);         // share-link confirmation
 
   useEffect(() => {
     if (!flow.genId) { nav('/dashboard'); return; }
@@ -57,6 +58,23 @@ export default function ExportPage() {
     } catch (e) {
       posthog.captureException(e, { event: 'document_download_error', format: gen.format });
       toast('error', 'Download failed', e.message);
+    }
+  }
+
+  // Real share: the report is URL-addressable at /quality/:genId, so copying
+  // that link actually gives a teammate the document. Clipboard access can be
+  // denied (insecure origin, permission), so failure is reported honestly
+  // rather than swallowed behind a success message.
+  async function copyReportLink() {
+    const url = window.location.origin + '/quality/' + gen.id;
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(url);
+      else throw new Error('clipboard unavailable');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+      toast('success', 'Link copied', 'Opens this report when signed in to this account.');
+    } catch {
+      toast('info', 'Copy the link manually', url);
     }
   }
 
@@ -183,11 +201,15 @@ export default function ExportPage() {
               Set up auto-regenerate on merge<span className="ico">→</span>
             </button>
             <div className="divider" style={{ margin: '24px 0' }} />
-            <h2 className="h02 mb3">Share with your team</h2>
-            <p className="helper mb5">Sends a read-only link to the quality report.</p>
-            <button className="btn btn--tertiary btn--field"
-              onClick={() => toast('success', 'Report shared', 'Read-only link sent to your team workspace')}>
-              Share quality report with team
+            <h2 className="h02 mb3">Link to this report</h2>
+            {/* This used to claim it emailed a link while sending nothing.
+                Every report is scoped to the account that generated it, so the
+                link only opens for THIS account — promising teammates could
+                open it would replace one false claim with another. To hand the
+                report to someone else, download it below and send the file. */}
+            <p className="helper mb5">Copies a direct link to this quality report. It opens when you are signed in to this account — to give it to someone else, download the report above and send the file.</p>
+            <button className="btn btn--tertiary btn--field" onClick={copyReportLink}>
+              {copied ? 'Link copied ✓' : 'Copy quality report link'}
             </button>
           </div>
         </div>

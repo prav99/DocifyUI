@@ -111,12 +111,12 @@ const TOPICS = {
   quality: {
     title: 'Step 5 — AI quality review',
     page: '/quality',
-    intro: 'An LLM judge scores the document against an enterprise documentation rubric: structure, titles, metadata, clarity, and examples.',
+    intro: 'The document is scored against an enterprise documentation rubric: structure, titles, metadata, clarity, and examples. The checks are deterministic rules over the document text, not a language-model opinion.',
     steps: [
       'The overall score (0–100) and verdict sit at the top. 85+ passes the publish gate.',
-      'The "AI judge review" tab lists open findings — click "Apply fix" on one, or "Fix all remaining" to repair everything at once. Fixes are real content edits.',
+      'The "Rubric findings" tab lists open findings — click "Apply fix" on one, or "Fix all remaining" to repair everything at once. Fixes are real content edits.',
       'The "Scores" tab breaks the result into weighted dimensions; "Broken links" lists link-check failures; "Style guide" shows editorial checks plus your writing-consistency scores (Voice, Terminology, Structure, Formatting) with concrete findings like “Preferred term: sign in · Detected: log in · 4 occurrences”.',
-      '"Re-check with AI judge" re-runs the evaluation to verify the score after fixes.',
+      '"Re-check this document" runs the rubric again over the current text — useful after edits or applied fixes.',
       'The dark panel estimates how likely the document is to be retrieved and cited by ChatGPT, Claude, and Gemini — it recomputes after every fix.'
     ],
     issues: [

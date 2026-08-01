@@ -133,7 +133,7 @@ before(async () => {
 
   const gen = await api('/generations', {
     method: 'POST', token: alice.token,
-    body: { repo: 'alice/private-repo', track: 'technical', docTypes: ['userguide'], format: 'markdown' }
+    body: { repo: 'alice/private-repo', track: 'technical', docTypes: ['userguide'], format: 'pdf' }
   });
   assert.ok(gen.status === 200 || gen.status === 201, 'could not create Alice document: ' + JSON.stringify(gen.body));
   aliceDoc = gen.body.generation ? gen.body.generation.id : gen.body.id;
@@ -217,7 +217,7 @@ describe('cross-account isolation', () => {
   test('isolation holds in the other direction too', async () => {
     const gen = await api('/generations', {
       method: 'POST', token: bob.token,
-      body: { repo: 'bob/secret-repo', track: 'technical', docTypes: ['userguide'], format: 'markdown' }
+      body: { repo: 'bob/secret-repo', track: 'technical', docTypes: ['userguide'], format: 'pdf' }
     });
     const bobDoc = gen.body.generation ? gen.body.generation.id : gen.body.id;
     await waitForGeneration(bobDoc, bob.token);
@@ -324,7 +324,7 @@ describe('plan limits are enforced server-side', () => {
 
     const blocked = await api('/generations', {
       method: 'POST', token: u.token,
-      body: { repo: 'capped/repo', track: 'technical', docTypes: ['userguide'], format: 'markdown' }
+      body: { repo: 'capped/repo', track: 'technical', docTypes: ['userguide'], format: 'pdf' }
     });
     assert.equal(blocked.status, 402, 'a sixth document was allowed on the Free plan');
     assert.match(blocked.body.error || '', /5 documents/);
@@ -338,7 +338,7 @@ describe('plan limits are enforced server-side', () => {
     // 1 remaining, asking for 3.
     const r = await api('/generations', {
       method: 'POST', token: u.token,
-      body: { repo: 'straddle/repo', track: 'technical', docTypes: ['userguide', 'apiref', 'quickstart'], format: 'markdown' }
+      body: { repo: 'straddle/repo', track: 'technical', docTypes: ['userguide', 'api', 'quickstart'], format: 'pdf' }
     });
     assert.equal(r.status, 402, 'a run larger than the remaining allowance was accepted');
     assert.match(r.body.error || '', /remain/);
@@ -352,7 +352,7 @@ describe('plan limits are enforced server-side', () => {
 
     const gen = await api('/generations', {
       method: 'POST', token: u.token,
-      body: { repo: 'usage/repo', track: 'technical', docTypes: ['userguide', 'apiref'], format: 'markdown' }
+      body: { repo: 'usage/repo', track: 'technical', docTypes: ['userguide', 'api'], format: 'pdf' }
     });
     assert.ok(gen.status === 200 || gen.status === 201);
     const afterBill = await api('/billing', { token: u.token });
@@ -401,7 +401,7 @@ describe('plan limits are enforced server-side', () => {
     // observe used=0 and pass; only an atomic reservation holds the line.
     const results = await Promise.all(Array.from({ length: 20 }, () => api('/generations', {
       method: 'POST', token: u.token,
-      body: { repo: 'race/repo', track: 'technical', docTypes: ['userguide'], format: 'markdown' }
+      body: { repo: 'race/repo', track: 'technical', docTypes: ['userguide'], format: 'pdf' }
     })));
     const created = results.filter((r) => r.status === 200 || r.status === 201).length;
     assert.ok(created <= 5, 'quota overshot: ' + created + ' documents created against a limit of 5');
@@ -438,6 +438,281 @@ describe('plan limits are enforced server-side', () => {
     assert.equal(await prisma.automationProfile.count({ where: { userId: u.id } }), 1);
   });
 
+  // The pricing table sells export formats and source count by tier. Both were
+  // advertised and unenforced, so a Free account received everything the paid
+  // tiers promise. Each assertion below is paired with a positive control, so
+  // a route that simply broke cannot read as "correctly restricted".
+  test('export formats are restricted to the plan that includes them', async () => {
+    const u = await signup('formats@example.test'); // Free: PDF + Word only
+    const locked = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'fmt/repo', track: 'technical', docTypes: ['userguide'], formats: ['dita'] }
+    });
+    assert.equal(locked.status, 402, 'Free exported DITA, a Team-tier format');
+    assert.equal(locked.body.upgrade, true);
+    assert.equal(await prisma.generation.count({ where: { userId: u.id } }), 0,
+      'a blocked format still created a generation row');
+
+    // Positive control: an included format on the same account must work.
+    const allowed = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'fmt/repo', track: 'technical', docTypes: ['userguide'], formats: ['pdf'] }
+    });
+    assert.equal(allowed.status, 201, 'Free could not export PDF, which its plan includes');
+
+    // And the same format is available one tier up.
+    await prisma.user.update({ where: { id: u.id }, data: { plan: 'team' } });
+    const upgraded = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'fmt/repo', track: 'technical', docTypes: ['userguide'], formats: ['dita'] }
+    });
+    assert.equal(upgraded.status, 201, 'Team was refused a format its plan includes');
+  });
+
+  test('a downgrade stops paid-format downloads of documents already generated', async () => {
+    const u = await signup('downgrade@example.test');
+    await prisma.user.update({ where: { id: u.id }, data: { plan: 'team' } });
+    const gen = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'down/repo', track: 'technical', docTypes: ['userguide'], formats: ['dita'] }
+    });
+    assert.equal(gen.status, 201);
+    await waitForGeneration(gen.body.generation.id, u.token);
+
+    const ok = await fetch(BASE + '/generations/' + gen.body.generation.id + '/download?fmt=dita',
+      { headers: { Authorization: 'Bearer ' + u.token } });
+    assert.equal(ok.status, 200, 'Team could not download the format it paid for');
+
+    await prisma.user.update({ where: { id: u.id }, data: { plan: 'free' } });
+    const blocked = await fetch(BASE + '/generations/' + gen.body.generation.id + '/download?fmt=dita',
+      { headers: { Authorization: 'Bearer ' + u.token } });
+    assert.equal(blocked.status, 402, 'a downgraded account kept downloading a paid format');
+  });
+
+  test('the Free plan holds one connected source', async () => {
+    const u = await signup('sources@example.test');
+    const first = await api('/sources', {
+      method: 'POST', token: u.token, body: { provider: 'github', token: 'ghp_test_1', detail: 'test' }
+    });
+    assert.equal(first.status, 200, 'the first source was refused');
+
+    const second = await api('/sources', {
+      method: 'POST', token: u.token, body: { provider: 'gitlab', token: 'glpat_test_2', detail: 'test' }
+    });
+    assert.equal(second.status, 402, 'Free connected a second source');
+    assert.equal(await prisma.source.count({ where: { userId: u.id } }), 1);
+
+    // Reconnecting an EXISTING source must never be mistaken for a new one.
+    const again = await api('/sources', {
+      method: 'POST', token: u.token, body: { provider: 'github', token: 'ghp_test_refreshed', detail: 'test' }
+    });
+    assert.equal(again.status, 200, 'reconnecting the existing source was blocked');
+
+    await prisma.user.update({ where: { id: u.id }, data: { plan: 'team' } });
+    const paid = await api('/sources', {
+      method: 'POST', token: u.token, body: { provider: 'gitlab', token: 'glpat_test_3', detail: 'test' }
+    });
+    assert.equal(paid.status, 200, 'Team was capped at the Free source limit');
+  });
+
+  test('free-plan output is watermarked, and paid output is not', async () => {
+    const u = await signup('watermark@example.test');
+    const gen = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'wm/repo', track: 'technical', docTypes: ['userguide'], formats: ['pdf'] }
+    });
+    assert.equal(gen.status, 201);
+    await waitForGeneration(gen.body.generation.id, u.token);
+    const row = await prisma.generation.findUnique({ where: { id: gen.body.generation.id } });
+    assert.match(JSON.parse(row.output || '{}').watermark || '', /free plan/i,
+      'free-plan output was not watermarked');
+
+    const paidUser = await signup('nowatermark@example.test');
+    await prisma.user.update({ where: { id: paidUser.id }, data: { plan: 'team' } });
+    const paidGen = await api('/generations', {
+      method: 'POST', token: paidUser.token,
+      body: { repo: 'wm/repo', track: 'technical', docTypes: ['userguide'], formats: ['pdf'] }
+    });
+    await waitForGeneration(paidGen.body.generation.id, paidUser.token);
+    const paidRow = await prisma.generation.findUnique({ where: { id: paidGen.body.generation.id } });
+    assert.equal(JSON.parse(paidRow.output || '{}').watermark || '', '',
+      'a paid plan was watermarked');
+  });
+
+  test('an unknown document type is refused before any quota is spent', async () => {
+    const u = await signup('badtype@example.test');
+    const before = await api('/billing', { token: u.token });
+    assert.equal(before.body.usage.documents.used, 0);
+
+    const bogus = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'bad/repo', track: 'technical', docTypes: ['nonsense'], formats: ['pdf'] }
+    });
+    assert.equal(bogus.status, 400, 'an unknown document type ran the pipeline');
+    assert.match(bogus.body.error || '', /Unknown document type/);
+
+    // A marketing type on the technical track is equally invalid.
+    const crossTrack = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'bad/repo', track: 'technical', docTypes: ['onepager'], formats: ['pdf'] }
+    });
+    assert.equal(crossTrack.status, 400, 'a marketing type was accepted on the technical track');
+
+    const after = await api('/billing', { token: u.token });
+    assert.equal(after.body.usage.documents.used, 0, 'a rejected request consumed the allowance');
+    assert.equal(await prisma.generation.count({ where: { userId: u.id } }), 0);
+
+    // Positive control: the real id for the same document works.
+    const good = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'bad/repo', track: 'technical', docTypes: ['api'], formats: ['pdf'] }
+    });
+    assert.equal(good.status, 201, 'a valid document type was rejected');
+  });
+
+  test('a failed run hands the reserved documents back', async () => {
+    const u = await signup('refund@example.test');
+    const gen = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'refund/repo', track: 'technical', docTypes: ['userguide', 'api'], formats: ['pdf'] }
+    });
+    assert.equal(gen.status, 201);
+    const id = gen.body.generation.id;
+
+    // The reservation must be keyed to the run, or nothing can be given back.
+    const reserved = await prisma.usageEvent.findMany({ where: { userId: u.id, generationId: id } });
+    assert.equal(reserved.length, 1, 'the reservation was not linked to the generation');
+    assert.equal(reserved[0].count, 2, 'a two-document run reserved ' + reserved[0].count);
+    const mid = await api('/billing', { token: u.token });
+    assert.equal(mid.body.usage.documents.used, 2, 'the reservation never reached the ledger');
+
+    // Induce a REAL pipeline failure: deleting the row mid-run makes the very
+    // next stage write throw, which is the same code path a database outage
+    // or a crashing renderer takes.
+    await prisma.generation.delete({ where: { id } }).catch(() => {});
+
+    // The refund happens inside the pipeline's failure handler, so wait for
+    // the ledger to settle rather than assuming an instant write.
+    let used = null;
+    for (let i = 0; i < 60; i++) {
+      const bill = await api('/billing', { token: u.token });
+      used = bill.body.usage.documents.used;
+      if (used === 0) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    assert.equal(used, 0, 'a failed run kept the customer\'s documents (used ' + used + ')');
+    assert.equal(await prisma.usageEvent.count({ where: { generationId: id } }), 0,
+      'the reservation row survived the refund');
+  });
+
+  test('a delivered document is never refunded, even if a later run over it fails', async () => {
+    // Automation updates a mapped document in place, and crash recovery can
+    // re-enter the pipeline for a row that already succeeded. Refunding then
+    // would hand back documents the customer actually received.
+    const u = await signup('nodoublerefund@example.test');
+    const gen = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'delivered/repo', track: 'technical', docTypes: ['userguide'], formats: ['pdf'] }
+    });
+    assert.equal(gen.status, 201);
+    const id = gen.body.generation.id;
+    await waitForGeneration(id, u.token);
+
+    const row = await prisma.generation.findUnique({ where: { id } });
+    assert.ok(row.content, 'the run did not deliver a document, so this test proves nothing');
+    const billed = await api('/billing', { token: u.token });
+    assert.equal(billed.body.usage.documents.used, 1);
+
+    // Re-enter the pipeline for the delivered row and make it fail.
+    await prisma.generation.update({ where: { id }, data: { status: 'queued' } });
+    await api('/generations', { // any request keeps the server warm while we wait
+      method: 'POST', token: u.token,
+      body: { repo: 'other/repo', track: 'technical', docTypes: ['userguide'], formats: ['pdf'] }
+    });
+    await new Promise((r) => setTimeout(r, 1500));
+    await prisma.generation.delete({ where: { id } }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 2500));
+
+    const after = await api('/billing', { token: u.token });
+    assert.ok(after.body.usage.documents.used >= 1,
+      'a document that was delivered got refunded (used ' + after.body.usage.documents.used + ')');
+  });
+
+  test('automation profiles reject unknown document types and formats', async () => {
+    const u = await signup('profcfg@example.test');
+    await prisma.user.update({ where: { id: u.id }, data: { plan: 'team' } }); // pipelines allowed
+
+    const badType = await api('/profiles', {
+      method: 'POST', token: u.token,
+      body: { name: 'p', config: { track: 'technical', docTypes: ['api', 'nonsense'] } }
+    });
+    assert.equal(badType.status, 400, 'a profile accepted an unknown document type');
+    assert.match(badType.body.error || '', /Unknown document type/);
+
+    const badFormat = await api('/profiles', {
+      method: 'POST', token: u.token,
+      body: { name: 'p', config: { track: 'technical', docTypes: ['api'], formats: ['bogus'] } }
+    });
+    assert.equal(badFormat.status, 400, 'a profile accepted an unknown format');
+
+    // Positive control: a valid config still creates the pipeline.
+    const ok = await api('/profiles', {
+      method: 'POST', token: u.token,
+      body: { name: 'p', config: { track: 'technical', docTypes: ['api'], formats: ['markdown'] } }
+    });
+    assert.equal(ok.status, 201, 'a valid profile config was rejected');
+
+    // And the same validation applies on update.
+    const badUpdate = await api('/profiles/' + ok.body.profile.id, {
+      method: 'PUT', token: u.token,
+      body: { config: { track: 'technical', docTypes: ['made-up'] } }
+    });
+    assert.equal(badUpdate.status, 400, 'PUT let an unknown document type through');
+  });
+
+  test('a paid format is not served as text by the detail endpoint either', async () => {
+    // The download route refuses it; returning the same content in the
+    // generation payload would hand over exactly what the gate withholds.
+    const u = await signup('leak@example.test');
+    await prisma.user.update({ where: { id: u.id }, data: { plan: 'team' } });
+    const gen = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: { repo: 'leak/repo', track: 'technical', docTypes: ['userguide'], formats: ['dita'] }
+    });
+    assert.equal(gen.status, 201);
+    const id = gen.body.generation.id;
+    await waitForGeneration(id, u.token);
+
+    const paid = await api('/generations/' + id, { token: u.token });
+    const paidCell = paid.body.generation.outputs['userguide::dita'];
+    assert.ok(paidCell && paidCell.content && paidCell.content.length > 0,
+      'Team was not served the format it paid for');
+
+    await prisma.user.update({ where: { id: u.id }, data: { plan: 'free' } });
+    const free = await api('/generations/' + id, { token: u.token });
+    const freeCell = free.body.generation.outputs['userguide::dita'];
+    assert.equal(freeCell.content, '', 'a locked format was still served in full');
+    assert.equal(freeCell.locked, true, 'the cell was not marked locked for the UI');
+  });
+
+  test('the free-plan watermark cannot be switched off by the request', async () => {
+    // A blank-but-truthy value passes a bare || check while the exporters trim
+    // it away — the watermark would vanish without the user paying for it.
+    const u = await signup('wmbypass@example.test');
+    const gen = await api('/generations', {
+      method: 'POST', token: u.token,
+      body: {
+        repo: 'wm2/repo', track: 'technical', docTypes: ['userguide'], formats: ['pdf'],
+        output: { watermark: '   ' }
+      }
+    });
+    assert.equal(gen.status, 201);
+    await waitForGeneration(gen.body.generation.id, u.token);
+    const row = await prisma.generation.findUnique({ where: { id: gen.body.generation.id } });
+    assert.match(JSON.parse(row.output || '{}').watermark || '', /free plan/i,
+      'a blank watermark disabled free-plan watermarking');
+  });
+
   test('a paid plan cannot be self-granted while payments are simulated', async () => {
     const u = await signup('upgrade@example.test');
     const r = await api('/billing/checkout', {
@@ -460,12 +735,12 @@ describe('plan limits are enforced server-side', () => {
     await prisma.usageEvent.create({ data: { userId: a.id, kind: 'document', count: 5 } });
     const blockedA = await api('/generations', {
       method: 'POST', token: a.token,
-      body: { repo: 'a/repo', track: 'technical', docTypes: ['userguide'], format: 'markdown' }
+      body: { repo: 'a/repo', track: 'technical', docTypes: ['userguide'], format: 'pdf' }
     });
     assert.equal(blockedA.status, 402);
     const okB = await api('/generations', {
       method: 'POST', token: b.token,
-      body: { repo: 'b/repo', track: 'technical', docTypes: ['userguide'], format: 'markdown' }
+      body: { repo: 'b/repo', track: 'technical', docTypes: ['userguide'], format: 'pdf' }
     });
     assert.ok(okB.status === 200 || okB.status === 201, 'one account\'s usage blocked another account');
   });
@@ -482,7 +757,7 @@ describe('account deletion really deletes', () => {
     const doomedGen = await prisma.generation.create({
       data: {
         userId: doomed.id, repo: 'doomed/repo', track: 'technical',
-        docTypes: JSON.stringify(['userguide']), format: 'markdown', status: 'complete'
+        docTypes: JSON.stringify(['userguide']), format: 'pdf', status: 'complete'
       }
     });
     await prisma.docVersion.create({ data: { userId: doomed.id, generationId: doomedGen.id, version: 1, content: 'x' } });

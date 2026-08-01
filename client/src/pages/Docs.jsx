@@ -23,11 +23,12 @@ const PILLARS = [
         { ul: ['A short description under the title that AI systems can quote as a summary', 'Search-optimized titles that match how people actually ask questions', 'Self-contained sections that survive being retrieved out of context', 'Consistent terminology — one term, one meaning, no duplicated content', 'Working links: broken references directly reduce retrieval trust'] },
         { p: 'Each open finding shows its projected impact ("+N overall when fixed") and a one-click Apply fix that genuinely rewrites the content, re-renders every export format, and re-scores the document.' }
       ]},
-      { slug: 'llm-as-a-judge', name: 'LLM-as-a-Judge framework', sum: 'An LLM judge cross-examines every document against an enterprise documentation rubric.', body: [
-        { p: 'Instead of shallow lint rules, the judge evaluates the document the way an AI assistant will consume it: can a section answer a question on its own, does the title match a real query, is there metadata to summarize from.' },
+      { slug: 'llm-as-a-judge', name: 'AI-readiness rubric', sum: 'Every document is scored against an enterprise documentation rubric built around how AI systems consume it.', body: [
+        { p: 'Instead of shallow lint rules, the rubric evaluates the document the way an AI assistant will consume it: can a section answer a question on its own, does the title match a real query, is there metadata to summarize from.' },
+        { p: 'The scoring is deterministic — rule-based checks read the document text rather than asking a language model for an opinion. The same document always produces the same score, and every finding names the exact text it came from, so nothing is a black box.' },
         { h: 'How scoring stays trustworthy' },
         { p: 'All scores derive from a single server-side model — dimensions, weights, penalties, verdicts, and per-assistant estimates are computed from one configuration, so the dashboard, the MOAT panel, and the downloadable report can never contradict each other.' },
-        { ul: ['Verdicts: Publish-ready (≥ 85) · Review recommended (≥ 70) · Needs work', 'Findings carry the exact suggested rewrite and a before/after diff once applied', 'Re-check at any time — the judge re-confirms the live state of the document'] }
+        { ul: ['Verdicts: Publish-ready (≥ 85) · Review recommended (≥ 70) · Needs work', 'Findings carry the exact suggested rewrite and a before/after diff once applied', 'Re-check at any time — the rubric runs again over the current text of the document'] }
       ]},
       { slug: 'ai-readiness-dashboard', name: 'AI readiness dashboard', sum: 'One screen: overall gauge, six dimension scores, assistant estimates, and the path to the publish gate.', body: [
         { p: 'The quality dashboard shows your overall score as a gauge with a ghost arc marking your potential score if every open finding is fixed. Each dimension card is clickable and drills straight into its findings.' },
@@ -88,7 +89,7 @@ const PILLARS = [
         { ul: ['~25 output options: cover and identity, structure, page & branding, legal', 'Type-specific previews: changelogs render as timelines, troubleshooting as symptom cards', 'SKILL.md support: your own outline, tone, and terminology rules reshape any type'] }
       ]},
       { slug: 'lifecycle-automation', name: 'Documentation lifecycle automation', sum: 'Generate → judge → fix → export → regenerate on merge. The loop runs itself.', body: [
-        { p: 'The lifecycle is a closed loop: generation produces a draft, the judge scores it, fixes repair it with full diffs, export ships it, and CI regenerates it when code changes. Humans stay in the loop where it matters — approving fixes and gating publishes.' },
+        { p: 'The lifecycle is a closed loop: generation produces a draft, the quality rubric scores it, fixes repair it with full diffs, export ships it, and CI regenerates it when code changes. Humans stay in the loop where it matters — approving fixes and gating publishes.' },
         { p: 'Nothing publishes itself: the quality gate and the human review step are enforced product-wide.' }
       ]}
     ]
@@ -105,7 +106,7 @@ const PILLARS = [
       ]},
       { slug: 'content-quality-monitoring', name: 'Content quality monitoring', sum: 'Continuous scoring across the library, not one-off audits.', body: [
         { p: 'Every generation is scored at creation and re-scored after every fix and re-check. With CI automation on, every merge produces a fresh report — so quality is a monitored signal, not an annual project.' },
-        { ul: ['Dashboard lists every document with its live score and verdict', 'Re-check with the AI judge at any time for a signed re-confirmation', 'Quality reports are exportable per document for review workflows'] }
+        { ul: ['Dashboard lists every document with its live score and verdict', 'Re-check at any time — the rubric runs again over the current text of the document', 'Quality reports are exportable per document for review workflows'] }
       ]},
       { slug: 'ranking-trends', name: 'Ranking trends', sum: 'Watch probability move from draft to publish-ready.', body: [
         { p: 'The MOAT panel animates each model\'s retrieval probability as fixes land, with a ghost bar marking the ceiling once all findings are resolved. A typical API reference moves from ~50% to the mid-90s across the three models after the full fix set.' },
@@ -291,7 +292,7 @@ const BY_SLUG = Object.fromEntries(ALL_TOPICS.map((t) => [t.slug, t]));
 export function Docs() {
   usePageMeta({
     title: 'Product Docs & Guides',
-    description: 'How Docify works: AI compatibility checking, LLM-as-a-Judge scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.',
+    description: 'How Docify works: AI compatibility checking, AI-readiness scoring, ChatGPT/Claude/Gemini ranking analysis, CI/CD automation, and every output format.',
     path: '/docs'
   });
   const [q, setQ] = useState('');
@@ -310,7 +311,7 @@ export function Docs() {
           <h1 className="h05" style={{ maxWidth: 760 }}>Create documentation that AI understands, trusts, and ranks.</h1>
           <p className="body02 t2 mt5" style={{ maxWidth: 720 }}>
             Docify helps organizations automatically generate documentation from code commits, evaluate
-            AI compatibility with an LLM-as-a-Judge framework, and predict content performance across
+            AI compatibility against a documentation-quality rubric, and predict content performance across
             ChatGPT, Google Gemini, Claude, and other AI-powered platforms.
           </p>
           <div className="field mt7" style={{ maxWidth: 480 }}>

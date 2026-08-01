@@ -34,7 +34,7 @@ const KB = [
   },
   {
     k: 'quality score judge verdict rubric gate dimension finding fix issue review assessment',
-    a: 'Every document is cross-examined by an LLM judge across six weighted dimensions, and every finding comes with a one-click fix and projected score gain.',
+    a: 'Every document is scored across six weighted dimensions by a deterministic rubric — not a language-model opinion — and every finding comes with a one-click fix and projected score gain.',
     link: '/docs/content-quality-assessment', label: 'How quality scoring works'
   },
   {

@@ -64,15 +64,26 @@ export const PLANS = {
 // advertises but the server ignores is both a false claim and an unbounded
 // Anthropic bill, since every document is a real model call.
 // null = unlimited.
+// `formats`: allowed output format ids, null = every format.
+// `sources`: how many source connections the plan may hold, null = unlimited.
+// `watermark`: output is stamped as produced on the free plan.
+// The pricing table advertises all three, so the server enforces all three.
 export const PLAN_LIMITS = {
-  free: { docsPerMonth: 5, pipelines: 0, seats: 1 },
-  starter: { docsPerMonth: 60, pipelines: 1, seats: 2 },
+  free: { docsPerMonth: 5, pipelines: 0, seats: 1, formats: ['pdf', 'word'], sources: 1, watermark: true },
+  starter: { docsPerMonth: 60, pipelines: 1, seats: 2, formats: ['pdf', 'word', 'markdown', 'html', 'htmlsnip', 'email', 'docbook', 'epub'], sources: null, watermark: false },
   // Team includes five seats and bills $12 for each additional one, so the
   // ceiling is what the account is paying for (user.seats), not a fixed 5.
-  team: { docsPerMonth: 250, pipelines: 10, seats: 'purchased' },
-  enterprise: { docsPerMonth: null, pipelines: null, seats: null }
+  team: { docsPerMonth: 250, pipelines: 10, seats: 'purchased', formats: null, sources: null, watermark: false },
+  enterprise: { docsPerMonth: null, pipelines: null, seats: null, formats: null, sources: null, watermark: false }
 };
 export const planLimits = (plan) => PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+
+// One helper both the API and the client use, so "is this format allowed?"
+// can never be answered differently in two places.
+export function formatAllowed(plan, formatId) {
+  const allowed = planLimits(plan).formats;
+  return allowed == null || allowed.includes(String(formatId));
+}
 
 export const CI_YAML = [
   'name: docgen-regenerate',

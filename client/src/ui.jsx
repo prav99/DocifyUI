@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, toast } from './store.jsx';
 
@@ -316,10 +316,41 @@ export function NavBar({ back, backLabel = 'Back', next, nextLabel = 'Continue',
 
 /* ---------- Modal ---------- */
 export function Modal({ open, onClose, children }) {
+  const panel = useRef(null);
+  const restoreTo = useRef(null);
+  // Escape closes, focus moves into the dialog and stays there while it is
+  // open, and returns to whatever opened it. `aria-modal` alone tells a screen
+  // reader the rest of the page is inert without making it true for the
+  // keyboard — Tab would still walk out of the dialog and into the page behind.
+  useEffect(() => {
+    if (!open) return undefined;
+    restoreTo.current = document.activeElement;
+    const focusables = () => Array.from(
+      panel.current ? panel.current.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') : []
+    ).filter((el) => el.offsetParent !== null);
+    const first = focusables()[0];
+    if (first) first.focus();
+    else if (panel.current) { panel.current.setAttribute('tabindex', '-1'); panel.current.focus(); }
+    const onKey = (e) => {
+      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key !== 'Tab') return;
+      const items = focusables();
+      if (!items.length) return;
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+      else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (restoreTo.current && restoreTo.current.focus) restoreTo.current.focus();
+    };
+  }, [open, onClose]);
   if (!open) return null;
   return (
     <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal">{children}</div>
+      <div className="modal" role="dialog" aria-modal="true" ref={panel}>{children}</div>
     </div>
   );
 }

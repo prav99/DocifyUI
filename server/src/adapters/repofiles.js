@@ -42,6 +42,27 @@ async function jfetch(url, token, attempt = 0) {
   throw new Error('HTTP ' + r.status + ' for ' + url);
 }
 
+// The repository's own default branch, straight from the provider. A caller
+// that guessed "main" on a repo whose trunk is "master" (or "develop", or
+// "trunk") otherwise reads an empty tree and silently documents nothing.
+export async function defaultBranchFor(provider, repo, token = '') {
+  try {
+    if (!repo || !repo.includes('/')) return '';
+    if (provider === 'gitlab') {
+      const d = await (await jfetch('https://gitlab.com/api/v4/projects/' + encodeURIComponent(repo), token)).json();
+      return String(d.default_branch || '');
+    }
+    if (provider === 'bitbucket') {
+      const d = await (await jfetch('https://api.bitbucket.org/2.0/repositories/' + repo, token)).json();
+      return String((d.mainbranch && d.mainbranch.name) || '');
+    }
+    const d = await (await jfetch('https://api.github.com/repos/' + repo, token)).json();
+    return String(d.default_branch || '');
+  } catch {
+    return '';
+  }
+}
+
 async function listPaths(provider, repo, branch, token) {
   if (provider === 'gitlab') {
     const proj = encodeURIComponent(repo);
@@ -100,23 +121,70 @@ export async function fetchRepoFile(provider, repo, branch = 'main', path = '', 
   }
 }
 
+async function listAndRead(provider, repo, branch, token) {
+  const all = await listPaths(provider, repo, branch, token);
+  const paths = all
+    .filter((p) => CODE_EXT.test(p) && !SKIP.test(p))
+    .sort((a, b) => rank(a) - rank(b) || a.length - b.length)
+    .slice(0, MAX_FILES);
+  const files = [];
+  for (const p of paths) {
+    try { files.push({ path: p, content: await readFile(provider, repo, branch, p, token) }); }
+    catch { /* skip unreadable file */ }
+  }
+  return { files, listed: all.length };
+}
+
+// Returns { files, branch, requestedBranch, usedFallback, listed } so callers
+// know WHICH branch actually produced content.
+//
+// A wrong branch is indistinguishable from an empty repository at the API
+// level: both return no files. Silently documenting nothing is the worst
+// outcome — the customer is billed for a document generated from zero source.
+// So when the requested branch yields nothing, ask the provider for the real
+// default branch and retry once before giving up.
+export async function fetchRepoFilesResolved(provider, repo, branch = 'main', token = '') {
+  const requestedBranch = branch || 'main';
+  const empty = { files: [], branch: requestedBranch, requestedBranch, usedFallback: false, listed: 0 };
+  try {
+    if (!repo || !repo.includes('/')) return empty;
+    let listed = 0;
+    try {
+      const first = await listAndRead(provider, repo, requestedBranch, token);
+      if (first.files.length) return { ...first, branch: requestedBranch, requestedBranch, usedFallback: false };
+      listed = first.listed;
+    } catch (e) {
+      // Only a MISSING ref justifies trying another branch. A 403/429/5xx means
+      // the repository is fine and we were throttled or refused — retrying on a
+      // different branch would document the wrong code and add load to an
+      // already-exhausted rate limit.
+      if (!/HTTP 404/.test(e.message || '')) {
+        console.error('fetchRepoFiles(' + provider + ', ' + repo + '@' + requestedBranch + '):', e.message);
+        return empty;
+      }
+      console.error('fetchRepoFiles(' + provider + ', ' + repo + '@' + requestedBranch + '): branch not found, resolving the default');
+    }
+    const fallback = await defaultBranchFor(provider, repo, token);
+    if (!fallback || fallback === requestedBranch) return { ...empty, listed };
+    let retry;
+    try { retry = await listAndRead(provider, repo, fallback, token); }
+    catch (e) {
+      console.error('fetchRepoFiles(' + provider + ', ' + repo + '@' + fallback + '):', e.message);
+      return { ...empty, listed };
+    }
+    // Only adopt the fallback if it actually produced source. Recording a
+    // branch that read nothing would be a second, quieter lie.
+    if (!retry.files.length) return { ...empty, listed: retry.listed || listed };
+    console.warn('[branch] ' + repo + ': "' + requestedBranch + '" yielded no files; used default branch "' + fallback + '" (' + retry.files.length + ' files)');
+    return { ...retry, branch: fallback, requestedBranch, usedFallback: true };
+  } catch (e) {
+    console.error('fetchRepoFiles(' + provider + ', ' + repo + '):', e.message);
+    return empty;
+  }
+}
+
 // Returns [{ path, content }] — capped, code-first, README always included.
 // Never throws: on any failure it returns [] so callers can fall back.
 export async function fetchRepoFiles(provider, repo, branch = 'main', token = '') {
-  try {
-    if (!repo || !repo.includes('/')) return [];
-    const paths = (await listPaths(provider, repo, branch, token))
-      .filter((p) => CODE_EXT.test(p) && !SKIP.test(p))
-      .sort((a, b) => rank(a) - rank(b) || a.length - b.length)
-      .slice(0, MAX_FILES);
-    const files = [];
-    for (const p of paths) {
-      try { files.push({ path: p, content: await readFile(provider, repo, branch, p, token) }); }
-      catch { /* skip unreadable file */ }
-    }
-    return files;
-  } catch (e) {
-    console.error('fetchRepoFiles(' + provider + ', ' + repo + '):', e.message);
-    return [];
-  }
+  return (await fetchRepoFilesResolved(provider, repo, branch, token)).files;
 }

@@ -32,7 +32,12 @@ function AnimPct({ value }) {
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    // Animation frames stop in a background tab, which left the score frozen
+    // on its old number even though the fix had landed — the effect for this
+    // value had already run, so nothing recovered it. This guarantees the
+    // number always arrives, animated or not.
+    const settle = setTimeout(() => setV(value), dur + 200);
+    return () => { cancelAnimationFrame(raf); clearTimeout(settle); };
   }, [value]);
   return <>{v}</>;
 }
@@ -182,7 +187,7 @@ export default function Quality() {
 
   if (!report) return <div className="page"><p className="body01 t2">Loading quality report…</p></div>;
 
-  const FIX_STEPS = ['Locating the issue', 'Rewriting the content', 'Re-rendering every format', 'Re-scoring with the judge'];
+  const FIX_STEPS = ['Locating the issue', 'Rewriting the content', 'Re-rendering every format', 'Re-scoring against the rubric'];
 
   async function applyFix(issueId, opts = {}) {
     if (fixing[issueId] != null) return;
@@ -262,10 +267,15 @@ export default function Quality() {
 
   async function recheck() {
     setChecking(true);
+    const before = report.overall != null ? report.overall : report.aiScore;
     try {
       const d = await api('/quality/' + report.id + '/recheck', { method: 'POST' });
       setReport(d.report);
-      toast('info', 'AI judge re-confirmed', 'Overall score verified at ' + (d.report.overall != null ? d.report.overall : d.report.aiScore) + ' / 100 against the enterprise guideline set');
+      const after = d.report.overall != null ? d.report.overall : d.report.aiScore;
+      toast('success', 'Re-checked against the current document',
+        after === before
+          ? 'The review ran again on the latest content — the score is unchanged at ' + after + ' / 100.'
+          : 'Score ' + before + ' → ' + after + ' / 100 after re-examining the latest content.');
     } catch (e) { toast('error', 'Re-check failed', e.message); }
     finally { setChecking(false); }
   }
@@ -315,11 +325,19 @@ export default function Quality() {
 
         <div className="judgeband mt7">
           <div>
-            <p className="eyebrow mb3">LLM-AS-A-JUDGE</p>
-            <h2 className="h03" style={{ color: '#fff' }}>Verified for AI consumption, not just human review</h2>
+            <p className="eyebrow mb3">DOCUMENTATION QUALITY REVIEW</p>
+            <h2 className="h03" style={{ color: '#fff' }}>Checked for AI consumption, not just human review</h2>
             <p className="body01 mt3" style={{ color: '#c6c6c6', maxWidth: 560 }}>
-              An LLM judge cross-examines this document against an enterprise documentation rubric,
-              so it answers correctly in chat assistants, search, and retrieval pipelines.
+              This document is examined against an enterprise documentation rubric — structure, short
+              descriptions, terminology, examples, and link integrity — so it answers correctly in chat
+              assistants, search, and retrieval pipelines.
+            </p>
+            {/* Honesty: the rubric is deterministic, not a model opinion. Saying
+                so is the difference between a checkable claim and a fake one. */}
+            <p className="helper mt3" style={{ color: '#8d8d8d', maxWidth: 560 }}>
+              Scored by deterministic rule-based checks that read the document text — not by a language
+              model. The same document always produces the same score, and every finding below names the
+              exact text it came from.
             </p>
             <div className="row mt5" style={{ flexWrap: 'wrap' }}>
               {['Structure', 'Titles', 'Metadata', 'Clarity', 'Examples'].map((c) => (
@@ -335,7 +353,7 @@ export default function Quality() {
         </div>
 
         <div className="tabs mt6">
-          {[['ai', 'AI judge review'], ['overview', 'Scores'], ['links', 'Broken links'], ['style', 'Style guide']].map(([id, label]) => (
+          {[['ai', 'Rubric findings'], ['overview', 'Scores'], ['links', 'Broken links'], ['style', 'Style guide']].map(([id, label]) => (
             <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
@@ -426,7 +444,7 @@ export default function Quality() {
             <div className="qpipe">
               {[
                 ['01', 'Input', 'Generated document · style profile · optional PRDs and code summaries'],
-                ['02', 'Analysis', 'NLP checks · rule-based style validation · LLM judge · link engine'],
+                ['02', 'Analysis', 'Rule-based rubric · style validation · readability checks · link engine'],
                 ['03', 'Scoring', 'Weighted dimension scores, issues, and one-click fix suggestions'],
                 ['04', 'Human in the loop', 'You review and apply or dismiss each fix — nothing publishes itself']
               ].map(([n, t, d2], i, arr) => (
@@ -517,7 +535,7 @@ export default function Quality() {
             <div className="row row--between mt7" style={{ flexWrap: 'wrap', gap: 12 }}>
               <div className="row">
                 <IcInfo />
-                <span className="body01">Evaluated by LLM judge, aligned to enterprise documentation guidelines</span>
+                <span className="body01">Scored by a deterministic rubric aligned to enterprise documentation guidelines</span>
                 <span className={'tag ' + verdictCls}>{verdictLabel}</span>
               </div>
               <div className="row">
@@ -527,7 +545,7 @@ export default function Quality() {
                   </button>
                 )}
                 <button className="btn btn--tertiary btn--field" disabled={checking || fixingAll} onClick={recheck}>
-                  {checking ? 'Re-evaluating…' : 'Re-check with AI judge'}
+                  {checking ? 'Re-checking…' : 'Re-check this document'}
                 </button>
               </div>
             </div>
@@ -535,7 +553,7 @@ export default function Quality() {
             {/* ---- THE MOAT: live ranking outlook across AI models ---- */}
             {assistants.length > 0 && (
               <div className="moat mt6">
-                <p className="eyebrow" style={{ color: '#78a9ff' }}>THE DOCGEN DIFFERENCE</p>
+                <p className="eyebrow" style={{ color: '#78a9ff' }}>THE DOCIFY DIFFERENCE</p>
                 <h2 className="h02 mt2" style={{ color: '#ffffff' }}>Ranking outlook across AI models</h2>
                 <p className="helper mt2" style={{ color: '#c6c6c6', maxWidth: 640 }}>
                   Estimated chance this document is retrieved and cited by each model — recomputed the moment
@@ -572,12 +590,23 @@ export default function Quality() {
               </div>
             )}
 
+            {/* Summary drawn from the actual counts. "All criteria satisfied"
+                used to appear whenever the ISSUE list was empty, even with
+                failing style checks or broken links — a clean bill of health
+                the data did not support. */}
             <div className="judgenotes mt6">
-              <p className="label01 t2">JUDGE NOTES</p>
+              <p className="label01 t2">SUMMARY</p>
               <p className="body01 mt3" style={{ fontStyle: 'italic' }}>
-                {report.remaining > 0
-                  ? 'Structure and terminology are strong. Resolve the ' + report.remaining + ' open finding' + (report.remaining > 1 ? 's' : '') + ' — short descriptions and search-optimized titles carry the most retrieval weight.'
-                  : 'All rubric criteria satisfied. Sections are self-contained, titled for real queries, and retrieval-ready.'}
+                {(() => {
+                  const styleFails = (report.style || []).filter((s) => !s.pass).length;
+                  const linkFails = (report.links || []).length;
+                  const parts = [];
+                  if (report.remaining > 0) parts.push(report.remaining + ' open finding' + (report.remaining > 1 ? 's' : ''));
+                  if (styleFails > 0) parts.push(styleFails + ' style check' + (styleFails > 1 ? 's' : '') + ' not passing');
+                  if (linkFails > 0) parts.push(linkFails + ' link issue' + (linkFails > 1 ? 's' : ''));
+                  if (!parts.length) return 'Every rubric check passed: no open findings, no failing style checks, and no link issues.';
+                  return 'Remaining: ' + parts.join(' · ') + '. Short descriptions and search-optimized titles carry the most retrieval weight.';
+                })()}
               </p>
             </div>
 
@@ -604,7 +633,7 @@ export default function Quality() {
             {[...new Set(visibleIssues.map((i) => i.cat))].map((cat) => (
               <div key={cat}>
                 <h2 className="h02 mt7 mb3">{cat}</h2>
-                <p className="helper mb5">{CAT_DESC[cat] || 'Findings from the LLM judge.'}</p>
+                <p className="helper mb5">{CAT_DESC[cat] || 'Findings from the quality rubric.'}</p>
                 {visibleIssues.filter((i) => i.cat === cat).map((iss) => {
                   const step = fixing[iss.id];
                   const inFlight = typeof step === 'number';

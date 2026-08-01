@@ -12,6 +12,10 @@ function useSmoothProgress(backendPct, running, done) {
   const [disp, setDisp] = useState(0);
   const val = useRef(0);
   useEffect(() => {
+    // A finished run must read 100% immediately. Easing up from 4% while the
+    // header says "Generation complete" makes a working product look broken —
+    // fast template runs finish before the animation has left the gate.
+    if (done) { val.current = 100; setDisp(100); return undefined; }
     const id = setInterval(() => {
       const target = done ? 100 : backendPct;
       const ceiling = done ? 100 : Math.min(97, backendPct + 20);
