@@ -29,9 +29,15 @@
     </script>
 
     <!-- Microsoft Clarity — project "Docify website" -->
-    <!-- Clarity auto-records heatmaps + session replays of every click; no extra code needed. -->
+    <!-- Records heatmaps and session replays. It loads on PUBLIC MARKETING
+         ROUTES ONLY: the authenticated app renders customer source and
+         documentation on screen, which must never be captured by a replay
+         vendor. main.jsx additionally stops Clarity if the user navigates
+         from a marketing page into the app. -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
+        var appRoutes = /^\/(dashboard|source|doctype|format|generate|quality|export|checkout|settings|automation|sync|repos|standardize|history|founder|oauth)/;
+        if (appRoutes.test(l.location.pathname)) return;
         c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
         t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
         y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);

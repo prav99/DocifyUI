@@ -19,19 +19,31 @@ import mammoth from 'mammoth';
 /* PDF text via Mozilla pdf.js (robust on modern PDFs). Lazy-loaded so the
    large module only loads when a PDF is actually uploaded. Text items are
    reassembled into lines using pdf.js end-of-line hints. */
+/* Work limits. A file well inside the upload cap can still encode a huge page
+   or item count, which would pin a worker's CPU for minutes (the pipeline runs
+   in-process). Bound the work and stop cleanly with whatever was extracted. */
+const MAX_PDF_PAGES = 400;
+const MAX_PDF_ITEMS = 300000;
+const MAX_PDF_MS = 30000;
+
 async function extractPdf(buf) {
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const pdf = await getDocument({ data: new Uint8Array(buf), useSystemFonts: true, isEvalSupported: false }).promise;
+  const deadline = Date.now() + MAX_PDF_MS;
+  let items = 0;
   // Pass 1: reassemble lines, tracking each line's largest font size so we
   // can promote visually-larger lines to markdown headings (PDFs carry no
   // heading semantics, but the standardize pipeline needs #/## headings).
   const lines = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
+  const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  for (let i = 1; i <= pageCount; i++) {
+    if (Date.now() > deadline || items > MAX_PDF_ITEMS) break;
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     let cur = { text: '', size: 0 };
     const flush = () => { const t = cur.text.replace(/[ \t]{2,}/g, ' ').trim(); if (t) lines.push({ text: t, size: cur.size }); cur = { text: '', size: 0 }; };
     for (const it of content.items) {
+      if (++items > MAX_PDF_ITEMS) break;
       const sz = it.transform ? Math.abs(it.transform[3]) : (it.height || 0);
       if (it.str) { cur.text += it.str + (it.hasEOL ? '' : ' '); if (sz > cur.size) cur.size = sz; }
       if (it.hasEOL) flush();

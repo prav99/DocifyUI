@@ -1,7 +1,7 @@
 # Docify — Enterprise Security Review & Trust Programme
 
 **Date:** 1 August 2026 · **Reviewer perspective:** an enterprise buyer deciding whether to connect their source code
-**Method:** full-codebase audit (10 findings, exploit-verified), competitive trust-page benchmark, and AI-provider terms verified against primary sources on 1 Aug 2026. Fixes marked ✅ were implemented and verified today.
+**Method:** full-codebase audit (13 findings, exploit-verified; all 13 now fixed), competitive trust-page benchmark, and AI-provider terms verified against primary sources on 1 Aug 2026. Fixes marked ✅ were implemented and verified today.
 
 > **The governing rule of this programme:** fix first, claim second. Every statement Docify publishes about security must be true on the day it is published. Certifications requiring third-party audit (SOC 2, ISO 27001) must never be claimed, implied, or "in progress"-washed until the report exists.
 
@@ -18,11 +18,11 @@
 | 5 | **High** | Seeded `demo@acme.dev` (published password) gained admin on any `file:` database → full customer-PII dump via `/api/admin/metrics` | ✅ **Fixed** — gated on `NODE_ENV`, not the database URL |
 | 6 | **High** | No per-user ceiling on model-spending routes → one token could run an unbounded Anthropic bill | ✅ **Fixed** — per-account limiter (20/min default, `RATE_LIMIT_AI`) on generations, rewrite, standardize/analyze/sync |
 | 7 | **Medium** | Session JWT could reach GA4/PostHog via `window.location.href` on the OAuth landing route | ✅ **Fixed** — `safeUrl()` strips fragments and token-ish params before any analytics call |
-| 8 | **Medium** | Customer email/name sent to PostHog; click tracking exported on-screen text | ✅ **Partly fixed** — identify now sends an opaque id + plan only. Click-text scrubbing and Clarity masking remain (see §12 Medium) |
+| 8 | **Medium** | Customer email/name sent to PostHog; click tracking exported on-screen text; Clarity replayed app screens | ✅ **Fixed** — identify sends an opaque id + plan only; click labels accept only declared `data-analytics`/safe `aria-label` (never `textContent`), links report path only; PostHog autocapture + session recording disabled with `mask_all_text`; Clarity now loads on marketing routes only and is stopped on entry to any app route |
 | 9 | **Medium** | Webhook secrets compared with `===` (timing side channel) and accepted in the URL | ✅ **Fixed** — constant-time comparison on all paths; `?token=` deprecated in comment, header preferred |
 | 10 | **Low** | Dev mailer printed full email bodies (support messages, would print verification codes) | ✅ **Fixed** — body suppressed, length logged |
-| 11 | **Medium** | Webhook replay: no delivery-id/nonce dedup — a captured delivery replays forever | ⏳ Open (§12 Medium) |
-| 12 | **Low** | PDF extraction loops unbounded within the 15 MB cap → worker CPU pin | ⏳ Open (§12 Medium) |
+| 11 | **Medium** | Webhook replay: no delivery-id/nonce dedup — a captured delivery replays forever | ✅ **Fixed** — per-hook delivery-id dedup (GitHub/GitLab/Bitbucket/Jira headers), 6-hour TTL, bounded memory; verified across providers |
+| 12 | **Low** | PDF extraction loops unbounded within the 15 MB cap → worker CPU pin | ✅ **Fixed** — caps at 400 pages / 300k text items / 30s, returning what was extracted |
 | 13 | **High (product)** | Quality auto-fixes injected fictional "Acme Payments" facts into real customer documents | ✅ **Fixed** — structural fixes now insert `TODO:` prompts, never invented product facts |
 | — | Info | Cross-account isolation (IDOR): 5 authenticated routes audited — all correctly scoped by `userId` | ✅ Clean |
 | — | Info | `SECURITY.md` contact was a placeholder (`security@docgen.example`) | ✅ **Fixed** → `security@docifydocai.com` |
@@ -90,6 +90,6 @@ Publish as `/legal/*` and `/docs/security/*`: Security Overview · Data Handling
 3. Session revoke + connected-integrations revoke in Settings (the two controls buyers test first).
 4. Enforce plan limits server-side (also the pricing dependency).
 
-**MEDIUM (next 1–2 months):** MFA · webhook replay protection · click-text/Clarity scrubbing · PDF extraction caps · RBAC enforcement · audit-log store + UI · dependency and secret scanning in CI · encrypted backups with a tested restore · WAF/DDoS in front of Railway · key-rotation procedure.
+**MEDIUM (next 1–2 months):** MFA · RBAC enforcement · audit-log store + UI · dependency and secret scanning in CI · encrypted backups with a tested restore · WAF/DDoS in front of Railway · key-rotation procedure.
 
 **LONG-TERM (enterprise readiness):** SAML/OIDC SSO · SOC 2 Type II · ISO 27001 · per-tenant keys · data-residency options · GitHub App with fine-grained scopes · penetration test + bug bounty · published DR objectives.

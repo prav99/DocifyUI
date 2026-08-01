@@ -202,6 +202,33 @@ async function verifyHookSecret(req, secret) {
   return false;
 }
 
+/* Replay protection. A valid signed delivery stays valid forever, so a
+   captured request could be replayed in a loop — each replay re-running the
+   full generate → judge → publish pipeline (model spend plus duplicate
+   document versions). Every provider stamps a unique delivery id; remember
+   the ones seen recently and reject repeats. In-memory per worker, which
+   covers the practical attack; move to Redis when running multiple nodes. */
+const seenDeliveries = new Map();
+const DELIVERY_TTL_MS = 6 * 60 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, exp] of seenDeliveries) if (exp < now) seenDeliveries.delete(k);
+}, 15 * 60 * 1000).unref();
+
+function replayedDelivery(req) {
+  const id = req.get('X-GitHub-Delivery')
+    || req.get('X-Gitlab-Event-UUID')
+    || req.get('X-Request-UUID')          // Bitbucket
+    || req.get('X-Hook-UUID')
+    || req.get('X-Atlassian-Webhook-Identifier');
+  if (!id) return false;                   // provider sent none: cannot dedup
+  const key = req.params.hookId + ':' + id;
+  if (seenDeliveries.has(key)) return true;
+  if (seenDeliveries.size > 5000) seenDeliveries.clear(); // bounded memory
+  seenDeliveries.set(key, Date.now() + DELIVERY_TTL_MS);
+  return false;
+}
+
 apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
   // Automation profiles first (the orchestration module); legacy single
   // automation second, so existing webhooks keep working.
@@ -210,6 +237,7 @@ apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
     if (!profile.secret || !(await verifyHookSecret(req, profile.secret))) {
       return res.status(401).json({ error: 'Signature verification failed' });
     }
+    if (replayedDelivery(req)) return res.json({ ok: true, action: 'ignored', reason: 'Duplicate delivery' });
     if (profile.status !== 'active') return res.json({ ok: true, action: 'ignored', reason: 'Profile is paused' });
     const cfg = profCfg(profile);
     // Jira issue events run the SAME pipeline as merges — the issue key rides
@@ -251,6 +279,7 @@ apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
   const auto = await prisma.automation.findUnique({ where: { id: req.params.hookId } });
   if (!auto || !auto.secret) return res.status(404).json({ error: 'Unknown webhook' });
   if (!(await verifyHookSecret(req, auto.secret))) return res.status(401).json({ error: 'Signature verification failed' });
+  if (replayedDelivery(req)) return res.json({ ok: true, action: 'ignored', reason: 'Duplicate delivery' });
   if (!auto.enabled) return res.json({ ok: true, action: 'ignored', reason: 'Automation is disabled' });
   const ev = normalizeGitEvent(req.body);
   if (!ev || !ev.branch) return res.json({ ok: true, action: 'ignored', reason: 'No branch in payload (event type not handled)' });

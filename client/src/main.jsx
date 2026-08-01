@@ -38,6 +38,11 @@ function Analytics() {
   React.useEffect(() => {
     trackPageview(loc.pathname + loc.search);
     posthog.capture('$pageview', { $current_url: safeUrl() });
+    // Stop session replay the moment the visitor enters the authenticated
+    // app — those screens render customer source and documentation.
+    if (/^\/(dashboard|source|doctype|format|generate|quality|export|checkout|settings|automation|sync|repos|standardize|history|founder|oauth)/.test(loc.pathname)) {
+      try { if (window.clarity) window.clarity('stop'); } catch { /* vendor absent */ }
+    }
   }, [loc.pathname, loc.search]);
   // Identify the user on page refresh when already logged in. Analytics gets
   // an opaque id and the plan only — never the customer's email or name.
