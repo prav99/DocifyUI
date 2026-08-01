@@ -1229,6 +1229,16 @@ async function runPipeline(genId) {
     const approvalPatch = {};
     try {
       if (gen.content && content && gen.content !== content) {
+        // `gen` was read when the run started, minutes ago. DocVersion has no
+        // foreign key to User or Generation, so if the account was deleted
+        // mid-run this snapshot would persist document text belonging to an
+        // account that no longer exists — unreachable, and missed by the
+        // deletion handler that already ran. Confirm the owner is still there.
+        const ownerStillExists = await prisma.user.count({ where: { id: gen.userId } });
+        if (!ownerStillExists) {
+          console.warn('[pipeline] skipping version snapshot for ' + genId + ': account was deleted mid-run');
+          throw new Error('account deleted during generation');
+        }
         const n = await prisma.docVersion.count({ where: { generationId: genId } });
         await prisma.docVersion.create({
           data: {
