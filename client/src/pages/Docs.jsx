@@ -264,7 +264,7 @@ const SUPPORTING = [
   ]},
   { t: 'Account & security', items: [
     { slug: 'roles-permissions', name: 'Roles and permissions', sum: 'Viewer, Operator, and Admin roles on team plans.', body: [
-      { p: 'Viewers read documents and reports; Operators generate and apply fixes; Admins manage sources, automation, and billing. Enterprise adds SSO and custom roles.' }
+      { p: 'Team members are either the account Owner or a Writer; the Owner manages sources, automation, billing, and invitations. Sign in with Google, a code host, or email and password. Finer-grained roles and SSO (SAML/OIDC) are available to Enterprise customers on request.' }
     ]},
     { slug: 'oauth-connections', name: 'OAuth connections & tokens', sum: 'How Docify stores and renews source credentials.', body: [
       { p: 'OAuth tokens are stored server-side, never in the browser. Providers with expiring tokens (Bitbucket, GitLab) include refresh tokens, and Docify renews access silently. Revoking access at the provider immediately invalidates the stored credentials.' }

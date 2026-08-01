@@ -35,6 +35,7 @@ model User {
   profiles      AutomationProfile[]
   syncDocs      SyncDoc[]
   identities    Identity[]
+  usage         UsageEvent[]
 }
 
 // A federated sign-in identity (Google today; Microsoft/Apple/Okta later).
@@ -55,6 +56,25 @@ model Identity {
   // account becomes a hidden sign-in path the Settings UI cannot revoke.
   @@unique([userId, provider])
   @@index([userId])
+}
+
+// Usage ledger for plan enforcement. One row per billable document produced,
+// written just before the AI pipeline runs. A ledger (rather than counting
+// Generation rows) is required because automation UPDATES an existing row on
+// every merge — counting rows would miss exactly the path that repeats, which
+// is the one that can run up an unbounded model bill.
+// Cascades with the User, so account deletion clears it automatically.
+model UsageEvent {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind         String   @default("document") // document | ...
+  count        Int      @default(1)
+  generationId String   @default("")
+  trigger      String   @default("manual") // manual | automation | webhook
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Source {

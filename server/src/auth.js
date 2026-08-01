@@ -136,14 +136,23 @@ export async function freshToken(src) {
   if (!tok || !tok.access_token) {
     throw new Error(src.provider + ' session expired — reconnect it from the source page');
   }
-  await prisma.source.update({
-    where: { id: src.id },
-    data: {
-      token: tok.access_token,
-      refreshToken: tok.refresh_token || src.refreshToken, // GitLab rotates; keep old if absent
-      expiresAt: expiryDate(tok)
-    }
-  });
+  try {
+    await prisma.source.update({
+      where: { id: src.id },
+      data: {
+        token: tok.access_token,
+        refreshToken: tok.refresh_token || src.refreshToken, // GitLab rotates; keep old if absent
+        expiresAt: expiryDate(tok)
+      }
+    });
+  } catch (e) {
+    // Credential storage can refuse the write (CREDENTIAL_KEY unset in
+    // production). The token we just obtained is valid, so use it for THIS
+    // request rather than failing an operation that would otherwise succeed —
+    // it simply is not persisted, and the next call refreshes again.
+    if (!/CREDENTIAL_KEY/.test(e.message || '')) throw e;
+    console.error('[security] token refresh not persisted for source ' + src.id + ': ' + e.message);
+  }
   return tok.access_token;
 }
 
@@ -189,23 +198,29 @@ export function verifyState(token) {
   return jwt.verify(token, STATE_SECRET);
 }
 
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  let p;
   try {
-    const p = jwt.verify(token, SECRET);
-    // Only session tokens authenticate. Sessions issued before `typ` existed
-    // carry just {uid} and stay valid; anything with a non-session type, or
-    // without a subject, is rejected — a missing uid would otherwise reach
-    // Prisma as `where: { userId: undefined }`, which matches every row.
-    if (!p || !p.uid || (p.typ && p.typ !== 'session') || p.t || p.v) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    req.uid = p.uid;
-    next();
+    p = jwt.verify(token, SECRET);
   } catch {
-    res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: 'Unauthorized' });
   }
+  // Only session tokens authenticate. Sessions issued before `typ` existed
+  // carry just {uid} and stay valid; anything with a non-session type, or
+  // without a subject, is rejected — a missing uid would otherwise reach
+  // Prisma as `where: { userId: undefined }`, which matches every row.
+  // The account must still exist. A JWT stays cryptographically valid for its
+  // full 7 days, so without this a deleted account could keep working — and
+  // because several user-scoped tables have no foreign key to User, ordinary
+  // requests would recreate rows under a dead id that nothing can ever clean
+  // up. Loading the user here also spares handlers a second lookup.
+  const user = await prisma.user.findUnique({ where: { id: p.uid } });
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  req.uid = user.id;
+  req.user = user;
+  next();
 }
 
 export async function bootstrapUser(user) {
@@ -360,24 +375,28 @@ authRouter.post('/verify-otp', async (req, res) => {
   const email = String((req.body || {}).email || '').trim().toLowerCase();
   const code = String((req.body || {}).code || '').trim();
   const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
-  if (!user) return res.status(400).json({ error: 'Unknown email — sign up first' });
+  // One response for every "this did not work" case. Distinct messages here
+  // (no such account / already verified / no pending code) would let anyone
+  // discover which addresses are registered, with no credential at all — and
+  // this endpoint issues a session, so it is a sign-in path.
+  const NO = 'That code is not valid — request a new one';
+  if (!user) return res.status(400).json({ error: NO });
   // An already-verified account must NOT be handed a session just for knowing
   // the address: that would make every passwordless account (Google sign-in,
   // code-host sign-in) takeoverable by anyone who knows the email. A pending
   // code is still honoured below, because entering it proves mailbox access.
-  if (user.emailVerified && !user.otpHash) {
-    return res.status(400).json({ error: 'This email is already verified — log in instead' });
-  }
+  if (user.emailVerified && !user.otpHash) return res.status(400).json({ error: NO });
   if (!user.otpHash || !user.otpExpires || new Date(user.otpExpires) < new Date()) {
-    return res.status(400).json({ error: 'Code expired — request a new one' });
+    return res.status(400).json({ error: NO });
   }
-  if (user.otpAttempts >= 5) {
-    return res.status(429).json({ error: 'Too many attempts — request a new code' });
-  }
+  // Same 400 + same text as every other failure: a distinguishable 429 here
+  // would still reveal that this address has an unverified account. The
+  // attempt counter keeps doing its job server-side.
+  if (user.otpAttempts >= 5) return res.status(400).json({ error: NO });
   const ok = /^\d{6}$/.test(code) && await bcrypt.compare(code, user.otpHash);
   if (!ok) {
     await prisma.user.update({ where: { id: user.id }, data: { otpAttempts: user.otpAttempts + 1 } });
-    return res.status(400).json({ error: 'Incorrect code — ' + Math.max(0, 4 - user.otpAttempts) + ' attempt' + (4 - user.otpAttempts === 1 ? '' : 's') + ' left' });
+    return res.status(400).json({ error: NO });
   }
   const updated = await prisma.user.update({
     where: { id: user.id },

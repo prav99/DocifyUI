@@ -17,3 +17,6 @@ DocGen_QA_Test_Report.docx
 
 # Standalone offline demo/test harness for the inline review editor (dev-only, not deployed)
 _review_harness/
+
+# Throwaway database created by server/test/isolation.test.js
+server/test/isolation-test.db*

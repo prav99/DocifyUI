@@ -15,6 +15,7 @@
 import crypto from 'crypto';
 
 const PREFIX = 'enc:v1:';
+const IS_PROD = process.env.NODE_ENV === 'production';
 let warned = false;
 
 function key() {
@@ -22,9 +23,12 @@ function key() {
   if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
     if (!warned) {
       warned = true;
-      console.warn(
+      console[IS_PROD ? 'error' : 'warn'](
         '[security] CREDENTIAL_KEY is not set to 64 hex characters — provider tokens ' +
-        'are being stored in plaintext. Set it before connecting real customer accounts.'
+        (IS_PROD
+          ? 'CANNOT be stored. Connecting a source will fail until it is set. Generate one with: ' +
+            'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+          : 'are being stored in plaintext. Set it before connecting real customer accounts.')
       );
     }
     return null;
@@ -39,6 +43,13 @@ export function credentialEncryptionEnabled() {
 export function encryptSecret(plain) {
   if (plain == null || plain === '') return plain;
   const k = key();
+  // Fail closed in production: writing a customer's repository token to the
+  // database in plaintext is worse than refusing the connection, and it would
+  // silently contradict the security policy. Local development still degrades
+  // to plaintext so the product runs with no setup.
+  if (!k && IS_PROD) {
+    throw new Error('Credential storage is not configured on this server (CREDENTIAL_KEY). Ask an administrator to set it, then reconnect.');
+  }
   if (!k) return plain;
   if (String(plain).startsWith(PREFIX)) return plain; // already encrypted
   const iv = crypto.randomBytes(12);

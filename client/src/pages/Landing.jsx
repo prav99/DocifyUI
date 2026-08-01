@@ -444,7 +444,7 @@ export const FAQS = [
   },
   {
     q: 'Is my source code stored?',
-    a: 'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and history, and does not store your source. You can revoke access at any time.'
+    a: 'We keep no copy of your source files. Docify reads a limited selection of files at generation time and sends them to Anthropic, our AI subprocessor, to write the document; the files themselves are never written to our database. The finished document is stored with your account and can quote short excerpts, because it is written from your code. You can revoke access at any time.'
   },
   {
     q: 'How quickly does Docify pay for itself?',
@@ -908,7 +908,7 @@ export default function Landing() {
           <Reveal>
             <div className="grid3">
               <div><p className="metricnum">≥ <CountUp to={85} /></p><p className="body01 t2 mt3">The quality score a document must reach before the gate allows it to publish. Below the bar, it waits for a human, not a customer.</p></div>
-              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Lines of your source code stored. Repositories are read at generation time through a read-only grant you can revoke, and discarded.</p></div>
+              <div><p className="metricnum">0</p><p className="body01 t2 mt3">Copies of your repository kept. Files are read at generation time through a read-only grant you can revoke, and are never written to our database.</p></div>
               <div><p className="metricnum">$<CountUp to={79} /></p><p className="body01 t2 mt3">Per month for a five-seat team on the annual plan — list price, with a 14-day free trial to test on a real release first. The estimator above compares it with your current process.</p></div>
             </div>
           </Reveal>
@@ -967,8 +967,8 @@ export default function Landing() {
           <p className="eyebrow eyebrow--blue mb3">TRUST & SECURITY</p>
           <h2 className="feathead mb5">Safe to connect to your source</h2>
           <div className="trustgrid">
-            {[['Read-only access', 'OAuth scopes limited to reading repository contents and history — Docify can never write to your code.'],
-              ['Code never stored', 'Files are read at generation time, used to write the document, and discarded. Your source is not our database.'],
+            {[['Read-only access', 'Docify contains no code that writes to a repository — no commits, branches, or pull requests. We are moving to a GitHub App so the platform enforces it too.'],
+              ['No copies of your code', 'Files are read at generation time and used to write the document. Your repository is not our database.'],
               ['You approve every change', 'Automatic fixes are proposed, not applied. Nothing publishes until a human approves, and every approval is versioned.'],
               ['Below the bar is blocked', 'The quality gate holds any document that fails its checks — automatically, before it reaches customers.']].map(([t, d], i) => (
               <Reveal key={t} delay={i * 80}>

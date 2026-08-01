@@ -15,6 +15,7 @@ import { authRouter } from './auth.js';
 import { identityRouter } from './identity.js';
 import { apiRouter } from './api.js';
 import { injectMeta, SITE_URL } from './seo-meta.js';
+import { rateLimiter } from './ratelimit.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -22,37 +23,6 @@ const PORT = Number(process.env.PORT || 4000);
 /* ---------------- Resilience: a bad request must never kill the process ---- */
 process.on('uncaughtException', (e) => console.error('uncaughtException', e));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
-
-/* ---------------- Per-IP rate limiting (in-memory; per worker) -------------
-   Protects each node from request floods and brute force. Behind a load
-   balancer set TRUST_PROXY=1 so limits key on the real client IP. For a
-   multi-node fleet move the counters to Redis — the middleware shape is the
-   same. */
-function rateLimiter({ windowMs, max, keyBy }) {
-  const hits = new Map();
-  setInterval(() => {
-    const now = Date.now();
-    for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
-  }, windowMs).unref();
-  return (req, res, next) => {
-    // Model-spending routes are keyed by account, not IP: one authenticated
-    // user behind one IP must not be able to run up an unbounded AI bill.
-    const ip = keyBy === 'user'
-      ? 'u:' + (req.uid || req.ip || '?')
-      : (req.ip || req.socket.remoteAddress || '?');
-    const now = Date.now();
-    let e = hits.get(ip);
-    if (!e || e.reset < now) { e = { count: 0, reset: now + windowMs }; hits.set(ip, e); }
-    e.count += 1;
-    res.setHeader('X-RateLimit-Limit', String(max));
-    res.setHeader('X-RateLimit-Remaining', String(Math.max(0, max - e.count)));
-    if (e.count > max) {
-      res.setHeader('Retry-After', String(Math.ceil((e.reset - now) / 1000)));
-      return res.status(429).json({ error: 'Too many requests — please retry in a moment.' });
-    }
-    next();
-  };
-}
 
 if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
 app.disable('x-powered-by');
@@ -109,6 +79,9 @@ app.use('/api', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMI
 app.use('/api/auth/signup', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/login', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/verify-otp', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
+// /resend sends an email on every call — without a strict budget it is a
+// mail-bombing vector aimed at any address the caller knows.
+app.use('/api/auth/resend', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 // Identity-provider (Google) sign-in and password management get the same
 // strict budget as the other credential endpoints. The limit belongs on the
 // flow's ENTRY point, not the callback: a 429 there would answer an
@@ -117,15 +90,14 @@ app.use('/api/auth/verify-otp', rateLimiter({ windowMs: 60000, max: Number(proce
 app.use('/api/auth/oauth/google', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/link/google', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
 app.use('/api/auth/set-password', rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) }));
-// Model-spending routes: a much lower per-account ceiling so a single token
-// cannot fan out into an unbounded Anthropic bill. Runs after auth populates
-// req.uid (the apiRouter attaches it before these paths resolve).
-const aiLimit = rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AI || 20), keyBy: 'user' });
-app.use('/api/generations', aiLimit);
-app.use('/api/sync/rewrite', aiLimit);
-app.use('/api/sync/documents', (req, res, next) => (
-  /\/(standardize|analyze|sync|simulate)$/.test(req.path) ? aiLimit(req, res, next) : next()
-));
+// The per-ACCOUNT model-spending limiter lives in api.js, mounted after
+// requireAuth — here it would run before req.uid exists and silently become a
+// per-IP limit shared by every customer behind the load balancer.
+// This coarser per-IP ceiling stays at the app level so an unauthenticated
+// flood at the AI routes is still bounded before it reaches the database.
+const aiFlood = rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AI_IP || 120) });
+app.use('/api/generations', aiFlood);
+app.use('/api/sync', aiFlood);
 
 // /api/health now lives in apiRouter (component-level checks, 200 or 503 for
 // external monitors); this minimal liveness ping moved to /api/ping.

@@ -7,7 +7,7 @@ import { GoogleG } from './Auth.jsx';
 
 export default function Settings() {
   const nav = useNavigate();
-  const { refresh } = useAuth();
+  const { user, refresh, logout } = useAuth();
   // /settings#account deep-links the security tab — where the Google linking
   // round-trip returns to.
   const [tab, setTab] = useState(() => (window.location.hash === '#account' ? 'account' : 'sources'));
@@ -25,6 +25,10 @@ export default function Settings() {
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
   const [pwBusy, setPwBusy] = useState(false);
+  // Account deletion — irreversible, so it is gated behind typing the address.
+  const [delOpen, setDelOpen] = useState(false);
+  const [delConfirm, setDelConfirm] = useState('');
+  const [delBusy, setDelBusy] = useState(false);
 
   // A failure must surface: silently swallowing it leaves the tab on
   // "Loading sign-in methods…" forever.
@@ -98,6 +102,23 @@ export default function Settings() {
       refresh(); // keep the cached user (hasPassword) in sync
     } catch (e) { toast('error', 'Could not save password', e.message); }
     finally { setPwBusy(false); }
+  }
+
+  async function deleteAccount() {
+    if (delBusy) return;
+    setDelBusy(true);
+    try {
+      await api('/account', { method: 'DELETE', body: { confirm: delConfirm.trim() } });
+      toast('success', 'Account deleted', 'Your account and its documents have been removed.');
+      logout();
+      // logout() only clears the session token. The in-progress wizard state
+      // holds the deleted account's content — including any uploaded SKILL.md
+      // body — and would otherwise be inherited by the next signup in this
+      // browser.
+      try { sessionStorage.clear(); } catch { /* ignore */ }
+      nav('/');
+    } catch (e) { toast('error', 'Could not delete account', e.message); }
+    finally { setDelBusy(false); }
   }
 
   async function invite() {
@@ -258,15 +279,19 @@ export default function Settings() {
           </div>
         )}
 
+        {/* The sign-in methods and the delete control are independent: a
+            failed /auth/identities call must not hide the only route the
+            privacy policy promises for erasing an account. */}
         {tab === 'account' && (
-          secErr ? (
-            <div className="stack" style={{ maxWidth: 720 }}>
+          <div className="stack" style={{ maxWidth: 720 }}>
+          {secErr ? (
+            <div className="stack">
               <p className="body01">Could not load your sign-in methods — {secErr}</p>
               <button className="btn btn--tertiary btn--field" style={{ alignSelf: 'flex-start' }}
                 onClick={() => { setSecErr(''); loadSec(); }}>Try again</button>
             </div>
           ) : !sec ? <p className="body01 t2">Loading sign-in methods…</p> : (
-            <div className="stack" style={{ maxWidth: 720 }}>
+            <>
               <p className="body01 t2">
                 Ways you can sign in to this account. Keep at least one — add a second so you&apos;re never locked out.
               </p>
@@ -337,8 +362,45 @@ export default function Settings() {
                   </button>
                 </div>
               </div>
+            </>
+          )}
+
+          {/* Delete account — the privacy policy promises this, so it has
+              to be reachable, and it genuinely erases the data. */}
+          <div className="tile tile--white" style={{ padding: '16px 24px', borderLeft: '3px solid #da1e28' }}>
+            <div className="row row--between" style={{ flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <p className="h01">Delete account</p>
+                <p className="helper">
+                  Permanently removes your account, documents, version history, connections, and settings.
+                  This cannot be undone.
+                </p>
+              </div>
+              {!delOpen && (
+                <button className="btn btn--ghost btn--field" style={{ color: '#da1e28' }}
+                  onClick={() => setDelOpen(true)}>Delete account</button>
+              )}
             </div>
-          )
+            {delOpen && (
+              <div className="mt5" style={{ maxWidth: 380 }}>
+                <div className="field">
+                  <label htmlFor="delConfirm">Type <span className="mono">{user ? user.email : 'your email'}</span> to confirm</label>
+                  <input id="delConfirm" className="input" autoComplete="off"
+                    value={delConfirm} onChange={(e) => setDelConfirm(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && deleteAccount()} />
+                </div>
+                <div className="row" style={{ gap: 12 }}>
+                  <button className="btn btn--field" style={{ background: '#da1e28', color: '#fff' }}
+                    disabled={delBusy} onClick={deleteAccount}>
+                    {delBusy ? 'Deleting…' : 'Permanently delete'}
+                  </button>
+                  <button className="btn btn--ghost btn--field" disabled={delBusy}
+                    onClick={() => { setDelOpen(false); setDelConfirm(''); }}>Cancel</button>
+                </div>
+                  </div>
+                )}
+              </div>
+          </div>
         )}
       </div>
       <NavBar back="/automation" />

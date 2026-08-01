@@ -59,6 +59,21 @@ export const PLANS = {
   enterprise: { id: 'enterprise', name: 'Enterprise', monthly: null, annual: null }
 };
 
+// Enforced server-side (see enforcement in api.js). These MUST match the
+// published pricing table in client/src/pages/Pricing.jsx — a cap the site
+// advertises but the server ignores is both a false claim and an unbounded
+// Anthropic bill, since every document is a real model call.
+// null = unlimited.
+export const PLAN_LIMITS = {
+  free: { docsPerMonth: 5, pipelines: 0, seats: 1 },
+  starter: { docsPerMonth: 60, pipelines: 1, seats: 2 },
+  // Team includes five seats and bills $12 for each additional one, so the
+  // ceiling is what the account is paying for (user.seats), not a fixed 5.
+  team: { docsPerMonth: 250, pipelines: 10, seats: 'purchased' },
+  enterprise: { docsPerMonth: null, pipelines: null, seats: null }
+};
+export const planLimits = (plan) => PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+
 export const CI_YAML = [
   'name: docgen-regenerate',
   'on:',

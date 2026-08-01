@@ -15,13 +15,21 @@ third-party services we do not operate (code hosts, email providers, payment pro
 
 ## Security posture (summary)
 
-- Passwords and one-time codes stored as bcrypt hashes; OAuth tokens held server-side only.
-- Read-only repository scopes — the service cannot write to customer code.
+- Passwords and one-time codes stored as bcrypt hashes; OAuth tokens held server-side only and
+  never returned by the API.
+- Read-only in practice: no code path writes to a customer repository. Note that GitHub's
+  classic `repo` scope, which Docify needs to read private repositories, also *permits* writing
+  — migrating to a GitHub App is tracked as an open item so the limit is enforced by the
+  platform rather than by our word.
 - Per-pipeline HMAC webhook secrets, verified over the raw payload with constant-time
   comparison, rotatable at any time.
-- Every API query is scoped to the authenticated account; cross-account access is denied by
-  design and covered by automated tests.
+- Every API query is scoped to the authenticated account. Cross-account access is covered by
+  `server/test/isolation.test.js` (`npm test` in `server/`), which runs two real accounts
+  against a live server and asserts neither can reach the other's data, plus token-integrity
+  tests proving no non-session token can be replayed as a session.
 - Per-IP rate limiting (stricter on credential endpoints), request timeouts, security headers,
   size-limited bodies, multi-process clustering with automatic worker restart.
+- Not yet implemented, stated plainly: MFA, SSO/SAML, customer-visible audit logs, session
+  revocation, self-service password reset. Docify is not SOC 2 or ISO 27001 audited.
 
 The full customer-facing policy is served in-app at `/legal/security`.

@@ -25,6 +25,7 @@ import { rewriteText } from './adapters/rewrite.js';
 import { extractDocument } from './adapters/extract.js';
 import multer from 'multer';
 import { freshToken } from './auth.js';
+import { reserveDocumentQuota } from './quota.js';
 
 // In-memory multipart upload (15 MB) for the multi-format document uploader.
 const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
@@ -710,7 +711,21 @@ async function recordDecision(userId, doc, commit, decision) {
 
 // Pull the next unseen commits from the mapped repository, filter them through
 // the relevance engine, and queue AI updates only for customer-facing changes.
+
+// Doc Sync's AI operations are real Anthropic calls, so they consume the same
+// monthly allowance as generation. Without this an at-quota account could
+// still spend without limit through Standardize / Sync / Simulate / Rewrite.
+// Returns true when the caller has been answered with a 402.
+async function aiQuotaBlocked(req, res, trigger) {
+  const user = await prisma.user.findUnique({ where: { id: req.uid } });
+  const over = await reserveDocumentQuota(req.uid, user ? user.plan : 'free', 1, { trigger: trigger || 'docsync' });
+  if (!over) return false;
+  res.status(402).json({ ...over, upgrade: true });
+  return true;
+}
+
 syncRouter.post('/documents/:id/sync', async (req, res) => {
+  if (await aiQuotaBlocked(req, res, 'docsync-sync')) return;
   const row = await ownDoc(req, res);
   if (!row) return;
   if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
@@ -745,6 +760,7 @@ syncRouter.post('/documents/:id/sync', async (req, res) => {
 
 // Simulate a custom commit (what the webhook would deliver) against a document.
 syncRouter.post('/documents/:id/simulate', async (req, res) => {
+  if (await aiQuotaBlocked(req, res, 'docsync-simulate')) return;
   const row = await ownDoc(req, res);
   if (!row) return;
   if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
@@ -790,6 +806,7 @@ syncRouter.post('/documents/:id/simulate', async (req, res) => {
    Ships as a review-queue proposal with before/after consistency scores;
    nothing changes until the full diff is approved. */
 syncRouter.post('/documents/:id/standardize', async (req, res) => {
+  if (await aiQuotaBlocked(req, res, 'docsync-standardize')) return;
   const row = await ownDoc(req, res);
   if (!row) return;
   if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
@@ -1044,6 +1061,7 @@ syncRouter.post('/updates/:id/reject', async (req, res) => {
    or a deterministic local fallback. The client shows the result as a
    proposal — nothing is applied here. */
 syncRouter.post('/rewrite', async (req, res) => {
+  if (await aiQuotaBlocked(req, res, 'docsync-rewrite')) return;
   const b = req.body || {};
   const text = String(b.text || '');
   if (!text.trim()) return res.status(400).json({ error: 'No text to rewrite' });

@@ -7,7 +7,7 @@ export function Docs() {
     { t: 'Getting started', items: ['Connect your first source', 'Generate an API reference', 'Read a quality report'] },
     { t: 'Quality pipeline', items: ['How the LLM judge scores AI readiness', 'Style profiles and custom rules', 'Link verification behavior'] },
     { t: 'Automation', items: ['CI pipeline setup', 'Quality gates in CI', 'Webhook events'] },
-    { t: 'Account & billing', items: ['Roles and permissions', 'Plans and invoicing', 'SSO configuration (Enterprise)'] }
+    { t: 'Account & billing', items: ['Roles and permissions', 'Plans and invoicing', 'Sign-in and account security'] }
   ];
   return (
     <>

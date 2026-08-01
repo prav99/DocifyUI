@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { prisma } from './db.js';
 import { requireAuth, freshToken } from './auth.js';
-import { SOURCES, DOCTYPES, FORMATS, PLANS, CI_YAML, docTypeName, formatDef } from './catalog.js';
+import { SOURCES, DOCTYPES, FORMATS, PLANS, PLAN_LIMITS, planLimits, CI_YAML, docTypeName, formatDef } from './catalog.js';
+import { rateLimiter } from './ratelimit.js';
+import { documentsUsedThisMonth, quotaError, reserveDocumentQuota, releaseDocumentQuota } from './quota.js';
 import { listRepos, listOrgRepos as ghOrgRepos, listBranches as ghBranches } from './adapters/github.js';
 import { listProjects as listGitlab, listGroupProjects as glOrgRepos, listBranches as glBranches } from './adapters/gitlab.js';
 import { listRepos as listBitbucket, listWorkspaceRepos as bbOrgRepos, listBranches as bbBranches } from './adapters/bitbucket.js';
@@ -20,7 +22,7 @@ import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, F
 import { buildReportModel, renderReportHtml, renderReportPdf, renderReportPptx, traceableReportName } from './adapters/report.js';
 import { fetchRepoFiles } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
-import { charge } from './adapters/stripe.js';
+import { charge, paymentsLive } from './adapters/stripe.js';
 import { sendMail } from './adapters/mailer.js';
 import { SUPPORT_EMAIL } from './config.js';
 import { syncRouter } from './docsync.js';
@@ -389,6 +391,26 @@ apiRouter.get('/status', async (req, res) => {
 /* ---------- everything below requires auth ---------- */
 apiRouter.use(requireAuth);
 
+// Model-spending routes: a much lower ceiling, keyed by ACCOUNT so a single
+// token cannot fan out into an unbounded Anthropic bill. It is mounted here,
+// after requireAuth, because keyBy:'user' reads req.uid — at the app level it
+// would fall back to the client IP, which behind a load balancer is one bucket
+// shared by every customer (one noisy account would lock everyone out).
+const aiLimit = rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AI || 20), keyBy: 'user' });
+// Only requests that can SPEND are limited. The client polls GET
+// /generations/:id every second or so while a document is building, and
+// counting those against a 20/min model budget would 429 the user in the
+// middle of the run they just paid for.
+const aiSpendLimit = (req, res, next) => (req.method === 'GET' ? next() : aiLimit(req, res, next));
+apiRouter.use('/generations', aiSpendLimit);
+apiRouter.use('/sync/rewrite', aiSpendLimit);
+apiRouter.use('/sync/documents', (req, res, next) => (
+  // Trailing slashes and case are normalised first: Express runs with strict
+  // routing off, so `/standardize/` reaches the same handler and would
+  // otherwise slip past this gate.
+  /\/(standardize|analyze|sync|simulate)\/?$/i.test(req.path) ? aiSpendLimit(req, res, next) : next()
+));
+
 /* Doc sync: AI-maintained existing documentation (upload → parse → commit-driven
    updates → review diff → approve/version). Implemented in docsync.js. */
 apiRouter.use('/sync', syncRouter);
@@ -450,9 +472,18 @@ apiRouter.post('/sources', async (req, res) => {
     detail: storedDetail || 'OAuth read-only (contents + commit history)',
     token: storedToken || (existing ? existing.token : '')
   };
-  const row = existing
-    ? await prisma.source.update({ where: { id: existing.id }, data })
-    : await prisma.source.create({ data });
+  // Credential encryption can refuse the write (CREDENTIAL_KEY unset in
+  // production). That message is written for the user, so surface it instead
+  // of letting it become an opaque 500.
+  let row;
+  try {
+    row = existing
+      ? await prisma.source.update({ where: { id: existing.id }, data })
+      : await prisma.source.create({ data });
+  } catch (e) {
+    if (/CREDENTIAL_KEY/.test(e.message || '')) return res.status(503).json({ error: e.message });
+    throw e;
+  }
   invalidateCatalogue(req.uid);
   res.json({ source: publicSource(row), info });
 });
@@ -963,18 +994,48 @@ async function runPipeline(genId) {
     // automation and Doc sync also scope NORMAL generation — files outside the
     // configured scan scope never reach the AI, and rule-set instructions /
     // audience travel with the prompt.
+    //
+    // An exclusion the customer wrote is a security boundary, not a hint —
+    // so scoping only ever REMOVES files. It must never fall back to sending
+    // the excluded ones, and if the rules cannot be resolved at all the safe
+    // answer is to send nothing rather than guess. Ending up with no files is
+    // the same situation as a repository that could not be fetched, which the
+    // pipeline already handles, so this degrades rather than hard-failing a
+    // run that would otherwise succeed.
     let effInstructions = '';
     let effAudience = '';
     let scopedFiles = repoFiles;
-    try {
-      const eff = await resolveEffectiveConfig(gen.userId, gen.provider, gen.repo, gen.branch,
-        { ruleSetId: String(j(gen.output, {}).ruleSetId || '') });
-      const inScope = repoFiles.filter((f) => passesScan(f.path, eff.config));
-      if (inScope.length) scopedFiles = inScope; // never scope down to nothing
-      effInstructions = eff.instructions || '';
-      effAudience = (eff.config.product && eff.config.product.audience) || '';
-    } catch (e) {
-      console.error('effective-config resolution skipped:', e.message);
+    let scopeNote = '';
+    if (repoFiles.length) {
+      try {
+        const eff = await resolveEffectiveConfig(gen.userId, gen.provider, gen.repo, gen.branch,
+          { ruleSetId: String(j(gen.output, {}).ruleSetId || '') });
+        scopedFiles = repoFiles.filter((f) => passesScan(f.path, eff.config));
+        effInstructions = eff.instructions || '';
+        effAudience = (eff.config.product && eff.config.product.audience) || '';
+        if (!scopedFiles.length) {
+          // Only point at the customer's configuration when they actually
+          // wrote one. Docify's own default excludes (lockfiles, node_modules,
+          // dist, vendor) can empty the list unaided, and telling someone to
+          // widen rules they never wrote sends them hunting for a file that
+          // does not exist.
+          const userScoped = Boolean(eff.ruleSet) || (eff.sources && (eff.sources.yaml || eff.sources.ignoreFile));
+          scopeNote = userScoped
+            ? 'All ' + repoFiles.length + ' files read from ' + gen.repo +
+              ' are excluded by your documentation scope — none were sent to the AI. Widen docify.yaml, .docifyignore, or the assigned rule set to include source files.'
+            : 'All ' + repoFiles.length + ' files read from ' + gen.repo +
+              ' are lockfiles, dependencies, or build output, which Docify never sends to the AI. Point it at a branch containing source code.';
+        }
+      } catch (e) {
+        // Unknown rules means unknown exclusions: send nothing.
+        console.error('effective-config resolution failed, scoping to no files:', e.message);
+        scopedFiles = [];
+        scopeNote = 'Your documentation rules could not be read, so no repository files were sent to the AI. Please retry.';
+      }
+      if (scopeNote) {
+        console.warn('[scope] ' + gen.repo + ': ' + scopeNote);
+        await mark('extract', 'no files in scope');
+      }
     }
     // NON-REPOSITORY sources become real source material: every selected
     // Jira issue, OpenAPI spec, Notion page, and Confluence page is fetched
@@ -1187,9 +1248,11 @@ async function runPipeline(genId) {
       where: { id: genId },
       data: {
         status: 'complete', title, content, preview: previewHtml,
-        progress: 100, stage: 'Complete', stageDetail: '',
+        // A scope warning is persisted (not just logged) so the user can see
+        // why a document came out thin instead of assuming Docify is broken.
+        progress: 100, stage: 'Complete', stageDetail: scopeNote.slice(0, 200),
         aiDocs: JSON.stringify(aiDocs || []),
-        output: JSON.stringify(outWithPolicy),
+        output: JSON.stringify(scopeNote ? { ...outWithPolicy, scopeWarning: scopeNote } : outWithPolicy),
         score: aiScore(report.issues.length, 0),
         ...approvalPatch
       }
@@ -1235,6 +1298,10 @@ apiRouter.post('/generations', async (req, res) => {
   }
   const primaryFormat = requested[0];
   const fmt = formatDef(track, primaryFormat);
+  // Enforce the advertised monthly document cap before spending on the model.
+  const wanted = Math.max(1, docTypes.length);
+  const over = await reserveDocumentQuota(req.uid, req.user.plan, wanted, { trigger: 'manual' });
+  if (over) return res.status(402).json({ ...over, upgrade: true });
   const steps = buildSteps({ provider, instructions, files, skillName });
   const gen = await prisma.generation.create({
     data: {
@@ -1450,11 +1517,66 @@ apiRouter.get('/billing', async (req, res) => {
   const per = u.plan === 'team' ? (u.billingCycle === 'annual' ? p.annual : p.monthly) : 0;
   const next = new Date();
   if (u.billingCycle === 'annual') next.setFullYear(next.getFullYear() + 1); else next.setMonth(next.getMonth() + 1);
+  const limits = planLimits(u.plan);
+  const usedDocs = await documentsUsedThisMonth(req.uid);
+  const pipelines = await prisma.automationProfile.count({ where: { userId: req.uid } });
   res.json({
     plan: u.plan, cycle: u.billingCycle, seats: u.seats, perSeat: per,
     nextInvoice: u.plan === 'team' ? next.toISOString().slice(0, 10) : null,
-    amount: u.plan === 'team' ? (u.billingCycle === 'annual' ? per * u.seats * 12 : per * u.seats) : 0
+    amount: u.plan === 'team' ? (u.billingCycle === 'annual' ? per * u.seats * 12 : per * u.seats) : 0,
+    // Live usage against the advertised caps (null limit = unlimited).
+    usage: {
+      documents: { used: usedDocs, limit: limits.docsPerMonth },
+      pipelines: { used: pipelines, limit: limits.pipelines },
+      seats: {
+        used: await prisma.teamMember.count({ where: { ownerId: req.uid } }),
+        limit: limits.seats === 'purchased' ? Math.max(1, u.seats || 5) : limits.seats
+      },
+      resetsOn: new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1)).toISOString().slice(0, 10)
+    }
   });
+});
+
+/* Account deletion — the privacy policy promises "delete your account and your
+   data goes with it", so this must actually erase everything.
+
+   Six models carry a userId but no cascading relation to User (DocVersion,
+   Repository, WritingProfile, OrgConnection, RuleSet, RelevanceDecision), so
+   deleting the User alone would silently orphan their rows. They are removed
+   explicitly here, in one transaction with the user, and this list must grow
+   whenever a new user-scoped model is added without an onDelete: Cascade
+   relation. Everything else (Identity, Source, Generation, Automation,
+   AutomationProfile, SyncDoc + its versions/updates, TeamMember, QualityReport)
+   cascades from the User row. */
+apiRouter.delete('/account', async (req, res) => {
+  const { confirm } = req.body || {};
+  const user = await prisma.user.findUnique({ where: { id: req.uid } });
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  // Typing the address is the guard against a misdirected click; the account
+  // and every document in it are unrecoverable after this.
+  if (String(confirm || '').trim().toLowerCase() !== user.email.toLowerCase()) {
+    return res.status(400).json({ error: 'Type your email address exactly to confirm deletion' });
+  }
+  const uid = req.uid;
+  await prisma.$transaction([
+    prisma.docVersion.deleteMany({ where: { userId: uid } }),
+    prisma.repository.deleteMany({ where: { userId: uid } }),
+    prisma.writingProfile.deleteMany({ where: { userId: uid } }),
+    prisma.orgConnection.deleteMany({ where: { userId: uid } }),
+    prisma.ruleSet.deleteMany({ where: { userId: uid } }),
+    prisma.relevanceDecision.deleteMany({ where: { userId: uid } }),
+    // Waitlist rows are keyed by email, not userId — they would otherwise
+    // keep the address on file after the account is gone.
+    prisma.waitlist.deleteMany({ where: { email: user.email } }),
+    prisma.user.delete({ where: { id: uid } })
+  ]);
+  // Drop any cached repository catalogue held for this account.
+  try {
+    const { invalidateCatalogue } = await import('./repohub.js');
+    invalidateCatalogue(uid);
+  } catch { /* cache only */ }
+  console.log('[account] deleted account ' + uid);
+  res.json({ ok: true });
 });
 
 apiRouter.post('/billing/checkout', async (req, res) => {
@@ -1463,6 +1585,17 @@ apiRouter.post('/billing/checkout', async (req, res) => {
   if (plan === 'free') {
     await prisma.user.update({ where: { id: req.uid }, data: { plan: 'free' } });
     return res.json({ ok: true, plan: 'free' });
+  }
+  // The payment adapter is a simulation (see adapters/stripe.js) — it takes no
+  // money. Granting a paid plan on its say-so would let anyone raise their own
+  // limits with one request, which makes every cap on this server decorative.
+  // Until a real processor is wired up, upgrades are a conversation, not a
+  // self-service write.
+  if (!paymentsLive()) {
+    return res.status(503).json({
+      error: 'Online payment is not available yet. Email ' + SUPPORT_EMAIL + ' and we will set your plan up directly.',
+      contact: true
+    });
   }
   try {
     const receipt = await charge({ plan, cycle, seats });
@@ -1485,6 +1618,23 @@ apiRouter.get('/team', async (req, res) => {
 apiRouter.post('/team/invite', async (req, res) => {
   const { email } = req.body || {};
   if (!email || !String(email).includes('@')) return res.status(400).json({ error: 'A valid email is required' });
+  // Seats are advertised per plan, so they are enforced. The owner occupies a
+  // seat (bootstrapUser creates their TeamMember row), and on Team the ceiling
+  // is the number of seats the account actually pays for.
+  const seatRule = planLimits(req.user.plan).seats;
+  const seatLimit = seatRule === 'purchased' ? Math.max(1, req.user.seats || 5) : seatRule;
+  if (seatLimit != null) {
+    const used = await prisma.teamMember.count({ where: { ownerId: req.uid } });
+    if (used >= seatLimit) {
+      return res.status(402).json({
+        upgrade: true,
+        error: seatLimit === 1
+          ? 'The Free plan is a single seat. Upgrade to invite teammates.'
+          : 'Your plan includes ' + seatLimit + ' seats and all of them are in use. ' +
+            (req.user.plan === 'team' ? 'Add seats from Billing to invite more people.' : 'Upgrade to add more teammates.')
+      });
+    }
+  }
   const row = await prisma.teamMember.create({
     data: { ownerId: req.uid, email: String(email).trim(), status: 'invited', role: 'Writer' }
   });
@@ -1574,6 +1724,15 @@ async function triggerRegeneration(uid, auto, { trigger, commit, branch, repo })
   if (!tpl) {
     await recordRun(auto.id, { ...base, status: 'skipped', note: 'No completed generation to use as a template — generate a document once first.' });
     return { run: { ...base, status: 'skipped' } };
+  }
+  // Automation fires on every merge, so the cap has to hold here too — this
+  // is the path that can run up a bill without anyone watching.
+  const owner = await prisma.user.findUnique({ where: { id: uid } });
+  const wantedDocs = Math.max(1, j(tpl.docTypes, []).length);
+  const overQuota = await reserveDocumentQuota(uid, owner ? owner.plan : 'free', wantedDocs, { trigger: 'automation' });
+  if (overQuota) {
+    await recordRun(auto.id, { ...base, status: 'skipped', note: overQuota.error });
+    return { run: { ...base, status: 'skipped', note: overQuota.error } };
   }
   const steps = ['Merge ' + (commit ? String(commit).slice(0, 7) + ' ' : '') + 'detected on ' + base.branch,
     ...buildSteps({ provider: 'github', instructions: tpl.instructions, files: j(tpl.files, []), skillName: tpl.skillName || '' })];
@@ -1909,6 +2068,18 @@ async function profileRun(profile, event) {
   const uid = profile.userId;
   const runId = 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const save = (patch) => patchProfileRun(profile.id, { id: runId, ...patch });
+  // Check the allowance BEFORE anything that spends: the relevance classifier
+  // below is itself a model call, so gating only at generation time still let
+  // an out-of-allowance account bill on every merge. This is a read-only
+  // check; the reservation is taken later, once the run is going to produce.
+  const runOwner = await prisma.user.findUnique({ where: { id: uid } });
+  const runPlan = runOwner ? runOwner.plan : 'free';
+  const runLimit = planLimits(runPlan).docsPerMonth;
+  if (runLimit != null && (await documentsUsedThisMonth(uid)) >= runLimit) {
+    const note = quotaError(runPlan, runLimit, runLimit, 1).error;
+    await save({ at: new Date().toISOString(), trigger: event.trigger, commit: event.commit || '', status: 'skipped', outcome: 'skipped', note });
+    return { status: 'skipped', note };
+  }
   const jira = resolveJiraLink(cfg, event);
   const decision = await decideDocAction(uid, cfg, event, jira);
   await save({
@@ -2001,6 +2172,15 @@ async function profileRun(profile, event) {
       brief: tplRow ? tplRow.brief || '{}' : '{}', output: JSON.stringify(out),
       status: 'queued', step: 0, steps: JSON.stringify(steps), score: 0
     };
+    // An in-place update costs exactly as much model time as a new document,
+    // so it consumes quota too — counting Generation rows would let this path
+    // run free on every merge.
+    const pipelineDocs = Math.max(1, (cfg.docTypes || []).length);
+    const pipelineOver = await reserveDocumentQuota(uid, (await prisma.user.findUnique({ where: { id: uid } }) || {}).plan || 'free', pipelineDocs, { trigger: 'automation' });
+    if (pipelineOver) {
+      await save({ status: 'skipped', outcome: 'skipped', note: pipelineOver.error });
+      return { status: 'skipped', note: pipelineOver.error };
+    }
     let gen;
     if ((decision.action === 'update' || decision.action === 'sections' || decision.action === 'place') && decision.existing) {
       gen = await prisma.generation.update({ where: { id: decision.existing.id }, data });
@@ -2095,8 +2275,27 @@ apiRouter.get('/profiles', async (req, res) => {
   res.json({ profiles: rows.map(serializeProfile) });
 });
 
+// Pipelines are capped per plan on the pricing page. Every path that creates
+// one must go through this — the clone endpoint originally did not, which let
+// a Starter account hold as many pipelines as it liked.
+async function pipelineCapReached(req, res) {
+  const maxPipelines = planLimits(req.user.plan).pipelines;
+  if (maxPipelines == null) return false;
+  const existing = await prisma.automationProfile.count({ where: { userId: req.uid } });
+  if (existing < maxPipelines) return false;
+  res.status(402).json({
+    upgrade: true,
+    error: maxPipelines === 0
+      ? 'Automation pipelines are not included in the Free plan. Upgrade to Starter or Team to automate documentation on merge.'
+      : 'Your ' + (PLANS[req.user.plan] || PLANS.free).name + ' plan includes ' + maxPipelines +
+        ' automation pipeline' + (maxPipelines === 1 ? '' : 's') + '. Delete one or upgrade to add another.'
+  });
+  return true;
+}
+
 apiRouter.post('/profiles', async (req, res) => {
   const { name, config } = req.body || {};
+  if (await pipelineCapReached(req, res)) return;
   const row = await prisma.automationProfile.create({
     data: {
       userId: req.uid,
@@ -2128,6 +2327,7 @@ apiRouter.put('/profiles/:id', async (req, res) => {
 apiRouter.post('/profiles/:id/clone', async (req, res) => {
   const row = await ownProfile(req, res);
   if (!row) return;
+  if (await pipelineCapReached(req, res)) return;
   const copy = await prisma.automationProfile.create({
     data: {
       userId: req.uid, name: (row.name + ' (copy)').slice(0, 80),

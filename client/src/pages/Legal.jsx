@@ -11,7 +11,8 @@ import { SUPPORT_EMAIL } from '../config.js';
    have counsel review: this is a solid starting point, not legal advice.
    ===================================================================== */
 
-const UPDATED = '2026-07-04';
+// Bump this whenever the policy text changes materially — §13 promises it.
+const UPDATED = '2026-08-01';
 // Legal, privacy, and security enquiries all route to the single support
 // mailbox (see client/src/config.js — override with VITE_SUPPORT_EMAIL).
 const CONTACT = SUPPORT_EMAIL;
@@ -23,7 +24,7 @@ export const LEGAL = {
     title: 'Privacy Policy',
     summary: 'What we collect, why, where it lives, and the rights you keep.',
     sections: [
-      { h: 'The short version', p: 'Docify reads your repositories to generate documentation. We store your account details, your connection credentials (encrypted), and the documents Docify produces. We never store your source code, we do not sell data, and Anthropic-style model providers are not sent your credentials. Delete your account and your data goes with it.' },
+      { h: 'The short version', p: 'Docify reads your repositories to generate documentation. We store your account details, your connection credentials, and the documents Docify produces — we do not keep copies of your source files. To write a document, a limited selection of your files is sent to Anthropic (our AI subprocessor); your credentials never are. Because the document is written from your code, it can quote short excerpts, and it is stored with your account. We do not sell data. Deleting your account erases it and everything in it.' },
       { h: '1. Who we are', p: COMPANY + ' provides an AI documentation intelligence platform: generation of documentation from connected sources, AI quality evaluation, ranking estimates, and merge-driven automation ("the Service"). This policy covers the Service and our websites. Contact: ' + CONTACT + '.' },
       { h: '2. Information we collect', ul: [
         'Account data — email address, name (optional), hashed password (bcrypt; we cannot read it), email-verification state.',
@@ -34,8 +35,10 @@ export const LEGAL = {
         'Operational logs — timestamps, IP addresses, and request metadata used for security, rate limiting, and abuse prevention.'
       ] },
       { h: '3. What we deliberately do not collect', ul: [
-        'Your source code is read transiently to generate documentation and is never persisted.',
-        'We request read-only repository scopes; we cannot push to your repositories.',
+        'We do not keep copies of your source files. At generation time Docify reads a limited selection of files (currently up to twelve, capped at roughly 6,000 characters each) plus any docify.yaml, .docifyignore, or .docify instructions in the repository. Those contents are never written to our database, to disk, or to our logs.',
+        'What you hand us directly IS stored in full, because the Service cannot work otherwise: files you upload (such as SKILL.md), specifications you paste, and documents you add to Doc sync.',
+        'The document Docify writes is stored with your account and can quote short excerpts of your code, since it is written from your code.',
+        'Docify never writes to your repositories — no commits, no branches, no pull requests. On GitHub the OAuth scope that grants private-repository reading also technically permits writing; Docify contains no code that writes, and we are moving to a GitHub App to make that limit technical rather than a promise.',
         'We do not use advertising trackers or sell personal data to anyone.'
       ] },
       { h: '4. How we use information', ul: [
@@ -43,14 +46,14 @@ export const LEGAL = {
         'To secure the Service: verify webhook signatures, rate-limit abuse, investigate incidents.',
         'To bill you and to communicate service changes. Product emails are transactional; marketing email, if any, is opt-in.'
       ] },
-      { h: '5. AI processing', p: 'Documents are evaluated by automated quality models ("LLM-as-a-Judge") and scored for retrieval likelihood across third-party AI platforms. These are estimates computed by the Service; your credentials and repository contents are not shared with ChatGPT, Claude, Gemini, or any external AI platform to produce them. Your content is not used to train models.' },
-      { h: '6. Sharing and subprocessors', p: 'We share data only with subprocessors needed to run the Service — hosting infrastructure, the email delivery provider you configure or we operate, and the payment processor. Each is bound by data-protection terms. We disclose data if the law genuinely compels it, and we will tell you unless legally forbidden. A current subprocessor list is available on request at ' + CONTACT + '.' },
+      { h: '5. AI processing', p: 'To generate a document, Docify sends the source material for that document to Anthropic\'s Claude API — our only AI subprocessor, and the only third party that receives your content. That material is whatever you selected for the run: the repository files described in section 3, and, where you connect them, the Jira issues, Confluence pages, Notion pages, and OpenAPI specifications you choose, along with any SKILL.md or specification you upload or paste. Automation runs additionally send commit messages and changed file paths so Docify can judge whether a change is worth documenting. Under Anthropic\'s commercial terms, API inputs and outputs are not used to train their models. Your credentials are never sent. Separately, the quality score and the AI-search-readiness estimate are computed by the Service itself from the finished document and send nothing to any external AI platform; they are modeled signals, not guarantees of how any AI system will rank your content.' },
+      { h: '6. Sharing and subprocessors', p: 'We share data only with subprocessors needed to run the Service: Anthropic (AI generation — receives the source material described in section 5), our hosting provider, the email delivery provider, and, when payments are enabled, the payment processor. Each is bound by data-protection terms. We disclose data if the law genuinely compels it, and we will tell you unless legally forbidden. A current subprocessor list is available on request at ' + CONTACT + '.' },
       { h: '7. Retention', ul: [
         'Account and generated content: for the life of your account.',
         'OAuth and API tokens: until you disconnect the source, rotate them, or delete your account — whichever comes first.',
         'Automation run history: the most recent runs per pipeline (older entries roll off automatically).',
         'Operational logs: up to 90 days.',
-        'Deleting your account deletes your data from production systems within 30 days; encrypted backups age out on their own schedule (up to 90 days).'
+        'Deleting your account (Settings → Sign-in & security → Delete account) removes it and its documents, versions, connections, pipelines, and settings from production immediately. Backups age out on their own schedule (up to 90 days).'
       ] },
       { h: '8. Security', p: 'Passwords and verification codes are stored as bcrypt hashes. Webhooks are authenticated with per-pipeline HMAC secrets you can rotate at any time. Transport is TLS in production deployments. Access to production data is restricted and logged. No system is perfectly secure; report concerns to ' + SECURITY_CONTACT + ' (see the Security policy).' },
       { h: '9. Your rights', p: 'Depending on your jurisdiction (GDPR, UK GDPR, CCPA, and similar), you may have rights to access, correct, export, restrict, or delete your personal data, and to object to processing. Exercise them by emailing ' + CONTACT + '. We respond within 30 days and never discriminate against you for exercising a right. EU/UK users may also lodge a complaint with their supervisory authority.' },
@@ -100,12 +103,14 @@ export const LEGAL = {
     summary: 'How the Service is protected, and how to report a vulnerability.',
     sections: [
       { h: 'Our security posture', ul: [
-        'Credentials: passwords and one-time codes stored as bcrypt hashes; OAuth tokens held server-side only, never exposed to the browser.',
-        'Read-only by design: repository scopes are read-only; the Service cannot write to your code.',
+        'Credentials: passwords and one-time codes stored as bcrypt hashes; OAuth tokens held server-side only, never exposed to the browser or returned by the API.',
+        'Read-only in practice: Docify contains no code that writes to a repository — no commits, branches, or pull requests. On GitHub the scope that permits reading private repositories also technically permits writing; we are migrating to a GitHub App so the limit is enforced by the platform rather than by our word.',
+        'Sign-in: Google sign-in uses OpenID Connect with PKCE, a nonce, and cryptographic verification of the identity token, and requires a provider-verified email address. Session tokens are typed so that no other token the Service issues can be replayed as one.',
         'Webhooks: every automation pipeline has its own HMAC secret; signatures are verified over the raw payload with constant-time comparison, and secrets rotate with one click.',
-        'Isolation: every API query is scoped to the authenticated account; cross-account access is denied by design and covered by tests.',
+        'Isolation: every API query is scoped to the authenticated account. An automated test suite (server/test/isolation.test.js) stands up two real accounts against a live server and asserts that one cannot read, download, modify, or delete the other\'s documents, versions, quality reports, sources, team, or account, and that a session for a deleted account stops working immediately.',
         'Hardening: per-IP rate limiting (stricter on credential endpoints), request timeouts, security headers, size-limited request bodies.',
-        'Availability: multi-process clustering with automatic worker restart and graceful shutdown.'
+        'Availability: multi-process clustering with automatic worker restart and graceful shutdown.',
+        'What we do not have yet, stated plainly: multi-factor authentication, SSO/SAML, customer-visible audit logs, session revocation before a session expires, and self-service password reset. None of these are built today — where the pricing page offers SSO or audit logs "on request", that means we will scope and build them with an Enterprise customer, not that they are waiting to be switched on. We are not SOC 2 or ISO 27001 audited and do not claim to be.'
       ] },
       { h: 'Reporting a vulnerability', p: 'If you believe you have found a security issue, email ' + SECURITY_CONTACT + ' with steps to reproduce. Please do not access data that is not yours, do not degrade the Service for others, and give us reasonable time to fix before public disclosure. We acknowledge reports within 72 hours, and we will not pursue good-faith research conducted under these rules.' },
       { h: 'Scope', ul: [

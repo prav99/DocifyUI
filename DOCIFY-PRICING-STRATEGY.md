@@ -25,7 +25,7 @@ Three tiers: Free (1 source, 5 watermarked generations, PDF/Word) · Team **$26/
 | Price annual (−20%) | $0 | **$24/mo** | **$79/mo** | Custom |
 | Seats | 1 | 2 | **5 included, +$12/seat** | Custom |
 | Sources | 1 | All | All | All |
-| Generations/mo | 5 (watermarked) | 100 | 500 pooled, fair use | Custom |
+| Generations/mo | 5 (watermarked) | 60 | 250 pooled, fair use | Custom |
 | Automation pipelines | — | 1 | 10 | Unlimited |
 | Export formats | PDF, Word | All except DITA | All incl. DITA | All |
 | AI quality pipeline | Overview only | Full | Full + readiness | Full + custom rules |
@@ -62,5 +62,5 @@ Calculator formula + tile copy; FAQ payback rewrite (+ server-side JSON-LD mirro
 
 **HIGH — done today:** 4-tier catalog + pricing page + checkout seat math; calculator + all messaging consistency; SEO/JSON-LD; this report.
 **HIGH — user action:** connect Stripe before the trial can convert; upgrade Railway (trial expiring).
-**MEDIUM — this month:** enforce generation caps and seat counts server-side (currently display-only); trial-expiry emails; founding-customer coupon flow; grandfather flag for existing accounts.
+**MEDIUM — this month:** ~~enforce generation caps and seat counts server-side~~ (done — `PLAN_LIMITS` in `catalog.js`, metered by the `UsageEvent` ledger); trial-expiry emails; founding-customer coupon flow; grandfather flag for existing accounts.
 **LOW — later:** usage-analytics dashboard promised by Team tier; enterprise floor experiments; regional pricing; annual-prepay invoicing.

@@ -8,7 +8,8 @@
     "start": "node src/cluster.js",
     "db:push": "prisma db push",
     "db:reset": "prisma db push --force-reset && node src/seed.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "test": "node --test --test-concurrency=1 test/"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

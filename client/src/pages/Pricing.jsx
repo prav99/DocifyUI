@@ -16,8 +16,10 @@ const ROWS = [
   ['AI quality pipeline', 'Overview only', 'Full pipeline', 'Full pipeline', 'Full pipeline + custom style-guide rules'],
   ['AI search readiness', 'Score on 1 document', 'Included', 'Included', 'Included'],
   ['Usage analytics', '—', '—', 'Included', 'Included'],
-  ['SSO (SAML / OIDC)', '—', '—', '—', 'Included'],
-  ['Audit logs', '—', '—', '—', 'Included'],
+  // Not built yet — "On request" is the honest label until they ship. Do not
+  // change these to "Included" before the code exists.
+  ['SSO (SAML / OIDC)', '—', '—', '—', 'On request'],
+  ['Audit logs', '—', '—', '—', 'On request'],
   ['Support', 'Community', 'Email', 'Priority', 'Dedicated · DPA + SLA · invoicing/PO']
 ];
 
@@ -30,7 +32,7 @@ const CELL_LAST = { borderRight: 'none' };
 export default function Pricing() {
   usePageMeta({
     title: 'Pricing — Free, Starter, Team & Enterprise',
-    description: 'Start free with 5 generations a month, no credit card. Starter from $24, Team from $79 with a 14-day free trial, and Enterprise with SSO, audit logs, and a DPA.',
+    description: 'Start free with 5 generations a month, no credit card. Starter from $24, Team from $79 with a 14-day free trial, and Enterprise with custom style-guide rules and a DPA (SSO and audit logs on request).',
     path: '/pricing'
   });
   const nav = useNavigate();

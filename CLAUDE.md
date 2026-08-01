@@ -12,7 +12,11 @@ cd client && npx vite build # verify client changes compile
 cd server && node --check src/<file>.js   # verify server changes parse
 ```
 
-There is no test suite. Verify client changes by building and checking in the browser preview; verify server changes with `node --check` plus a targeted script.
+```bash
+cd server && npm test      # cross-account isolation, token integrity, plan caps, deletion
+```
+
+`server/test/isolation.test.js` stands up a real server against a throwaway SQLite database. The security policy and privacy policy both cite it by name, so keep it honest: assert exact status codes (never `!== 200`), pair every "stranger is denied" assertion with a positive control proving the owner succeeds, and mutation-test it after changes — remove the guard you think it covers and confirm it fails. Also verify client changes in the browser preview and server changes with `node --check`.
 
 ## Non-negotiable product rules
 
@@ -35,7 +39,9 @@ There is no test suite. Verify client changes by building and checking in the br
 
 ## Pricing (deployed Aug 2026)
 
-Free $0 (5 docs) · Starter $29/$24 annual (2 seats, 60 docs) · **Team $99/$79 annual (5 seats incl., +$12/seat, 250 docs)** · Enterprise custom. Caps are **display-only — not enforced server-side yet**. See `DOCIFY-PRICING-STRATEGY.md`.
+Free $0 (5 docs) · Starter $29/$24 annual (2 seats, 60 docs) · **Team $99/$79 annual (5 seats incl., +$12/seat, 250 docs)** · Enterprise custom. See `DOCIFY-PRICING-STRATEGY.md`.
+
+Caps **are enforced server-side**: `PLAN_LIMITS` in `catalog.js` is the single source of truth and must match the pricing table in `Pricing.jsx`. Usage is a ledger (`UsageEvent`, one row per document produced, written before the pipeline runs) rather than a count of `Generation` rows — automation updates an existing row on every merge, so counting rows would miss the one path that repeats. Enforcement points: `POST /generations`, `triggerRegeneration`, `profileRun`, and `POST /profiles`; live usage is returned by `GET /billing`.
 
 ## Keep in sync
 
@@ -49,7 +55,6 @@ Free $0 (5 docs) · Starter $29/$24 annual (2 seats, 60 docs) · **Team $99/$79 
 
 ## Open items
 
-1. Railway plan upgrade (trial) and `CREDENTIAL_KEY` / `NODE_ENV` variables.
+1. `CREDENTIAL_KEY` is still unset on Railway. `NODE_ENV=production` is set (verified: HSTS live, cookies `Secure`). Since the credential store now fails closed in production, connecting a source will error until the key is set — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 2. Real payments (Stripe unavailable in India — see payments doc; Dodo/Polar recommended).
 3. GitHub OAuth requests the classic `repo` scope, which reads as *write* access to a security reviewer even though Docify never writes. Migrate to a GitHub App for true read-only.
-4. Enforce plan limits server-side.

@@ -394,6 +394,15 @@ export function Signup() {
               <span className="helper">·</span>
               <button className="linkbtn" onClick={() => { setSentTo(''); setOtp(''); }}>Wrong address? Start over</button>
             </div>
+            {/* Shown unconditionally. The server deliberately returns one
+                message for every failure, so it cannot tell this user their
+                account is already active — but the same email also contains a
+                one-click link, and using it leaves the code inert. Without
+                this line that path is a dead end. */}
+            <p className="helper mt3">
+              Already clicked the link in that email? Your account is active —{' '}
+              <button className="linkbtn" onClick={() => { setSentTo(''); setOtp(''); setAuthMode('login'); }}>log in instead</button>.
+            </p>
           </div>
         ) : (
           <div className="mt6">

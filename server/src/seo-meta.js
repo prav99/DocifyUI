@@ -18,7 +18,7 @@ export const PAGE_META = {
   },
   '/pricing': {
     title: 'Pricing — Free, Starter, Team & Enterprise | ' + SITE_NAME,
-    desc: 'Start free with 5 generations a month — no credit card. Starter $29/mo for small teams; Team $99/mo ($79 billed annually) with five seats, 10 automation pipelines, and a 14-day free trial. Enterprise adds SSO and audit logs.'
+    desc: 'Start free with 5 generations a month — no credit card. Starter $29/mo for small teams; Team $99/mo ($79 billed annually) with five seats, 10 automation pipelines, and a 14-day free trial. Enterprise adds custom style-guide rules and a DPA, with SSO and audit logs on request.'
   },
   '/signup': {
     title: 'Start Free — Create Your Account | ' + SITE_NAME,
@@ -37,8 +37,8 @@ export const PAGE_META = {
     desc: 'Get in touch with the Docify team — questions, bug reports, billing, or Enterprise enquiries.'
   },
   '/legal/terms': { title: 'Terms of Service | ' + SITE_NAME, desc: 'The terms that govern your use of Docify.' },
-  '/legal/privacy': { title: 'Privacy Policy | ' + SITE_NAME, desc: 'What Docify collects, what it never stores (your source code), and how data is handled.' },
-  '/legal/security': { title: 'Security | ' + SITE_NAME, desc: 'How Docify protects your data: read-only source access, no source code storage, encryption in transit.' }
+  '/legal/privacy': { title: 'Privacy Policy | ' + SITE_NAME, desc: 'What Docify collects, what it keeps no copy of (your source files), which subprocessors receive what, and how to delete your account.' },
+  '/legal/security': { title: 'Security | ' + SITE_NAME, desc: 'How Docify protects your data: read-only repository access, no copies of your source files, account isolation covered by automated tests, and an honest list of what we do not have yet.' }
 };
 
 // /docs/<slug> articles get a readable title derived from the slug.
@@ -93,7 +93,7 @@ const FAQ_ITEMS = [
     ['What is AI search readiness?',
       'Docify evaluates the signals that help machines find, understand, and cite your content — titles, metadata, structure, clarity, and completeness — and estimates how ready each major assistant is to retrieve it. It is a readiness signal you can improve, not a guarantee of ranking on any platform.'],
     ['Is my source code stored?',
-      'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and history, and does not store your source. You can revoke access at any time.'],
+      'We keep no copy of your source files. Docify reads a limited selection of files at generation time and sends them to Anthropic, our AI subprocessor, to write the document; the files themselves are never written to our database. The finished document is stored with your account and can quote short excerpts, because it is written from your code. You can revoke access at any time.'],
     ['How quickly does Docify pay for itself?',
       'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. The Team plan is $79 per month billed annually ($99 monthly) and includes five seats — roughly $16 per person. At a typical loaded engineering cost of $75–120 per hour, the whole subscription is covered by about 40–60 minutes of saved documentation work per month across the entire team. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is the 14-day free trial — run it against a real release and compare the result with what that release usually costs you.']
 ];
@@ -156,7 +156,7 @@ ${faqHtml()}
 <h2>Team — $99/month ($79 billed annually) · 5 seats included · most popular</h2>
 <p>Five seats included (extra seats $12), 10 automation pipelines, 250 pooled documents a month, every output format including DITA, the full AI quality pipeline with AI-search-readiness estimates, usage analytics, priority support, and a 14-day free trial — no credit card.</p>
 <h2>Enterprise — custom, annual contract</h2>
-<p>Everything in Team plus custom style-guide rules, SSO (SAML/OIDC), audit logs, and dedicated support with SLA. <a href="/contact">Contact us</a>.</p>`,
+<p>Everything in Team plus custom style-guide rules, a DPA, and dedicated support with SLA. SSO (SAML/OIDC) and audit logs are available on request. <a href="/contact">Contact us</a>.</p>`,
   '/docs': () => `
 <h1>Docify documentation</h1>
 <p>How Docify works: connecting GitHub, GitLab, and Bitbucket; generating and auto-updating documentation from code; the AI quality review and AI-search readiness; human review and approval; automation pipelines; and every output format. Popular guides: <a href="/docs/llm-as-a-judge">LLM-as-a-Judge scoring</a>, <a href="/docs/ai-compatibility-checker">AI compatibility checker</a>, <a href="/docs/docs-from-commits">Documentation from code commits</a>, <a href="/docs/ci-pipeline-setup">CI pipeline setup</a>.</p>`,
