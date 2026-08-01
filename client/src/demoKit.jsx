@@ -79,6 +79,24 @@ export function sfx(kind) {
     };
     if (kind === 'click') {
       tone(1600, 0, 0.06, 0.045, 'triangle'); tone(2400, 0.005, 0.04, 0.02, 'sine');
+    } else if (kind === 'type') {
+      tone(2100, 0, 0.03, 0.03, 'triangle');
+    } else if (kind === 'pop') {
+      tone(900, 0, 0.07, 0.04, 'sine'); tone(1400, 0.02, 0.05, 0.025, 'sine');
+    } else if (kind === 'notify') {
+      tone(1174.7, 0, 0.18, 0.045); tone(1567.98, 0.09, 0.28, 0.04);
+    } else if (kind === 'process') {
+      const len = Math.floor(ctx.sampleRate * 0.5);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.5;
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 6;
+      f.frequency.setValueAtTime(400, t); f.frequency.linearRampToValueAtTime(1400, t + 0.5);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.028, t + 0.1);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      src.connect(f); f.connect(g); g.connect(out); src.start(t);
     } else if (kind === 'whoosh') {
       const len = Math.floor(ctx.sampleRate * 0.45);
       const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -134,21 +152,65 @@ try {
   }
 } catch { /* ignore */ }
 
-export function narrate(text, onEnd) {
+export function narrate(text, onEnd, onWord) {
   try {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     if (!cachedVoice) cachedVoice = pickVoice();
     if (cachedVoice) u.voice = cachedVoice;
-    u.rate = 1.0;
+    u.rate = 1.04;
     u.pitch = 1;
     u.volume = 1;
     let done = false;
+    let words = 0;
     const finish = () => { if (!done) { done = true; if (onEnd) onEnd(); } };
     u.onend = finish;
     u.onerror = finish;
+    // Word-boundary events drive beat-synchronized visuals: scenes can gate
+    // elements on the number of words already spoken, so on-screen action
+    // lands exactly on the narrated keyword.
+    if (onWord) u.onboundary = (e) => { if (e.name === 'word' || e.charIndex != null) { words++; onWord(words); } };
     window.speechSynthesis.speak(u);
   } catch { if (onEnd) onEnd(); }
+}
+
+/* ---------------- shared motion atoms for dynamic UI demonstration ------- */
+
+/* An animated pointer that travels between stage positions and "clicks".
+   steps: [{ x, y, at, click }] — x/y in % of the stage, at in ms. */
+export function Cursor({ steps }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !steps || !steps.length) return undefined;
+    el.style.left = steps[0].x + '%';
+    el.style.top = steps[0].y + '%';
+    const ts = steps.map((s) => setTimeout(() => {
+      el.style.left = s.x + '%';
+      el.style.top = s.y + '%';
+      if (s.click) {
+        el.classList.remove('demo-cursor--click');
+        void el.offsetWidth;
+        el.classList.add('demo-cursor--click');
+        sfx('click');
+      }
+    }, s.at));
+    return () => ts.forEach(clearTimeout);
+  }, []); // eslint-disable-line
+  return (
+    <span ref={ref} className="demo-cursor" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 1l6 14 2.2-5.4L16 7.6z" fill="#161616" stroke="#ffffff" strokeWidth="1.2" /></svg>
+    </span>
+  );
+}
+
+/* A callout annotation that pops in near the thing being narrated. */
+export function Callout({ x, y, at = 600, tone = 'blue', children }) {
+  return (
+    <span className={'demo-callout demo-callout--' + tone} style={{ left: x + '%', top: y + '%', animationDelay: at + 'ms' }}>
+      {children}
+    </span>
+  );
 }
 
 export function stopAllAudio() {
@@ -208,22 +270,36 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
   const pauseRef = useRef(null);
   useEffect(() => { playingRef.current = playing; }, [playing]);
 
+  const [beat, setBeat] = useState(0);
+
   useEffect(() => {
     if (!playing) return undefined;
     let alive = true;
     let advanced = false;
     let speechDone = !sound;
     let minDone = false;
+    setBeat(0);
     const tryAdvance = () => {
       if (!alive || advanced || !speechDone || !minDone) return;
       advanced = true;
-      setTimeout(() => { if (alive) setScene((s) => (s + 1) % scenes.length); }, 450);
+      setTimeout(() => { if (alive) setScene((s) => (s + 1) % scenes.length); }, 350);
     };
     const tMin = setTimeout(() => { minDone = true; tryAdvance(); }, scenes[scene].dur);
     if (sound && scenes[scene].sfx) sfx(scenes[scene].sfx);
-    if (sound) narrate(scenes[scene].vo, () => { speechDone = true; tryAdvance(); });
+    if (sound) {
+      narrate(scenes[scene].vo, () => { speechDone = true; tryAdvance(); },
+        (w) => { if (alive) setBeat((b) => Math.max(b, w)); });
+    }
+    // The synthetic beat ticker ALWAYS runs at reading pace: word-boundary
+    // events correct it where the browser emits them, and where it doesn't
+    // (some voices/engines never fire onboundary) reveals still advance.
+    const tickIv = setInterval(() => { if (alive) setBeat((b) => b + 1); }, 380);
+    // Optional per-scene sound cues: cues: [{ at, sfx }] — scheduled micro
+    // sound design under the narration (clicks, pops, processing).
+    const cueTs = (sound && scenes[scene].cues ? scenes[scene].cues : [])
+      .map((c) => setTimeout(() => { if (alive) sfx(c.sfx); }, c.at));
     const tGuard = setTimeout(() => { speechDone = true; minDone = true; tryAdvance(); }, scenes[scene].dur + 20000);
-    return () => { alive = false; clearTimeout(tMin); clearTimeout(tGuard); };
+    return () => { alive = false; clearTimeout(tMin); clearTimeout(tGuard); if (tickIv) clearInterval(tickIv); cueTs.forEach(clearTimeout); };
   }, [scene, playing, sound, runId]); // eslint-disable-line
 
   useEffect(() => () => { stopAllAudio(); if (activeFilmPause === pauseRef) activeFilmPause = null; }, []);
@@ -356,8 +432,8 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
             </button>
           ))}
         </aside>
-        <div className={'demo-stage' + (scene === 0 ? ' demo-stage--slate' : '')} key={scene + '-' + runId}>
-          {scenes[scene].render()}
+        <div className={'demo-stage demo-stage--drift' + (scene % 2 ? 'B' : 'A') + (scene === 0 ? ' demo-stage--slate' : '')} key={scene + '-' + runId}>
+          {scenes[scene].render(beat)}
         </div>
       </div>
       {/* caption track: the narration line, always visible for muted viewers */}

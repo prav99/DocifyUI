@@ -1,5 +1,5 @@
 import React from 'react';
-import { DemoShell, TitleSlate, CountTo } from '../demoKit.jsx';
+import { DemoShell, TitleSlate, CountTo, Cursor, Callout } from '../demoKit.jsx';
 
 /* =========================================================================
    The three homepage marketing films — ~30 seconds each, one use case each.
@@ -72,7 +72,8 @@ const AUTO_SCENES = [
   {
     label: 'Connect & configure', dur: 6500, sfx: 'click',
     vo: 'Connect GitHub, GitLab, or Bitbucket once — then set the rules: branch, triggers, and the quality bar.',
-    render: () => (
+    cues: [{ at: 3700, sfx: 'type' }, { at: 4300, sfx: 'type' }, { at: 5800, sfx: 'pop' }],
+    render: (beat) => (
       <div>
         <p className="h01 mb5">One connection. One configuration.</p>
         <div className={'demo-row demo-pick'}>
@@ -81,63 +82,76 @@ const AUTO_SCENES = [
           <span className="demo-branch mono">acme/payments-api · read-only</span>
           <span className="demo-pickcheck check">✓ connected</span>
         </div>
-        <div className="demo-yaml mono" style={{ marginTop: 12 }}>
-          {['branch: main · triggers: push + merged PRs', 'documents: API reference · update in place', 'quality-gate: ≥ 85 · auto-fix: on'].map((l, i) => (
-            <div key={l} className="demo-yline" style={{ animationDelay: (0.6 + i * 0.55) + 's' }}>{l}</div>
-          ))}
-        </div>
-        <p className="helper mt5 demo-late">Saved. From this moment the pipeline owns the documentation.</p>
+        {beat >= 9 && (
+          <div className="demo-yaml mono" style={{ marginTop: 12 }}>
+            {['branch: main · triggers: push + merged PRs', 'documents: API reference · update in place', 'quality-gate: ≥ 85 · auto-fix: on'].map((l, i) => (
+              <div key={l} className="demo-yline" style={{ animationDelay: (0.1 + i * 0.55) + 's' }}>{l}</div>
+            ))}
+          </div>
+        )}
+        {beat >= 15 && <p className="helper mt5 demo-yline">Saved. From this moment the pipeline owns the documentation.</p>}
+        <Cursor steps={[{ x: 10, y: 26, at: 300 }, { x: 44, y: 32, at: 1100, click: true }, { x: 32, y: 58, at: 3600 }, { x: 38, y: 74, at: 5100, click: true }]} />
       </div>
     )
   },
   {
     label: 'Merge → update', dur: 6500, sfx: 'click',
     vo: 'A pull request merges. Docify updates the right section of your existing docs — never a duplicate.',
-    render: () => (
+    cues: [{ at: 600, sfx: 'notify' }, { at: 1700, sfx: 'process' }, { at: 3200, sfx: 'pop' }],
+    render: (beat) => (
       <div>
         <div className="demo-loop" style={{ paddingBottom: 14 }}>
           <span className="demo-loopbox">PR #214 merged</span>
           <span className="demo-looparrow">→</span>
-          <span className="demo-loopbox">webhook · 1.2s</span>
-          <span className="demo-looparrow">→</span>
-          <span className="mono">docs updated</span>
+          {beat >= 4 && <span className="demo-loopbox demo-yline">webhook · 1.2s</span>}
+          {beat >= 5 && <span className="demo-looparrow">→</span>}
+          {beat >= 6 && <span className="mono demo-yline">docs updated</span>}
         </div>
-        <div className="demo-issue" style={{ borderLeftColor: 'var(--support-success)' }}>
-          <div className="row row--between" style={{ flexWrap: 'wrap' }}>
-            <p className="h01">payments-developer-guide.md → § Authentication</p>
-            <span className="tag tag--green">93% match</span>
+        {beat >= 8 && (
+          <div className="demo-issue" style={{ borderLeftColor: 'var(--support-success)' }}>
+            <div className="row row--between" style={{ flexWrap: 'wrap' }}>
+              <p className="h01">payments-developer-guide.md → § Authentication</p>
+              {beat >= 12 && <span className="tag tag--green demo-yline">93% match</span>}
+            </div>
+            {beat >= 14 && <p className="helper mt2 demo-yline">Placed into the best-matching section of the existing document. The other 41 pages untouched. Version v7 created.</p>}
           </div>
-          <p className="helper mt2">Placed into the best-matching section of the existing document. The other 41 pages untouched. Version v7 created.</p>
-        </div>
+        )}
       </div>
     )
   },
   {
     label: 'Verify & notify', dur: 6000, sfx: 'success',
     vo: 'Validated, gate-checked, published — and your team is notified.',
-    render: () => (
+    cues: [{ at: 400, sfx: 'process' }, { at: 1900, sfx: 'pop' }, { at: 4400, sfx: 'notify' }],
+    render: (beat) => (
       <div>
-        <Pipe gap={1.0} steps={['Content, links & style validated', 'Quality gate cleared: 92 ≥ 85 ✓', 'Published · team notified ✉']} />
-        <div className="demo-loop mt5">
-          <span className="mono">merge</span>
-          <span className="demo-looparrow">→</span>
-          <span className="demo-loopbox">document updated</span>
-          <span className="demo-looparrow">→</span>
-          <span className="check demo-loopcheck">92 · gate ✓ · published</span>
-        </div>
+        <Pipe gap={1.4} steps={['Content, links & style validated', 'Quality gate cleared: 92 ≥ 85 ✓', 'Published · team notified ✉']} />
+        {beat >= 4 && (
+          <div className="demo-loop mt5">
+            <span className="mono">merge</span>
+            <span className="demo-looparrow">→</span>
+            <span className="demo-loopbox">document updated</span>
+            <span className="demo-looparrow">→</span>
+            {beat >= 8 && <span className="check demo-loopcheck" style={{ animationDelay: '0.05s' }}>92 · gate ✓ · published</span>}
+          </div>
+        )}
+        <Callout x={56} y={72} at={3800} tone="green">no human in the loop — until approval</Callout>
       </div>
     )
   },
   {
     label: 'Up next', dur: 6000, sfx: 'chime',
     vo: 'Your code changes. Your documentation updates automatically. Next — human review.',
-    render: () => (
+    cues: [{ at: 400, sfx: 'pop' }, { at: 3400, sfx: 'whoosh' }],
+    render: (beat) => (
       <div>
         <div style={{ padding: '4px 0 10px' }}>
           <span className="jd-verdict">Your code changes. Your documentation updates automatically.</span>
         </div>
-        <NextPointer target="film-review" kicker="HUMAN REVIEW"
-          title="AI proposes. Your team decides — see the review workflow" />
+        {beat >= 8 && (
+          <NextPointer target="film-review" kicker="HUMAN REVIEW"
+            title="AI proposes. Your team decides — see the review workflow" />
+        )}
       </div>
     )
   }
@@ -170,14 +184,16 @@ const AICOMPAT_SCENES = [
   {
     label: 'Analyse', dur: 6000, sfx: 'click',
     vo: 'Docify analyses your documentation the way ChatGPT, Gemini, Claude, and Copilot actually read it.',
+    cues: [{ at: 300, sfx: 'process' }, { at: 2100, sfx: 'pop' }, { at: 3700, sfx: 'pop' }],
     render: () => (
-      <Pipe gap={1.2} steps={['Reading structure, sections & metadata', 'Simulating AI retrieval across platforms', 'Scoring readiness · compiling exact fixes']} />
+      <Pipe gap={1.6} steps={['Reading structure, sections & metadata', 'Simulating AI retrieval across platforms', 'Scoring readiness · compiling exact fixes']} />
     )
   },
   {
     label: 'Score & findings', dur: 7000, sfx: 'click',
     vo: 'The AI readiness score shows exactly what holds you back — metadata, entities, and answer coverage.',
-    render: () => (
+    cues: [{ at: 600, sfx: 'pop' }, { at: 3400, sfx: 'pop' }, { at: 5100, sfx: 'pop' }],
+    render: (beat) => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div className="score score--warn" style={{ minWidth: 180 }}>
           <span className="label01 t2">AI Search Readiness</span>
@@ -185,32 +201,34 @@ const AICOMPAT_SCENES = [
           <span className="helper">needs work before AI platforms cite it</span>
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
-          {DIMS.map(([n, v], i) => (
-            <div key={n} className="demo-mrow demo-mrow--light" style={{ animationDelay: (0.4 + i * 0.5) + 's', gridTemplateColumns: '210px 1fr 44px' }}>
+          {beat >= 8 && DIMS.map(([n, v], i) => (
+            <div key={n} className="demo-mrow demo-mrow--light" style={{ animationDelay: (0.1 + i * 0.85) + 's', gridTemplateColumns: '210px 1fr 44px' }}>
               <span className="demo-mname" style={{ color: 'var(--text-primary)' }}>{n}</span>
               <span className="demo-mbar" style={{ background: 'var(--border-subtle)' }}>
-                <span className="demo-mfill" style={{ width: v + '%', animationDelay: (0.7 + i * 0.5) + 's', background: 'var(--support-warning)' }} />
+                <span className="demo-mfill" style={{ width: v + '%', animationDelay: (0.45 + i * 0.85) + 's', background: 'var(--support-warning)' }} />
               </span>
               <span className="demo-mpct mono" style={{ color: 'var(--text-primary)' }}>{v}</span>
             </div>
           ))}
         </div>
+        <Callout x={62} y={22} at={5000} tone="amber">largest gap: metadata 42 → target 90</Callout>
       </div>
     )
   },
   {
     label: 'Fix & climb', dur: 6500, sfx: 'success',
     vo: 'Apply the recommendations — and watch it climb from sixty-two to ninety-one.',
-    render: () => (
+    cues: [{ at: 3000, sfx: 'pop' }, { at: 5200, sfx: 'chime' }],
+    render: (beat) => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div className="score score--good" style={{ minWidth: 180 }}>
           <span className="label01 t2">AI Search Readiness</span>
-          <span className="num"><CountTo from={62} to={91} delay={900} dur={2600} /></span>
-          <span className="helper">▲ +29 after applied fixes</span>
+          <span className="num">{beat >= 7 ? <CountTo from={62} to={91} delay={200} dur={2400} /> : 62}</span>
+          {beat >= 10 && <span className="helper demo-yline">▲ +29 after applied fixes</span>}
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
           {[['Add 160-character section descriptions', '+11'], ['Add question-form headings', '+9'], ['Complete metadata & entities', '+7']].map(([f, g], i) => (
-            <div key={f} className="demo-issue" style={{ animationDelay: (i * 0.6) + 's' }}>
+            <div key={f} className="demo-issue" style={{ animationDelay: (0.4 + i * 1.2) + 's' }}>
               <div className="row row--between" style={{ flexWrap: 'wrap' }}>
                 <p className="h01">{f}</p>
                 <span className="tag tag--green">✓ applied {g}</span>
@@ -218,19 +236,23 @@ const AICOMPAT_SCENES = [
             </div>
           ))}
         </div>
+        <Cursor steps={[{ x: 52, y: 16, at: 300 }, { x: 87, y: 22, at: 1000, click: true }, { x: 87, y: 50, at: 2400, click: true }, { x: 16, y: 38, at: 4300 }]} />
       </div>
     )
   },
   {
     label: 'Up next', dur: 6000, sfx: 'chime',
     vo: 'Documentation people can understand — and AI can discover. Next — documents, versions, and approvals.',
-    render: () => (
+    cues: [{ at: 400, sfx: 'pop' }, { at: 3600, sfx: 'whoosh' }],
+    render: (beat) => (
       <div>
         <div style={{ padding: '4px 0 10px' }}>
           <span className="jd-verdict">Documentation people understand — and AI can discover.</span>
         </div>
-        <NextPointer target="film-docs" kicker="DOCUMENTS & VERSIONS"
-          title="Every version, approval, and audit trail — in one lookup" />
+        {beat >= 9 && (
+          <NextPointer target="film-docs" kicker="DOCUMENTS & VERSIONS"
+            title="Every version, approval, and audit trail — in one lookup" />
+        )}
       </div>
     )
   }
@@ -257,7 +279,8 @@ const GEN_SCENES = [
   {
     label: 'Source & document', dur: 6500, sfx: 'click',
     vo: 'Pick where the truth lives — a repository, tickets, files, or an API spec — and choose your document.',
-    render: () => (
+    cues: [{ at: 2500, sfx: 'pop' }, { at: 5200, sfx: 'pop' }],
+    render: (beat) => (
       <div>
         <p className="h01 mb5">Select a source & document type</p>
         <div className={'demo-row demo-pick'}>
@@ -265,41 +288,48 @@ const GEN_SCENES = [
           <span className="mono" style={{ fontSize: 13 }}>acme/payments-api (GitHub)</span>
           <span className="demo-pickcheck check">✓ selected</span>
         </div>
-        <div className="mt5">
-          <Chips items={['API reference', 'User guide', 'Install & setup', 'Release notes']} on={0} delayBase={0.9} />
-        </div>
         <p className="helper mt5 demo-late">Sources combine — code plus Jira plus an OpenAPI spec, in one document.</p>
+        {beat >= 13 && (
+          <div className="mt5">
+            <Chips items={['API reference', 'User guide', 'Install & setup', 'Release notes']} on={0} delayBase={0.05} />
+          </div>
+        )}
+        <Cursor steps={[{ x: 10, y: 26, at: 300 }, { x: 42, y: 31, at: 1000, click: true }, { x: 24, y: 72, at: 5000 }, { x: 13, y: 76, at: 5700, click: true }]} />
       </div>
     )
   },
   {
     label: 'Format & audience', dur: 6000, sfx: 'click',
     vo: 'Choose DITA, Markdown, HTML, PDF, or Word — tuned to your audience and style.',
-    render: () => (
+    cues: [{ at: 700, sfx: 'pop' }, { at: 1600, sfx: 'pop' }, { at: 3900, sfx: 'click' }],
+    render: (beat) => (
       <div>
         <p className="h01 mb5">Output & audience</p>
-        <Chips items={['DITA', 'Markdown', 'HTML', 'PDF', 'Word']} on={1} />
-        <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
-          {['Audience: developers', 'Style: plain & direct', 'Detail: standard'].map((c, i) => (
-            <span key={c} className="demo-chip demo-chipon" style={{ animationDelay: (1.9 + i * 0.45) + 's' }}>{c}</span>
-          ))}
-        </div>
+        {beat >= 1 && <Chips items={['DITA', 'Markdown', 'HTML', 'PDF', 'Word']} on={1} delayBase={0.05} />}
         <p className="helper mt5 demo-late">Plus 25 output options — cover, table of contents, watermark — honored in every format.</p>
+        {beat >= 10 && (
+          <div className="row mt5" style={{ flexWrap: 'wrap', gap: 8 }}>
+            {['Audience: developers', 'Style: plain & direct', 'Detail: standard'].map((c, i) => (
+              <span key={c} className="demo-chip demo-chipon" style={{ animationDelay: (0.1 + i * 0.5) + 's' }}>{c}</span>
+            ))}
+          </div>
+        )}
       </div>
     )
   },
   {
     label: 'Generate & verify', dur: 7000, sfx: 'success',
     vo: 'Docify writes every section from the real source, previews it, and proves its quality — ninety-four.',
+    cues: [{ at: 400, sfx: 'process' }, { at: 1900, sfx: 'type' }, { at: 2600, sfx: 'type' }, { at: 4800, sfx: 'pop' }],
     render: () => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div className="score score--good" style={{ minWidth: 170 }}>
           <span className="label01 t2">Quality score</span>
-          <span className="num"><CountTo from={0} to={94} delay={2600} dur={2400} /></span>
+          <span className="num"><CountTo from={0} to={94} delay={3400} dur={2200} /></span>
           <span className="helper">six quality dimensions checked</span>
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
-          <Pipe gap={1.1} steps={['Collecting source: 214 files · 41 endpoints', 'Drafting every section from the real code', 'Editable preview · quality checks passed']} />
+          <Pipe gap={1.55} steps={['Collecting source: 214 files · 41 endpoints', 'Drafting every section from the real code', 'Editable preview · quality checks passed']} />
         </div>
       </div>
     )
@@ -307,15 +337,18 @@ const GEN_SCENES = [
   {
     label: 'Up next', dur: 6000, sfx: 'chime',
     vo: 'Download, export, or publish. Professional documentation in minutes. Next — automation after every code change.',
-    render: () => (
+    cues: [{ at: 300, sfx: 'pop' }, { at: 700, sfx: 'pop' }, { at: 1100, sfx: 'pop' }, { at: 3600, sfx: 'whoosh' }],
+    render: (beat) => (
       <div>
         <div className="row" style={{ flexWrap: 'wrap', gap: 8, paddingBottom: 12 }}>
           {['payments-api-reference.md', 'payments-api-reference.pdf', 'payments-api-reference.docx'].map((f, i) => (
             <span key={f} className="demo-chip" style={{ animationDelay: (0.1 + i * 0.4) + 's', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12 }}>⬇ {f}</span>
           ))}
         </div>
-        <NextPointer target="film-automation" kicker="AUTOMATION"
-          title="Discover how Docify automates documentation after every code change" />
+        {beat >= 9 && (
+          <NextPointer target="film-automation" kicker="AUTOMATION"
+            title="Discover how Docify automates documentation after every code change" />
+        )}
       </div>
     )
   }

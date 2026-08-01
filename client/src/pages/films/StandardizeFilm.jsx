@@ -1,5 +1,5 @@
 import React from 'react';
-import { DemoShell, TitleSlate, CountTo } from '../../demoKit.jsx';
+import { DemoShell, TitleSlate, CountTo, Cursor, Callout } from '../../demoKit.jsx';
 import { NextPointer } from '../demos.jsx';
 
 /* =========================================================================
@@ -37,13 +37,17 @@ const STD_SCENES = [
   },
   {
     label: 'Docs & standard', dur: 6500, sfx: 'click',
+    /* vo word map: Select(1) the(2) legacy(3) documents(4) then(5) choose(6)
+       the(7) standard(8) your(9) house(10) style(11) guide(12) Microsoft(13)
+       or(14) Google(15) — chips mount on "standard", chip lights on "house". */
     vo: 'Select the legacy documents, then choose the standard — your house style guide, Microsoft, or Google.',
-    render: () => (
+    cues: [{ at: 400, sfx: 'pop' }, { at: 1100, sfx: 'pop' }, { at: 1800, sfx: 'pop' }],
+    render: (beat) => (
       <div>
         <p className="h01 mb5">Three authors. Three eras. One standard.</p>
         <div>
-          {LEGACY_DOCS.map(([f, meta, before]) => (
-            <div key={f} className="demo-row">
+          {LEGACY_DOCS.map(([f, meta, before], i) => (
+            <div key={f} className="demo-row" style={{ animationDelay: (0.3 + i * 0.7) + 's' }}>
               <span className="mono" style={{ fontSize: 13 }}>{f}</span>
               <span className="demo-branch mono">{meta}</span>
               <span className="mono" style={{ marginLeft: 'auto', color: 'var(--support-warning)', fontWeight: 600 }}>
@@ -53,69 +57,97 @@ const STD_SCENES = [
           ))}
         </div>
         <div className="mt5">
-          <Chips items={['Docify house style', 'Microsoft', 'Google', 'Custom rules']} on={0} delayBase={1.6} />
+          {beat >= 8 && (
+            <Chips items={['Docify house style', 'Microsoft', 'Google', 'Custom rules']}
+              on={beat >= 10 ? 0 : -1} delayBase={0.05} />
+          )}
         </div>
         <p className="helper mt5 demo-late">Style guides, terminology rules, and org & repo rules apply together.</p>
+        <Cursor steps={[
+          { x: 46, y: 26, at: 600 },
+          { x: 44, y: 44, at: 1700 },
+          { x: 16, y: 66, at: 3500, click: true }
+        ]} />
       </div>
     )
   },
   {
     label: 'Rebuild & rescore', dur: 7000, sfx: 'click',
+    /* vo word map: Docify(1) rebuilds(2) each(3) document(4) against(5) the(6)
+       chosen(7) standard(8) and(9) every(10) consistency(11) score(12)
+       climbs(13)… — rows mount on beats 2/4/6, all climbs gate on "score". */
     vo: 'Docify rebuilds each document against the chosen standard — and every consistency score climbs into the nineties.',
-    render: () => (
+    cues: [{ at: 600, sfx: 'process' }, { at: 4700, sfx: 'pop' }, { at: 5600, sfx: 'pop' }],
+    render: (beat) => (
       <div>
         <p className="h01 mb5">Rebuilt to the Docify house style</p>
         {LEGACY_DOCS.map(([f, meta, before, after], i) => (
-          <div key={f} className="demo-mrow demo-mrow--light"
-            style={{ animationDelay: (0.4 + i * 0.55) + 's', gridTemplateColumns: '218px 1fr 96px' }}>
-            <span className="demo-mname mono" style={{ color: 'var(--text-primary)', fontSize: 12.5 }}>{f}</span>
-            <span className="demo-mbar" style={{ background: 'var(--border-subtle)' }}>
-              <span className="demo-mfill" style={{ width: after + '%', animationDelay: (0.8 + i * 0.55) + 's' }} />
-            </span>
-            <span className="demo-mpct mono" style={{ color: 'var(--text-primary)' }}>
-              {before} → <CountTo from={before} to={after} delay={900 + i * 550} dur={2000} />
-            </span>
-          </div>
+          beat >= 2 + i * 2 && (
+            <div key={f} className="demo-mrow demo-mrow--light"
+              style={{ gridTemplateColumns: '218px 1fr 96px' }}>
+              <span className="demo-mname mono" style={{ color: 'var(--text-primary)', fontSize: 12.5 }}>{f}</span>
+              <span className="demo-mbar" style={{ background: 'var(--border-subtle)' }}>
+                {beat >= 12 && <span className="demo-mfill" style={{ width: after + '%', animationDelay: (i * 0.45) + 's' }} />}
+              </span>
+              <span className="demo-mpct mono" style={{ color: 'var(--text-primary)' }}>
+                {before}{beat >= 12 && <> → <CountTo from={before} to={after} delay={150 + i * 450} dur={1600} /></>}
+              </span>
+            </div>
+          )
         ))}
+        <Callout x={58} y={22} at={5700} tone="green">all three now 89+</Callout>
         <p className="helper mt5 demo-late">14 terminology fixes · tone: plain & direct · structure aligned to template.</p>
       </div>
     )
   },
   {
     label: 'Diff & approve', dur: 6500, sfx: 'success',
+    /* vo word map: Every(1) change(2) lands(3) as(4) a(5) reviewable(6)
+       diff(7) in(8) the(9) queue(10) nothing(11) publishes(12) until(13)
+       a(14) person(15) approves(16) — diff lines on "reviewable", pipeline
+       on "queue", approved check held for "approves". */
     vo: 'Every change lands as a reviewable diff in the queue — nothing publishes until a person approves.',
-    render: () => (
+    cues: [{ at: 2400, sfx: 'type' }, { at: 3000, sfx: 'type' }, { at: 3700, sfx: 'pop' }, { at: 5900, sfx: 'notify' }],
+    render: (beat) => (
       <div>
         <div className="demo-yaml mono">
-          {[
-            ['@@ payments-integration-guide.md · § Error handling', 'var(--code-text)'],
-            ['- In case of the request failing, retry may be attempted.', '#ff8389'],
-            ['+ If the request fails, retry with exponential backoff.', '#42be65'],
-            ['+ terminology: "merchant ID" — replaces MID, merchant-id', '#42be65']
-          ].map(([l, c], i) => (
-            <div key={l} className="demo-yline" style={{ animationDelay: (0.3 + i * 0.55) + 's', color: c }}>{l}</div>
+          <div className="demo-yline" style={{ animationDelay: '0.3s', color: 'var(--code-text)' }}>
+            @@ payments-integration-guide.md · § Error handling
+          </div>
+          {beat >= 6 && [
+            ['- In case of the request failing, retry may be attempted.', '#ff8389', 0],
+            ['+ If the request fails, retry with exponential backoff.', '#42be65', 0.45],
+            ['+ terminology: "merchant ID" — replaces MID, merchant-id', '#42be65', 0.9]
+          ].map(([l, c, d]) => (
+            <div key={l} className="demo-yline" style={{ animationDelay: d + 's', color: c }}>{l}</div>
           ))}
         </div>
-        <div className="demo-loop mt5">
-          <span className="demo-loopbox">3 proposals</span>
-          <span className="demo-looparrow">→</span>
-          <span className="demo-loopbox">review queue</span>
-          <span className="demo-looparrow">→</span>
-          <span className="check demo-loopcheck">approved · v4 published · 0 unapproved</span>
-        </div>
+        {beat >= 9 && (
+          <div className="demo-loop mt5">
+            <span className="demo-loopbox">3 proposals</span>
+            <span className="demo-looparrow">→</span>
+            <span className="demo-loopbox">review queue</span>
+            <span className="demo-looparrow">→</span>
+            {beat >= 15 && <span className="check demo-loopcheck">approved · v4 published · 0 unapproved</span>}
+          </div>
+        )}
       </div>
     )
   },
   {
     label: 'Up next', dur: 6000, sfx: 'chime',
+    /* vo word map: …unreviewed(10) Next(11) — pointer card held for "Next". */
     vo: 'One house standard across every page, and nothing ships unreviewed. Next — AI readiness.',
-    render: () => (
+    cues: [{ at: 4200, sfx: 'whoosh' }],
+    render: (beat) => (
       <div>
         <div style={{ padding: '4px 0 10px' }}>
           <span className="jd-verdict">One standard. Every page. Nothing unreviewed.</span>
         </div>
-        <NextPointer target="film-ai" kicker="AI READINESS"
-          title="See how Docify checks documentation for AI readiness" />
+        {beat >= 11 && (
+          <NextPointer target="film-ai" kicker="AI READINESS"
+            title="See how Docify checks documentation for AI readiness" />
+        )}
       </div>
     )
   }

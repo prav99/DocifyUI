@@ -1462,3 +1462,22 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .demo-window:fullscreen .demo-stage{font-size:16px;padding:40px}
 .demo-window:fullscreen .jd-cap,.demo-window:fullscreen .demo-bar{max-width:1240px;width:100%;margin:0 auto}
 .demo-window:-webkit-full-screen{display:flex;flex-direction:column;background:var(--background);overflow:auto}
+
+/* ============ Film engine v2: camera motion, cursor, callouts ============ */
+.demo-stage{position:relative;overflow:hidden;animation:stage-in .35s var(--ease)}
+@keyframes stage-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+.demo-stage--driftA>*{animation:drift-a 12s ease-in-out infinite alternate}
+.demo-stage--driftB>*{animation:drift-b 12s ease-in-out infinite alternate}
+@keyframes drift-a{from{transform:scale(1) translate(0,0)}to{transform:scale(1.015) translate(-3px,-2px)}}
+@keyframes drift-b{from{transform:scale(1.012) translate(3px,0)}to{transform:scale(1) translate(-3px,2px)}}
+.demo-cursor{position:absolute;z-index:6;pointer-events:none;transition:left .55s cubic-bezier(.3,.7,.2,1),top .55s cubic-bezier(.3,.7,.2,1);filter:drop-shadow(0 1px 2px rgba(22,22,22,.35))}
+.demo-cursor::after{content:'';position:absolute;left:-7px;top:-7px;width:30px;height:30px;border-radius:50%;border:2px solid var(--button-primary);opacity:0;transform:scale(.4)}
+.demo-cursor--click::after{animation:tapring .45s var(--ease)}
+@keyframes tapring{0%{opacity:.9;transform:scale(.4)}100%{opacity:0;transform:scale(1.15)}}
+.demo-callout{position:absolute;z-index:5;background:#161616;color:#fff;font-size:11.5px;line-height:1.35;padding:6px 10px;max-width:220px;box-shadow:0 6px 18px rgba(22,22,22,.25);opacity:0;animation:callout-in .4s var(--ease) both}
+.demo-callout::before{content:'';position:absolute;left:-5px;top:10px;border:5px solid transparent;border-right-color:#161616;border-left:0}
+.demo-callout--blue{border-left:3px solid var(--button-primary)}
+.demo-callout--green{border-left:3px solid var(--support-success)}
+.demo-callout--amber{border-left:3px solid var(--support-warning)}
+@keyframes callout-in{from{opacity:0;transform:translateY(6px) scale(.96)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.demo-stage--driftA>*,.demo-stage--driftB>*{animation:none!important}.demo-cursor{transition:none}}
