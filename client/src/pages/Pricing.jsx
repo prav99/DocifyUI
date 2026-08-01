@@ -6,34 +6,45 @@ import { NavBar, HelpLink } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
 import posthog from '../posthog.js';
 
+// [label, Free, Starter, Team, Enterprise]
 const ROWS = [
-  ['Sources', '1 source', 'All sources', 'All sources'],
-  ['Generations', '5 / month, watermarked', 'Unlimited', 'Unlimited'],
-  ['Output formats', 'PDF, Word only', 'All formats', 'All formats'],
-  ['Quality checks', 'Overview only', 'Full pipeline + AI judge', 'Full pipeline + AI judge'],
-  ['CI/CD automation', '—', 'Included', 'Included'],
-  ['Custom style-guide rules', '—', '—', 'Included'],
-  ['SSO (SAML / OIDC)', '—', '—', 'Included'],
-  ['Audit logs', '—', '—', 'Included'],
-  ['Support', 'Community', 'Business hours', 'Dedicated + SLA']
+  ['Seats included', '1', '2', '5 · then $12/seat/mo', 'Custom'],
+  ['Sources', '1 source', 'All sources', 'All sources', 'All sources'],
+  ['Generations / month', '5, watermarked', '100', '500 pooled (fair use)', 'Custom'],
+  ['Automation pipelines', '—', '1', '10', 'Unlimited'],
+  ['Export formats', 'PDF + Word', 'All except DITA', 'Every format incl. DITA', 'Every format incl. DITA'],
+  ['AI quality pipeline', 'Overview only', 'Full pipeline', 'Full pipeline', 'Full pipeline + custom style-guide rules'],
+  ['AI search readiness', 'Score on 1 document', 'Included', 'Included', 'Included'],
+  ['Usage analytics', '—', '—', 'Included', 'Included'],
+  ['SSO (SAML / OIDC)', '—', '—', '—', 'Included'],
+  ['Audit logs', '—', '—', '—', 'Included'],
+  ['Support', 'Community', 'Email', 'Priority', 'Dedicated · DPA + SLA · invoicing/PO']
 ];
+
+// The .pricegrid class is 4 columns; these inline rules extend it to 5
+// without touching styles.css (its nth-child(4n) border rule no longer lines up).
+const GRID5 = { gridTemplateColumns: '200px repeat(4, 1fr)', minWidth: 880 };
+const CELL = { borderRight: '1px solid var(--border-subtle)' };
+const CELL_LAST = { borderRight: 'none' };
 
 export default function Pricing() {
   usePageMeta({
-    title: 'Pricing — Free & Team Plans',
-    description: 'Start free: 5 generations per month, no credit card. Team adds unlimited generations, all output formats, CI/CD automation, and the full AI quality pipeline.',
+    title: 'Pricing — Free, Starter, Team & Enterprise',
+    description: 'Start free with 5 generations a month, no credit card. Starter from $24, Team from $79 with a 14-day free trial, and Enterprise with SSO, audit logs, and a DPA.',
     path: '/pricing'
   });
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
   const { user } = useAuth();
   const annual = flow.billing === 'annual';
-  const teamPrice = annual ? 26 : 32;
+  const starterPrice = annual ? 24 : 29;
+  const teamPrice = annual ? 79 : 99;
+  const paidPlan = flow.plan === 'starter' ? 'Starter' : 'Team';
 
   async function choose(plan) {
     setFlow({ plan });
     posthog.capture('plan_selected', { plan, billing_cycle: annual ? 'annual' : 'monthly' });
-    if (plan === 'team') return nav(user ? '/checkout' : '/signup');
+    if (plan === 'starter' || plan === 'team') return nav(user ? '/checkout' : '/signup');
     if (plan === 'free') {
       if (user) { try { await api('/billing/checkout', { method: 'POST', body: { plan: 'free' } }); } catch { /* ignore */ } }
       toast('info', 'Staying on Free', '5 watermarked generations per month');
@@ -60,34 +71,50 @@ export default function Pricing() {
         </div>
 
         <div className="scrollx mt7">
-        <div className="pricegrid">
-          <div className="phead"><span className="label01 t2">PLANS</span></div>
-          <div className="phead">
-            <p className="h02">Free</p><p className="h04 mono">$0</p><p className="helper">Per user, forever</p>
-            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('free')}>Stay on Free</button>
+        <div className="pricegrid" style={GRID5}>
+          <div className="phead" style={CELL}><span className="label01 t2">PLANS</span></div>
+          <div className="phead" style={CELL}>
+            <p className="h02">Free</p><p className="h04 mono">$0</p><p className="helper">Forever · 1 source</p>
+            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('free')}>Start free</button>
           </div>
-          <div className="phead pop">
+          <div className="phead" style={CELL}>
+            <p className="h02">Starter</p>
+            <p className="h04 mono">${starterPrice}</p>
+            <p className="helper">Per month, billed {annual ? 'annually' : 'monthly'} · 2 seats</p>
+            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('starter')}>Choose Starter</button>
+          </div>
+          <div className="phead pop" style={CELL}>
             <div className="row row--between" style={{ width: '100%' }}>
               <p className="h02">Team</p><span className="tag tag--blue">Most popular</span>
             </div>
             <p className="h04 mono">${teamPrice}</p>
-            <p className="helper">Per user / month, billed {annual ? 'annually' : 'monthly'}</p>
-            <button className="btn btn--primary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('team')}>Choose Team</button>
+            <p className="helper">Per month, billed {annual ? 'annually' : 'monthly'} · includes 5 seats, then $12/seat/mo</p>
+            <button className="btn btn--primary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('team')}>Start 14-day trial</button>
           </div>
-          <div className="phead">
+          <div className="phead" style={CELL_LAST}>
             <p className="h02">Enterprise</p><p className="h04 mono">Custom</p><p className="helper">Annual contract</p>
-            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('enterprise')}>Contact us</button>
+            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('enterprise')}>Book a demo</button>
           </div>
           {ROWS.map((r) => (
             <React.Fragment key={r[0]}>
-              <div className="rowlabel">{r[0]}</div><div>{r[1]}</div><div>{r[2]}</div><div>{r[3]}</div>
+              <div className="rowlabel" style={CELL}>{r[0]}</div>
+              <div style={CELL}>{r[1]}</div>
+              <div style={CELL}>{r[2]}</div>
+              <div style={CELL}>{r[3]}</div>
+              <div style={CELL_LAST}>{r[4]}</div>
             </React.Fragment>
           ))}
         </div>
         </div>
+
+        <div className="row mt5" style={{ gap: 24, flexWrap: 'wrap' }}>
+          <span className="helper">14-day free trial on Team — no credit card</span>
+          <span className="helper">30-day money-back guarantee on annual plans</span>
+          <span className="helper">Cancel anytime · read-only access · your source is never stored</span>
+        </div>
       </div>
       <NavBar back="/export" next={user ? '/checkout' : '/signup'} nextLabel="Continue to checkout"
-        note={'Team plan · billed ' + (annual ? 'annually' : 'monthly')} />
+        note={paidPlan + ' plan · billed ' + (annual ? 'annually' : 'monthly')} />
     </>
   );
 }

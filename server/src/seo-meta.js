@@ -17,8 +17,8 @@ export const PAGE_META = {
     desc: DEFAULT_DESC
   },
   '/pricing': {
-    title: 'Pricing — Free & Team Plans | ' + SITE_NAME,
-    desc: 'Start free: 5 generations per month, no credit card. Team plan adds unlimited generations, all output formats, CI/CD automation, and the full AI quality pipeline.'
+    title: 'Pricing — Free, Starter, Team & Enterprise | ' + SITE_NAME,
+    desc: 'Start free with 5 generations a month — no credit card. Starter $29/mo for small teams; Team $99/mo ($79 billed annually) with five seats, 10 automation pipelines, and a 14-day free trial. Enterprise adds SSO and audit logs.'
   },
   '/signup': {
     title: 'Start Free — Create Your Account | ' + SITE_NAME,
@@ -69,7 +69,8 @@ const JSON_LD = JSON.stringify({
       description: DEFAULT_DESC,
       offers: [
         { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'USD' },
-        { '@type': 'Offer', name: 'Team', price: '26', priceCurrency: 'USD', description: 'Per user / month, billed annually' }
+        { '@type': 'Offer', name: 'Starter', price: '24', priceCurrency: 'USD', description: 'Per month, billed annually' },
+        { '@type': 'Offer', name: 'Team', price: '79', priceCurrency: 'USD', description: 'Per month, five seats included, billed annually' }
       ],
       featureList: 'AI documentation generation, LLM-as-a-Judge quality scoring, AI-search readiness evaluation, human review and approval, GitHub/GitLab/Bitbucket integration, Markdown/PDF/Word/HTML/DITA export, release notes and CI/CD documentation automation, AI Quality Report exports (PDF/HTML/PowerPoint)'
     },
@@ -94,7 +95,7 @@ const FAQ_ITEMS = [
     ['Is my source code stored?',
       'No. Docify reads your repository through a read-only grant, generates documentation from code structure, comments, and history, and does not store your source. You can revoke access at any time.'],
     ['How quickly does Docify pay for itself?',
-      'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. Team costs $26 per user per month on annual billing ($32 monthly). At a typical loaded engineering cost of $75–120 per hour, that is roughly 13–21 minutes of engineering time per user per month — the break-even point: Docify pays for itself if it returns that much documentation work per seat. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is to run the free plan — five generations, no card — against a real release and compare the result with what that release usually costs you.']
+      'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. The Team plan is $79 per month billed annually ($99 monthly) and includes five seats — roughly $16 per person. At a typical loaded engineering cost of $75–120 per hour, the whole subscription is covered by about 40–60 minutes of saved documentation work per month across the entire team. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is the 14-day free trial — run it against a real release and compare the result with what that release usually costs you.']
 ];
 
 const FAQ_LD = JSON.stringify({
@@ -127,7 +128,7 @@ const PRERENDER = {
 <p>Documentation is usually paid for in engineering hours: tracking changes, rewriting pages, chasing reviews, at loaded rates of roughly $75–120 an hour. Docify connects your repositories, generates and updates documentation automatically when the product changes, holds it to a quality gate, and keeps a human on every approval. The hours go down; the standard doesn’t.</p>
 <p>Read-only access · your source code is never stored · free plan includes 5 generations · no credit card required.</p>
 <h2>What does your current documentation process cost?</h2>
-<p>Nobody signs an invoice for manual documentation, which is why it rarely comes up in a cost review. The spend is real all the same: engineers re-reading code they understood at merge time, releases queued behind writing, questions routed to the busiest people on the team, new hires ramping on pages that describe last quarter’s product. The interactive estimator on this page compares your current process cost with Docify Team at $26 per user per month (billed annually; $32 monthly), using your own numbers.</p>
+<p>Nobody signs an invoice for manual documentation, which is why it rarely comes up in a cost review. The spend is real all the same: engineers re-reading code they understood at merge time, releases queued behind writing, questions routed to the busiest people on the team, new hires ramping on pages that describe last quarter’s product. The interactive estimator on this page compares your current process cost with Docify Team at $79 per month billed annually ($99 monthly) with five seats included, using your own numbers.</p>
 <h2>Connect your ecosystem</h2>
 <p>Connect GitHub, GitLab, and Bitbucket — multiple accounts, organisations, groups, and workspaces, public or private — into one central catalogue, reusable across generation, automation, and standardization. Access is read-only and your source is never stored.</p>
 <h2>Generate on demand</h2>
@@ -150,8 +151,10 @@ ${faqHtml()}
 <p>Start free. Upgrade when the whole team wants their docs to write themselves.</p>
 <h2>Free — $0</h2>
 <p>1 source, 5 generations per month (watermarked), PDF and Word export, quality overview. No credit card required.</p>
-<h2>Team — $26 per user/month billed annually ($32 monthly)</h2>
-<p>All sources, unlimited generations, every output format (Markdown, PDF, Word, HTML, DITA, DocBook, ePub), the full AI quality pipeline with LLM-judge scoring and AI-search-readiness estimates, and CI/CD automation on merge.</p>
+<h2>Starter — $29/month ($24 billed annually)</h2>
+<p>Two seats, one automation pipeline, 100 generations a month, every export format except DITA, and the full AI quality pipeline.</p>
+<h2>Team — $99/month ($79 billed annually) · 5 seats included · most popular</h2>
+<p>Five seats included (extra seats $12), 10 automation pipelines, 500 pooled generations a month, every output format including DITA, the full AI quality pipeline with AI-search-readiness estimates, usage analytics, priority support, and a 14-day free trial — no credit card.</p>
 <h2>Enterprise — custom, annual contract</h2>
 <p>Everything in Team plus custom style-guide rules, SSO (SAML/OIDC), audit logs, and dedicated support with SLA. <a href="/contact">Contact us</a>.</p>`,
   '/docs': () => `

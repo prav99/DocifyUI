@@ -54,7 +54,8 @@ export const FORMATS = {
 
 export const PLANS = {
   free: { id: 'free', name: 'Free', monthly: 0, annual: 0 },
-  team: { id: 'team', name: 'Team', monthly: 32, annual: 26 },
+  starter: { id: 'starter', name: 'Starter', monthly: 29, annual: 24 },
+  team: { id: 'team', name: 'Team', monthly: 99, annual: 79, seatsIncluded: 5, extraSeat: 12 },
   enterprise: { id: 'enterprise', name: 'Enterprise', monthly: null, annual: null }
 };
 

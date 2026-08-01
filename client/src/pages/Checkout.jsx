@@ -5,38 +5,50 @@ import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, HelpLink } from '../ui.jsx';
 import posthog from '../posthog.js';
 
+const PRICES = {
+  starter: { monthly: 29, annual: 24, seatsIncluded: 2 },
+  team: { monthly: 99, annual: 79, seatsIncluded: 5, extraSeat: 12 }
+};
+
 export default function Checkout() {
   const nav = useNavigate();
   const { flow } = useFlow();
   const { refresh } = useAuth();
   const [taxId, setTaxId] = useState('');
   const [state, setState] = useState('idle'); // idle | busy | done
+  const [seats, setSeats] = useState(5); // Team only; minimum 5 included seats
 
+  const plan = flow.plan === 'starter' ? 'starter' : 'team';
+  const planName = plan === 'starter' ? 'Starter' : 'Team';
+  const p = PRICES[plan];
   const annual = flow.billing === 'annual';
-  const per = annual ? 26 : 32;
-  const seats = 5;
-  const subtotal = annual ? per * seats * 12 : per * seats;
+  const base = annual ? p.annual : p.monthly;
+  const planSeats = plan === 'team' ? seats : p.seatsIncluded;
+  const extraSeats = plan === 'team' ? Math.max(0, seats - p.seatsIncluded) : 0;
+  const extraCost = extraSeats * (p.extraSeat || 0);
+  const perMonth = base + extraCost;
+  const subtotal = annual ? perMonth * 12 : perMonth;
 
   async function pay() {
     setState('busy');
     try {
       await api('/billing/checkout', {
         method: 'POST',
-        body: { plan: 'team', cycle: flow.billing, seats, taxId }
+        body: { plan, cycle: flow.billing, seats: planSeats, taxId }
       });
       setState('done');
       posthog.capture('payment_completed', {
-        plan: 'team',
+        plan,
         billing_cycle: flow.billing,
-        seats,
+        seats: planSeats,
         amount: subtotal,
       });
-      toast('success', 'Payment successful', 'Team plan is active — receipt sent to your email');
+      toast('success', 'Payment successful', planName + ' plan is active — receipt sent to your email');
       refresh();
       setTimeout(() => nav('/dashboard'), 1200);
     } catch (e) {
       setState('idle');
-      posthog.captureException(e, { event: 'payment_error', plan: 'team' });
+      posthog.captureException(e, { event: 'payment_error', plan });
       toast('error', 'Payment failed', e.message);
     }
   }
@@ -69,9 +81,40 @@ export default function Checkout() {
 
           <div className="tile" style={{ padding: 24 }}>
             <h2 className="h02 mb5">Order summary</h2>
-            <div className="row row--between mb3"><span className="body01">Team plan · {seats} seats</span><span className="mono">${per} / user / mo</span></div>
+            {plan === 'team' ? (
+              <>
+                <div className="row row--between mb3">
+                  <span className="body01">Team plan · includes {p.seatsIncluded} seats</span>
+                  <span className="mono">${base} / mo</span>
+                </div>
+                <div className="row row--between mb3" style={{ alignItems: 'center' }}>
+                  <span className="body01 t2">Seats</span>
+                  <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                    <button className="btn btn--tertiary" aria-label="Remove seat"
+                      disabled={seats <= p.seatsIncluded} onClick={() => setSeats((s) => Math.max(p.seatsIncluded, s - 1))}>−</button>
+                    <span className="mono" style={{ minWidth: 24, textAlign: 'center' }}>{seats}</span>
+                    <button className="btn btn--tertiary" aria-label="Add seat"
+                      onClick={() => setSeats((s) => s + 1)}>+</button>
+                  </div>
+                </div>
+                <div className="row row--between mb3">
+                  <span className="body01 t2">Extra seats · {extraSeats} × ${p.extraSeat} / mo</span>
+                  <span className="mono">${extraCost} / mo</span>
+                </div>
+                <div className="row row--between mb3">
+                  <span className="body01 t2">Subtotal per month</span>
+                  <span className="mono">${base} + ${extraCost} = ${perMonth}</span>
+                </div>
+              </>
+            ) : (
+              <div className="row row--between mb3">
+                <span className="body01">Starter plan · {p.seatsIncluded} seats included</span>
+                <span className="mono">${base} / mo</span>
+              </div>
+            )}
             <div className="row row--between mb3"><span className="body01 t2">Billing cycle</span><span>{annual ? 'Annual' : 'Monthly'}</span></div>
             {annual && <div className="row row--between mb3"><span className="body01 t2">Annual discount</span><span className="check">−20% applied</span></div>}
+            {annual && <div className="row row--between mb3"><span className="body01 t2">Billed for 12 months</span><span className="mono">${perMonth} × 12</span></div>}
             <div className="divider" style={{ margin: '16px 0' }} />
             <div className="row row--between"><span className="h02">Due today</span><span className="h03 mono">${subtotal.toLocaleString()}</span></div>
             <p className="helper mt2">{annual ? '12 months, renews annually' : 'Renews monthly'} · cancel anytime from Billing</p>

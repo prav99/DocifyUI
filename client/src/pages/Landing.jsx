@@ -448,7 +448,7 @@ export const FAQS = [
   },
   {
     q: 'How quickly does Docify pay for itself?',
-    a: 'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. Team costs $26 per user per month on annual billing ($32 monthly). At a typical loaded engineering cost of $75–120 per hour, that is roughly 13–21 minutes of engineering time per user per month — the break-even point: Docify pays for itself if it returns that much documentation work per seat. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is to run the free plan — five generations, no card — against a real release and compare the result with what that release usually costs you.'
+    a: 'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. The Team plan is $79 per month billed annually ($99 monthly) and includes five seats — roughly $16 per person. At a typical loaded engineering cost of $75–120 per hour, the whole subscription is covered by about 40–60 minutes of saved documentation work per month across the entire team. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is the 14-day free trial — run it against a real release and compare the result with what that release usually costs you.'
   }
 ];
 
@@ -489,9 +489,9 @@ function CostCalculator() {
   const [hours, setHours] = useState(11);
   const [rate, setRate] = useState(95);
   const [annual, setAnnual] = useState(true);
-  const seat = annual ? 26 : 32;
+  const base = annual ? 79 : 99;
   const current = releases * hours * rate;
-  const docify = people * seat;
+  const docify = base + Math.max(0, people - 5) * 12;
   const breakevenH = docify / rate;
   const breakevenLabel = breakevenH >= 1
     ? breakevenH.toFixed(breakevenH >= 10 ? 0 : 1) + ' hours'
@@ -524,13 +524,13 @@ function CostCalculator() {
             <div className="calctile calctile--docify">
               <p className="label01 t2">DOCIFY TEAM, SAME PEOPLE</p>
               <p className="calcnum mono">{fmtUSD(docify)}<span className="calcper">/month</span></p>
-              <p className="helper t2 mono">{people} {people === 1 ? 'seat' : 'seats'} × ${seat}
+              <p className="helper t2 mono">Team ${base} · 5 seats included{people > 5 ? ' + ' + (people - 5) + ' × $12' : ''}
                 <button className="calccycle" onClick={() => setAnnual((v) => !v)}>
                   {annual ? 'annual billing · see monthly' : 'monthly billing · see annual'}
                 </button>
               </p>
               <div className="calcbar"><div className="ok" style={{ width: Math.max((docify / maxBar) * 100, 1.5) + '%' }} /></div>
-              <p className="helper t2">List price. No usage maths, no hidden tiers.</p>
+              <p className="helper t2">List price · 5 seats included · 500 generations a month fair use.</p>
             </div>
           </div>
           <div className="calcverdict">
@@ -909,7 +909,7 @@ export default function Landing() {
             <div className="grid3">
               <div><p className="metricnum">≥ <CountUp to={85} /></p><p className="body01 t2 mt3">The quality score a document must reach before the gate allows it to publish. Below the bar, it waits for a human, not a customer.</p></div>
               <div><p className="metricnum">0</p><p className="body01 t2 mt3">Lines of your source code stored. Repositories are read at generation time through a read-only grant you can revoke, and discarded.</p></div>
-              <div><p className="metricnum">$<CountUp to={26} /></p><p className="body01 t2 mt3">Per user per month on the annual Team plan — list price, with a free plan to test on a real release first. The estimator above compares it with your current process.</p></div>
+              <div><p className="metricnum">$<CountUp to={79} /></p><p className="body01 t2 mt3">Per month for a five-seat team on the annual plan — list price, with a 14-day free trial to test on a real release first. The estimator above compares it with your current process.</p></div>
             </div>
           </Reveal>
         </div>
@@ -996,8 +996,8 @@ export default function Landing() {
             <h2 className="h04" style={{ color: '#fff', maxWidth: 680 }}>Documentation will always take time. It doesn’t have to take this much.</h2>
             <p className="helper mt4" style={{ color: '#c6c6c6', maxWidth: 640, lineHeight: 1.6 }}>
               Run the estimator with your own figures, then test the output on your own repository —
-              five free generations, no credit card. If the numbers work, Docify Team is $26 per user
-              per month billed annually ($32 monthly).
+              five free generations, no credit card. If the numbers work, Docify Team is $79 a month
+              billed annually ($99 monthly), with five seats included.
             </p>
             <div className="row mt6" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free — 5 documents<span className="ico">→</span></button>
