@@ -530,7 +530,7 @@ function CostCalculator() {
                 </button>
               </p>
               <div className="calcbar"><div className="ok" style={{ width: Math.max((docify / maxBar) * 100, 1.5) + '%' }} /></div>
-              <p className="helper t2">List price · 5 seats included · 500 generations a month fair use.</p>
+              <p className="helper t2">List price · 5 seats included · 250 documents a month.</p>
             </div>
           </div>
           <div className="calcverdict">

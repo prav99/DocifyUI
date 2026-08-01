@@ -1559,7 +1559,24 @@ async function anthropicRequest (key, body, attempt = 0) {
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  if (r.ok) return r.json();
+  if (r.ok) {
+    const json = await r.json();
+    // Token accounting is the unit economics of this product: every generation
+    // is a real bill. Log it so cost per document is measurable, and so a
+    // broken cache is visible — if cacheRead stays 0 across the doc types of
+    // one run, the stable prefix changed and caching silently stopped working.
+    try {
+      const u = json.usage || {};
+      const priced = (u.input_tokens || 0) * 3 + (u.cache_creation_input_tokens || 0) * 3.75
+        + (u.cache_read_input_tokens || 0) * 0.3 + (u.output_tokens || 0) * 15;
+      console.log('[ai] in=' + (u.input_tokens || 0) +
+        ' cacheWrite=' + (u.cache_creation_input_tokens || 0) +
+        ' cacheRead=' + (u.cache_read_input_tokens || 0) +
+        ' out=' + (u.output_tokens || 0) +
+        ' ~$' + (priced / 1e6).toFixed(4));
+    } catch { /* logging must never break a generation */ }
+    return json;
+  }
   const retryable = r.status === 429 || r.status === 529 || r.status >= 500;
   if (retryable && attempt < MAX_RETRIES) {
     const hdr = Number(r.headers.get('retry-after'));
@@ -1584,20 +1601,40 @@ async function aiSections({ docType, track, repo, files, brief, instructions, st
     'Never invent endpoints, functions, options, or version numbers that are not visible in the files. ' +
     'Respond with ONLY a JSON array of [heading, markdownBody] pairs — no prose around it.' +
     (style ? '\n\n' + String(style).slice(0, 14000) : '');
-  const user = 'Repository: ' + repo + '\nDocument type: ' + docTypeName(track, docType) +
+  // Prompt caching: a generation asks for one document type per API call, but
+  // every call in the same run ships the SAME repository files and the SAME
+  // writing policy. Those are the expensive tokens, so they go first — the
+  // stable prefix — with a cache breakpoint after them; only the short
+  // per-document ask varies and sits after the breakpoint. Cache reads bill at
+  // 0.1x input, so the second and later document types in a run cost a
+  // fraction of the first. (Caching is a prefix match: putting the files last,
+  // as this originally did, made the prefix differ on every call and cached
+  // nothing.)
+  const stablePrefix = 'Repository: ' + repo + '\n\nRepository files:\n\n' + fileBlock;
+  const perDocAsk = 'Document type: ' + docTypeName(track, docType) +
     (tpl ? ' (standard: ' + tpl.standard + ')' : '') +
     '\nSuggested outline (adapt as the code warrants): ' + outline.join(' · ') +
     (b.audience ? '\nAudience: ' + b.audience : '') + (b.tone ? '\nTone: ' + b.tone : '') +
     (instructions ? '\nInstructions: ' + String(instructions).slice(0, 500) : '') +
-    '\nUse markdown: ## is NOT needed in bodies (headings come from the pairs); tables, fenced code blocks, and lists are encouraged.' +
-    '\n\nRepository files:\n\n' + fileBlock;
+    '\nUse markdown: ## is NOT needed in bodies (headings come from the pairs); tables, fenced code blocks, and lists are encouraged.';
   await acquireSlot();
   let d;
   try {
     // 4096 tokens truncated verbose documents mid-JSON ("Unterminated string
     // at position ~13000"), which threw and silently degraded the whole run
     // to template content. 8192 covers real documents comfortably.
-    d = await anthropicRequest(key, { model: AI_MODEL(), max_tokens: 8192, system: sys, messages: [{ role: 'user', content: user }] });
+    d = await anthropicRequest(key, {
+      model: AI_MODEL(),
+      max_tokens: 8192,
+      system: [{ type: 'text', text: sys, cache_control: { type: 'ephemeral' } }],
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: stablePrefix, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: perDocAsk }
+        ]
+      }]
+    });
   } finally {
     releaseSlot();
   }

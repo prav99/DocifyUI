@@ -152,9 +152,9 @@ ${faqHtml()}
 <h2>Free — $0</h2>
 <p>1 source, 5 generations per month (watermarked), PDF and Word export, quality overview. No credit card required.</p>
 <h2>Starter — $29/month ($24 billed annually)</h2>
-<p>Two seats, one automation pipeline, 100 generations a month, every export format except DITA, and the full AI quality pipeline.</p>
+<p>Two seats, one automation pipeline, 60 documents a month, every export format except DITA, and the full AI quality pipeline.</p>
 <h2>Team — $99/month ($79 billed annually) · 5 seats included · most popular</h2>
-<p>Five seats included (extra seats $12), 10 automation pipelines, 500 pooled generations a month, every output format including DITA, the full AI quality pipeline with AI-search-readiness estimates, usage analytics, priority support, and a 14-day free trial — no credit card.</p>
+<p>Five seats included (extra seats $12), 10 automation pipelines, 250 pooled documents a month, every output format including DITA, the full AI quality pipeline with AI-search-readiness estimates, usage analytics, priority support, and a 14-day free trial — no credit card.</p>
 <h2>Enterprise — custom, annual contract</h2>
 <p>Everything in Team plus custom style-guide rules, SSO (SAML/OIDC), audit logs, and dedicated support with SLA. <a href="/contact">Contact us</a>.</p>`,
   '/docs': () => `

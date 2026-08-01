@@ -10,7 +10,7 @@ import posthog from '../posthog.js';
 const ROWS = [
   ['Seats included', '1', '2', '5 · then $12/seat/mo', 'Custom'],
   ['Sources', '1 source', 'All sources', 'All sources', 'All sources'],
-  ['Generations / month', '5, watermarked', '100', '500 pooled (fair use)', 'Custom'],
+  ['Documents / month', '5, watermarked', '60', '250 pooled', 'Custom'],
   ['Automation pipelines', '—', '1', '10', 'Unlimited'],
   ['Export formats', 'PDF + Word', 'All except DITA', 'Every format incl. DITA', 'Every format incl. DITA'],
   ['AI quality pipeline', 'Overview only', 'Full pipeline', 'Full pipeline', 'Full pipeline + custom style-guide rules'],
