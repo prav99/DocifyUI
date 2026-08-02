@@ -1178,8 +1178,11 @@ function scopeEmptyReason(scope, tense = 'past') {
     ? 'All ' + scope.readCount + ' files read from ' + scope.repo +
       ' are excluded by your documentation scope — ' + reach +
       '. Widen docify.yaml, .docifyignore, or the assigned rule set to include source files.'
+    // "excluded by the built-in defaults", not a claim about what each file IS:
+    // the default excludes also cover CI config and similar, and nothing here
+    // inspected the files' contents.
     : 'All ' + scope.readCount + ' files read from ' + scope.repo +
-      ' are lockfiles, dependencies, or build output, which Docify never sends to the AI. Point it at a branch containing source code.';
+      ' are excluded by Docify\'s built-in scan defaults (lockfiles, dependency and build directories, CI configuration and similar never reach the AI). Point it at a branch containing application source code.';
 }
 
 // The requested branch held no readable source. Same two facts either way.
@@ -1745,8 +1748,16 @@ apiRouter.post('/generations/preflight', async (req, res) => {
   // 4 — Nothing to write from: no repository files AND no connector sources.
   // This is the case that produces a template-shaped document, which is the
   // outcome a customer most resents paying for.
+  //
+  // Only claimed when it is actually KNOWN. If the source check did not run
+  // (scope null) or the repository could not be read just now (scope.error),
+  // "no source files would reach the AI" is a prediction made from missing
+  // data — the read may well succeed at generation time. Those cases already
+  // carry their own warning above; repeating them as a confident "nothing to
+  // write from" would be a false claim about the repository.
+  const repoCheckRan = Boolean(scope && !scope.error);
   const willGround = fileCount > 0 || connectors.total > 0;
-  if (!willGround) {
+  if (!willGround && (!hasRepo || repoCheckRan)) {
     warn('no-grounding', 'error', 'Nothing to write from',
       (hasRepo
         ? 'No source files from ' + repo + ' on "' + branchUsed + '" would reach the AI, and no Jira issues, OpenAPI specs, Notion or Confluence pages are selected. '
@@ -1755,8 +1766,12 @@ apiRouter.post('/generations/preflight', async (req, res) => {
   }
 
   // 5 — An API reference with no spec anywhere among the sources. Checked
-  // against the real resolved files, not assumed from the document type.
-  if (docTypes.includes('api') && !connectors.openapiSpecs) {
+  // against the real resolved files — so the absence claim is only made when
+  // those files were really resolved. (The files here are the capped, ranked
+  // sample the pipeline itself reads: a spec outside that sample genuinely
+  // would not reach the AI, so this stays truthful about the run even when
+  // the repository holds a spec somewhere else.)
+  if (docTypes.includes('api') && !connectors.openapiSpecs && (!hasRepo || repoCheckRan)) {
     const specInRepo = scope ? scope.files.some(looksLikeSpec) : false;
     if (!specInRepo) {
       warn('no-spec', 'warning', 'No API spec among the sources',
@@ -1775,6 +1790,9 @@ apiRouter.post('/generations/preflight', async (req, res) => {
     fileCount,
     branchUsed,
     checked,
+    // True only when the repository was actually listed and scoped — the flag
+    // the client must consult before presenting any claim about its files.
+    repoChecked: repoCheckRan,
     sources: {
       repositoryFiles: fileCount,
       repositoryFilesRead: scope ? scope.readCount : 0,

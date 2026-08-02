@@ -105,7 +105,7 @@ const byWord = (items, tokens) => items.filter((s) => wordsOf(s).some((w) => tok
 const API_FRAMEWORKS = ['express', 'fastify', 'koa', 'nest', 'nestjs', 'hapi', 'django', 'drf', 'flask',
   'fastapi', 'rails', 'sinatra', 'spring', 'laravel', 'gin', 'echo', 'chi', 'actix', 'axum', 'phoenix',
   'aspnet', 'graphql', 'grpc'];
-const CLI_TOKENS = ['cli', 'commander', 'clap', 'cobra', 'argparse', 'yargs', 'oclif'];
+const CLI_TOKENS = ['cli', 'commander', 'clap', 'cobra', 'argparse', 'yargs', 'oclif', 'typer'];
 const LIB_TOKENS = ['library', 'sdk'];
 
 // Returns { suggestions, notes }. `notes` are honest cautions about grounding,
@@ -132,7 +132,12 @@ function buildSuggestions(p, flow) {
 
   const cli = byWord(frameworks.concat(signals), CLI_TOKENS);
   const lib = byWord(frameworks.concat(signals), LIB_TOKENS);
-  if (cli.length || lib.length) {
+  // A CLI parser next to a web framework usually means a frozen dependency
+  // list (pip freeze pulls typer in with FastAPI) or an app with a helper
+  // script — "this scans as a command-line tool" would be a wrong claim there,
+  // so the CLI hint stays quiet whenever a server framework was detected.
+  const webFw = byWord(frameworks, API_FRAMEWORKS);
+  if ((cli.length || lib.length) && !webFw.length) {
     const what = cli.length ? 'a command-line tool' : 'a library';
     const found = evidence(cli.length ? cli : lib);
     add('quickstart', 'because this scans as ' + what + ' (' + found + '), which readers try before they read');
@@ -148,7 +153,10 @@ function buildSuggestions(p, flow) {
     add('admin', 'because deployment configuration was found (' + evidence(deployment) + ')');
   }
 
-  if (p.hasReadme === false) {
+  // hasReadme:false only means "absent" when the whole tree was listed. On a
+  // truncated listing the README may simply be in the part the provider did
+  // not return — the same gate the server applies to its no_readme signal.
+  if (p.hasReadme === false && p.treeComplete === true) {
     add('userguide', 'because there is no README — nothing in the repository explains it in prose yet');
     notes.push('No README was found. Docify grounds documents on the files it reads, so a repository with no prose '
       + 'gives it less to work from — the instructions box below is the fastest way to supply that context.');
@@ -173,8 +181,14 @@ function buildSuggestions(p, flow) {
 function storedProfileFor(flow) {
   const raw = flow.repoProfile;
   if (!raw || typeof raw !== 'object') return null;
-  const tagged = String(raw.repo || (raw.profile && raw.profile.repo) || '');
-  if (tagged && tagged !== String(flow.repo || '')) return null;
+  const p = raw.profile && typeof raw.profile === 'object' ? raw.profile : raw;
+  // repo AND provider AND branch: "foo/bar" exists on more than one host, and
+  // two branches of one repository can profile differently — a partial match
+  // would produce confident hints about the wrong tree.
+  const tag = (k) => String(p[k] || raw[k] || '');
+  if (tag('repo') !== String(flow.repo || '')) return null;
+  if (tag('provider') && flow.provider && tag('provider') !== String(flow.provider)) return null;
+  if (tag('branch') && flow.branch && tag('branch') !== String(flow.branch)) return null;
   return normalizeProfile(raw);
 }
 

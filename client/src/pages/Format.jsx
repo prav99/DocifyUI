@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, HelpLink } from '../ui.jsx';
+import PreflightCheck from '../PreflightCheck.jsx';
 
 // Mirrors DEFAULT_OUTPUT on the server (server/src/adapters/llm.js).
 const OUT_DEFAULTS = {
@@ -449,6 +450,30 @@ export default function Format() {
             ? <> <span style={{ color: 'var(--support-success)' }}>Custom instructions applied</span> — your {flow.skillName ? 'skill file' : 'instructions'} customize the default profile.</>
             : <> Customize it under Team &amp; settings → Writing style.</>}
         </p>
+
+        {/* The same fields generate() will submit, so the check predicts THIS
+            run — a body that drifted from the real one would warn about a run
+            nobody is about to start. */}
+        {selected.length > 0 && (
+          <PreflightCheck
+            paused={busy}
+            extraRepoCount={(flow.extraRepos || []).filter((x) => x && x.repo && x.repo !== (flow.repo || flow.provider)).length}
+            body={{
+              provider: flow.provider || 'github',
+              repo: flow.repo || flow.provider,
+              branch: flow.branch || 'main',
+              track: flow.track,
+              docTypes: flow.docTypes || [],
+              formats: selected,
+              output: {
+                ...((flow.outputCfg || {}).ruleSetId ? { ruleSetId: flow.outputCfg.ruleSetId } : {}),
+                ...((flow.jiraIssues || []).length ? { jiraIssues: flow.jiraIssues } : {}),
+                ...((flow.openapiSpecs || []).length ? { openapiSpecs: flow.openapiSpecs } : {}),
+                ...((flow.notionPages || []).length ? { notionPages: flow.notionPages } : {}),
+                ...((flow.confluencePages || []).length ? { confluencePages: flow.confluencePages } : {})
+              }
+            }} />
+        )}
       </div>
       <NavBar back="/doctype"
         nextLabel={selected.length > 1 ? 'Generate ' + selected.length + ' formats' : 'Generate document'}

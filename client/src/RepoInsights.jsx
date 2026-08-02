@@ -99,10 +99,16 @@ export default function RepoInsights({ provider, repo, branch, isSpecAdded, onAd
     .filter((s) => s && typeof s === 'object' && String(s.title || '').trim())
     .slice(0, MAX_SIGNALS);
 
+  // A framework chip carries the evidence that produced it (dependency +
+  // manifest path) as its tooltip, so no chip is an unattributed assertion.
+  const fwSources = profile.frameworkSources && typeof profile.frameworkSources === 'object'
+    ? profile.frameworkSources : {};
   const chips = [...languages, ...frameworks, ...managers];
   if (profile.isMonorepo) {
     const n = Array.isArray(profile.workspaces) ? profile.workspaces.length : 0;
-    chips.unshift(n ? 'Monorepo · ' + n + ' package' + (n > 1 ? 's' : '') : 'Monorepo');
+    // "40+" when the server capped the count — the bare number would be wrong.
+    const plus = profile.workspacesCapped ? '+' : '';
+    chips.unshift(n ? 'Monorepo · ' + n + plus + ' package' + (n > 1 || plus ? 's' : '') : 'Monorepo');
   }
   const shown = chips.slice(0, MAX_CHIPS);
   const hiddenChips = chips.length - shown.length;
@@ -133,7 +139,9 @@ export default function RepoInsights({ provider, repo, branch, isSpecAdded, onAd
 
       {shown.length > 0 && (
         <div className="row mt2" style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          {shown.map((c) => <span key={c} className="tag tag--outline">{c}</span>)}
+          {shown.map((c) => (
+            <span key={c} className="tag tag--outline" title={fwSources[c] ? 'Detected from ' + fwSources[c] : undefined}>{c}</span>
+          ))}
           {hiddenChips > 0 ? <span className="helper">+{hiddenChips} more</span> : null}
         </div>
       )}
@@ -165,6 +173,9 @@ export default function RepoInsights({ provider, repo, branch, isSpecAdded, onAd
       <p className="helper mt3" style={{ color: 'var(--text-placeholder)' }}>
         Detected automatically from the files in this repository. It is a quick scan, so it can miss
         things, and it is not a judgement about your code. Docify only reads your repository — it never changes it.
+        {/* Present-tense claims from a cached scan need the tense corrected:
+            a README pushed a minute ago is not "missing", just unseen. */}
+        {profile.cached ? ' This scan is cached briefly, so a change pushed in the last few minutes may not show yet.' : ''}
       </p>
     </div>
   );

@@ -37,8 +37,10 @@ const LANG_BY_EXT = {
   js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript',
   ts: 'TypeScript', tsx: 'TypeScript', mts: 'TypeScript', cts: 'TypeScript',
   py: 'Python', go: 'Go', rb: 'Ruby', java: 'Java', kt: 'Kotlin', kts: 'Kotlin',
-  rs: 'Rust', php: 'PHP', cs: 'C#', swift: 'Swift', m: 'Objective-C', mm: 'Objective-C',
-  c: 'C', h: 'C', cpp: 'C++', cc: 'C++', cxx: 'C++', hpp: 'C++', hh: 'C++',
+  // .m (MATLAB or Objective-C) and .h (C, C++ or Objective-C) are ambiguous by
+  // extension alone — .m is omitted, .h is attributed after counting (below).
+  rs: 'Rust', php: 'PHP', cs: 'C#', swift: 'Swift', mm: 'Objective-C',
+  c: 'C', cpp: 'C++', cc: 'C++', cxx: 'C++', hpp: 'C++', hh: 'C++',
   scala: 'Scala', sh: 'Shell', bash: 'Shell', zsh: 'Shell', ps1: 'PowerShell',
   sql: 'SQL', dart: 'Dart', ex: 'Elixir', exs: 'Elixir', erl: 'Erlang',
   hs: 'Haskell', lua: 'Lua', r: 'R', pl: 'Perl', groovy: 'Groovy', clj: 'Clojure',
@@ -47,8 +49,9 @@ const LANG_BY_EXT = {
 };
 
 // [display name, dependency-name pattern, serves HTTP]. Matched against the
-// dependency names parsed out of a manifest — nothing else.
-const FRAMEWORKS = [
+// dependency names parsed out of a manifest — nothing else. Exported so the
+// honesty tests can assert what the table does and does not claim.
+export const FRAMEWORKS = [
   ['Next.js', /^next$/, true],
   ['Nuxt', /^nuxt3?$/, true],
   ['Remix', /^@remix-run\/(node|react|server-runtime)$/, true],
@@ -101,9 +104,19 @@ const FRAMEWORKS = [
   ['Sinatra', /^sinatra$/, true],
   ['Grape', /^grape$/, true],
   ['Laravel', /^laravel\/framework$/, true],
-  ['Symfony', /^symfony\/[\w-]+$/, true],
+  // Only the markers of a Symfony APPLICATION. Standalone components
+  // (symfony/console, symfony/http-client) appear in the composer.json of
+  // projects that are not Symfony apps, so they prove nothing here.
+  ['Symfony', /^symfony\/(symfony|framework-bundle)$/, true],
   ['Slim', /^slim\/slim$/, true],
-  ['ASP.NET Core', /^microsoft\.aspnetcore[\w.]*$/, true]
+  ['ASP.NET Core', /^microsoft\.aspnetcore[\w.]*$/, true],
+  // CLI argument parsers — a manifest-proven hint that this is a command-line
+  // tool, which the doc-type step turns into a quick-start suggestion.
+  ['Commander', /^commander$/, false],
+  ['yargs', /^yargs$/, false],
+  ['oclif', /^(@oclif\/core|oclif)$/, false],
+  ['clap', /^clap$/, false],
+  ['Typer', /^typer$/, false]
 ];
 
 // [manifest basename, package manager it implies, parser id].
@@ -144,14 +157,17 @@ const CI_FILES = [
   [/^\.drone\.ya?ml$/i, 'Drone']
 ];
 
-const DEPLOY_FILES = [
+export const DEPLOY_FILES = [
   [/(^|\/)Dockerfile(\.[\w-]+)?$/i, 'docker'],
   [/(^|\/)docker-compose(\.[\w-]+)?\.ya?ml$/i, 'docker'],
   [/(^|\/)(k8s|kubernetes|deploy\/k8s)\/.+\.ya?ml$/i, 'k8s'],
   [/(^|\/)kustomization\.ya?ml$/i, 'k8s'],
   [/(^|\/)Chart\.ya?ml$/i, 'helm'],
+  // NOT template.yaml: AWS SAM uses that name, but so does half the world —
+  // claiming "serverless" from a filename that generic is a guess. samconfig.toml
+  // is unambiguous.
   [/(^|\/)serverless\.ya?ml$/i, 'serverless'],
-  [/(^|\/)template\.ya?ml$/i, 'serverless'],
+  [/(^|\/)samconfig\.toml$/i, 'serverless'],
   [/(^|\/)vercel\.json$/i, 'vercel'],
   [/(^|\/)netlify\.toml$/i, 'netlify'],
   [/(^|\/)fly\.toml$/i, 'fly.io'],
@@ -174,7 +190,10 @@ const DOC_EXT = /\.(md|mdx|rst|adoc|txt)$/i;
 const SPEC_NAME = /(^|\/)[\w.-]*(openapi|swagger)[\w.-]*\.(ya?ml|json)$/i;
 const SPEC_CANDIDATE = /(^|\/)(api|apis|spec|specs|schema|contract|docs?)[\w.-]*\.(ya?ml|json)$/i;
 const SPEC_KEY = /^\s*["']?(openapi|swagger)["']?\s*:\s*["']?\d/im;
-const README = /(^|\/)readme(\.(md|mdx|rst|adoc|txt))?$/i;
+// Any extension: README.org, README.markdown, README.rdoc are all READMEs the
+// hosts render, and an absence claim built from a narrower list would be false
+// for every one of them.
+const README = /(^|\/)readme(\.[a-z0-9]+)?$/i;
 
 const ext = (p) => (p.split('/').pop().match(/\.([A-Za-z0-9]+)$/) || [, ''])[1].toLowerCase();
 const dirOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
@@ -235,18 +254,22 @@ async function listTree(provider, repo, branch, token) {
   if (provider === 'bitbucket') {
     const paths = [];
     let complete = true;
+    // No type filter: directories must be listed too, because a DIRECTORY
+    // sitting at the depth limit is the only proof that files may exist below
+    // it. Filtering to files made a repo whose sources sit one level past the
+    // cut look fully listed (root files only, nothing at the boundary).
     let url = 'https://api.bitbucket.org/2.0/repositories/' + repo + '/src/' + encodeURIComponent(branch) +
-      '/?max_depth=' + BITBUCKET_MAX_DEPTH + '&pagelen=100&q=' + encodeURIComponent('type="commit_file"');
+      '/?max_depth=' + BITBUCKET_MAX_DEPTH + '&pagelen=100';
     for (let i = 0; i < 8; i++) {
       const d = await (await hfetch(url, token)).json();
-      for (const v of d.values || []) paths.push(v.path);
+      for (const v of d.values || []) {
+        if (v.type === 'commit_file') paths.push(v.path);
+        else if (v.type === 'commit_directory' && depth(v.path) >= BITBUCKET_MAX_DEPTH) complete = false;
+      }
       url = d.next;
       if (!url) break;
       if (i === 7) complete = false;
     }
-    // Bitbucket's src listing is depth-limited by the API, so the tree can only
-    // be called complete when nothing came back AT the depth limit — a file
-    // sitting on the boundary means deeper files may exist unlisted.
     if (paths.some((p) => depth(p) >= BITBUCKET_MAX_DEPTH)) complete = false;
     return { paths: paths.slice(0, MAX_PATHS), complete: complete && paths.length <= MAX_PATHS };
   }
@@ -278,13 +301,18 @@ function depsFromRequirements(text) {
 }
 
 // Section-style TOML: collects `key = ...` inside any [..dependencies..] table
-// plus PEP 621 / Poetry `dependencies = [...]` arrays.
-function depsFromToml(text) {
+// plus PEP 621 / Poetry `dependencies = [...]` arrays. Dev- and
+// build-dependency tables are skipped — tokio under [dev-dependencies] is a
+// test harness, and claiming it as this repository's framework would be wrong.
+export function depsFromToml(text) {
   const names = [];
   let inDeps = false;
   for (const line of text.split(/\r?\n/)) {
     const sec = line.match(/^\s*\[([^\]]+)\]\s*$/);
-    if (sec) { inDeps = /dependencies/i.test(sec[1]); continue; }
+    if (sec) {
+      inDeps = /dependencies/i.test(sec[1]) && !/(dev|build)[-_.]?dependencies/i.test(sec[1]);
+      continue;
+    }
     if (!inDeps) continue;
     const kv = line.match(/^\s*["']?([A-Za-z0-9._-]+)["']?\s*=/);
     if (kv) names.push(kv[1].toLowerCase());
@@ -295,9 +323,14 @@ function depsFromToml(text) {
   return { names: names.filter((n) => n !== 'python' && n !== 'version') };
 }
 
-function depsFromGoMod(text) {
+export function depsFromGoMod(text) {
   const names = [];
   for (const line of text.split(/\r?\n/)) {
+    // Since Go 1.17, go.mod lists the whole transitive graph marked
+    // "// indirect". Those are other modules' dependencies — reporting a
+    // framework from one would claim this repository uses code it never
+    // imports.
+    if (/\/\/\s*indirect\b/.test(line)) continue;
     const m = line.match(/^\s*(?:require\s+)?([\w.~-]+(?:\.[\w.~-]+)+\/[^\s]+)\s+v/);
     if (m) names.push(m[1].toLowerCase());
   }
@@ -342,22 +375,29 @@ const PARSERS = {
 // Only `*` and `**` — the two wildcards workspace globs actually use.
 function globToRe(g) {
   const esc = String(g).replace(/[.+^${}()|[\]\\]/g, '\\$&');
-  return new RegExp('^' + esc.replace(/\*\*/g, ' ').replace(/\*/g, '[^/]*').replace(/ /g, '.*').replace(/\/$/, '') + '$');
+  return new RegExp('^' + esc.replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\u0000/g, '.*').replace(/\/$/, '') + '$');
 }
 
-// Top-level keys of the `services:` block of a docker-compose file.
-function composeServiceNames(text) {
+// Service names from the `services:` block of a docker-compose file — but only
+// the services the file BUILDS from this repository (a `build:` key). A service
+// that only pulls an image (postgres, redis, nginx) is infrastructure the repo
+// runs, not code that lives in it, and counting it would tell the customer
+// their repository contains services it does not.
+export function composeServiceNames(text) {
   const out = [];
   let inServices = false;
   let indent = null;
+  let current = '';
   for (const line of text.split(/\r?\n/)) {
     if (/^services:\s*(#.*)?$/.test(line)) { inServices = true; continue; }
     if (!inServices) continue;
     if (/^\S/.test(line)) break;
     const m = line.match(/^(\s+)([A-Za-z0-9._-]+):\s*(#.*)?$/);
-    if (!m) continue;
-    if (indent === null) indent = m[1].length;
-    if (m[1].length === indent) out.push(m[2]);
+    if (m && (indent === null || m[1].length <= indent)) {
+      if (indent === null) indent = m[1].length;
+      if (m[1].length === indent) { current = m[2]; continue; }
+    }
+    if (current && /^\s+build\s*:/.test(line) && !out.includes(current)) out.push(current);
   }
   return out;
 }
@@ -381,10 +421,11 @@ export function emptyProfile({ provider = 'github', repo = '', branch = '', reas
     ok: false, reason,
     provider, repo, branch, requestedBranch: branch, usedFallback: false,
     fileCount: 0, codeFileCount: 0, treeComplete: false,
-    languages: [], frameworks: [], packageManagers: [],
+    languages: [], frameworks: [], packageManagers: [], frameworkSources: {},
     hasReadme: false, readmePath: '', apiSpecs: [],
     hasTests: false, hasCi: false, ci: [], isMonorepo: false,
-    workspaces: [], services: [], deployment: [], docsFolders: [],
+    workspaces: [], workspacesCapped: false, services: [], servicesCapped: false,
+    deployment: [], docsFolders: [],
     entryPoints: [], manifests: [],
     signals: reason ? [{
       id: 'analysis_unavailable', level: 'warn',
@@ -400,6 +441,11 @@ export function emptyProfile({ provider = 'github', repo = '', branch = '', reas
 async function analyze(provider, repo, branch, token) {
   let requestedBranch = branch;
   let usedFallback = false;
+  // 'empty' — the requested branch exists but listed no files; 'missing' — the
+  // provider 404ed the ref. The two produce different sentences: telling a
+  // customer their branch "listed no files" when the provider said it does not
+  // exist sends them to check the wrong thing.
+  let fallbackCause = '';
   let tree;
   try {
     tree = await listTree(provider, repo, branch, token);
@@ -407,7 +453,7 @@ async function analyze(provider, repo, branch, token) {
       const fb = await defaultBranchFor(provider, repo, token);
       if (fb && fb !== branch) {
         const retry = await listTree(provider, repo, fb, token);
-        if (retry.paths.length) { tree = retry; branch = fb; usedFallback = true; }
+        if (retry.paths.length) { tree = retry; branch = fb; usedFallback = true; fallbackCause = 'empty'; }
       }
     }
   } catch (e) {
@@ -418,7 +464,12 @@ async function analyze(provider, repo, branch, token) {
       if (fb && fb !== branch) {
         try {
           tree = await listTree(provider, repo, fb, token);
-          if (tree.paths.length) { branch = fb; usedFallback = true; }
+          // Adopt the default branch even when it too lists nothing — every
+          // signal below must attribute its zero to the branch that actually
+          // produced it, not to a ref the provider never listed.
+          branch = fb;
+          usedFallback = true;
+          fallbackCause = 'missing';
         } catch (e2) { return emptyProfile({ provider, repo, branch: requestedBranch, reason: e2.message }); }
       }
     }
@@ -436,8 +487,12 @@ async function analyze(provider, repo, branch, token) {
     p.signals = [{
       id: 'empty_tree', level: 'warn',
       title: 'No files were found on this branch',
-      detail: 'The provider listed zero files for branch "' + requestedBranch + '". Check the branch name, or that the connected account can read this repository.',
-      evidence: 'Tree listing for ' + repo + '@' + requestedBranch + ' returned 0 files'
+      detail: fallbackCause === 'missing'
+        ? 'Branch "' + requestedBranch + '" was not found, and the repository\'s default branch "' + branch + '" lists no files. Check the branch name, or that the connected account can read this repository.'
+        : 'The provider listed zero files for branch "' + branch + '". Check the branch name, or that the connected account can read this repository.',
+      evidence: fallbackCause === 'missing'
+        ? 'Provider returned 404 for ' + repo + '@' + requestedBranch + '; ' + branch + ' listed 0 files'
+        : 'Tree listing for ' + repo + '@' + branch + ' returned 0 files'
     }];
     p.branch = branch;
     p.usedFallback = usedFallback;
@@ -448,11 +503,21 @@ async function analyze(provider, repo, branch, token) {
      excluded so the profile describes the customer's code, not their deps. */
   const langCount = new Map();
   let codeFileCount = 0;
+  let cHeaders = 0;
   for (const p of paths) {
-    const name = LANG_BY_EXT[ext(p)];
+    const e = ext(p);
+    if (e === 'h') { cHeaders++; codeFileCount++; continue; }
+    const name = LANG_BY_EXT[e];
     if (!name) continue;
     codeFileCount++;
     langCount.set(name, (langCount.get(name) || 0) + 1);
+  }
+  // .h headers belong to whichever C-family language the source files prove.
+  // With no .c/.cpp/.mm alongside them, the extension alone cannot say which
+  // language they are, so no language is claimed for them.
+  if (cHeaders) {
+    const home = ['C', 'C++', 'Objective-C'].find((l) => langCount.has(l));
+    if (home) langCount.set(home, langCount.get(home) + cHeaders);
   }
   const languages = [...langCount.entries()]
     .map(([name, files]) => ({ name, files }))
@@ -567,9 +632,13 @@ async function analyze(provider, repo, branch, token) {
   const WORKSPACE_ROOT = /^(packages|apps|services|libs|modules|projects|components)\//i;
   if (!workspaces.length && manifestDirs.length >= 2 &&
       (monorepoMarkers.length || manifestDirs.filter((d) => WORKSPACE_ROOT.test(d)).length >= 2)) {
-    workspaces = manifestDirs.slice(0, 40);
+    workspaces = manifestDirs;
   }
-  workspaces = uniq(workspaces).sort().slice(0, 40);
+  // Whether the 40-entry cap (or a truncated tree) means the real count could
+  // be higher — "contains 40 packages" when there are 300 is a wrong number.
+  const wsAll = uniq(workspaces).sort();
+  const workspacesCapped = wsAll.length > 40 || !tree.complete;
+  workspaces = wsAll.slice(0, 40);
   const isMonorepo = workspaces.length >= 2;
 
   /* Services — directories under a service root that carry their own manifest
@@ -585,23 +654,31 @@ async function analyze(provider, repo, branch, token) {
     const text = await fetchRepoFile(provider, repo, branch, composePath, token);
     if (text) composeServices = composeServiceNames(text);
   }
-  const services = uniq([...serviceDirs, ...composeServices]).slice(0, 40);
+  const svcAll = uniq([...serviceDirs, ...composeServices]);
+  const servicesCapped = svcAll.length > 40 || !tree.complete;
+  const services = svcAll.slice(0, 40);
 
-  /* API specifications — by filename, then by sniffing a bounded number of
-     plausible files for an actual openapi/swagger key. */
-  const apiSpecs = paths.filter((p) => SPEC_NAME.test(p));
+  /* API specifications. A filename that says "openapi" is a lead, not a fact —
+     openapitools.json and swagger-config.json are generator configs, not
+     specs. So EVERY candidate, however it was found, is opened and confirmed
+     to contain an actual openapi/swagger version key before anything is
+     claimed; a candidate the read budget did not reach is simply not claimed,
+     and the absence signal below is suppressed when any candidate went
+     unexamined. */
+  const namedSpecs = paths.filter((p) => SPEC_NAME.test(p))
+    .sort((a, b) => depth(a) - depth(b) || a.length - b.length);
+  const specCandidates = paths
+    .filter((p) => !namedSpecs.includes(p) && SPEC_CANDIDATE.test(p) && /\.(ya?ml|json)$/i.test(p))
+    .sort((a, b) => depth(a) - depth(b) || a.length - b.length);
+  const allSpecLeads = [...namedSpecs, ...specCandidates];
+  const specSearchExhausted = allSpecLeads.length <= MAX_SPEC_SNIFFS;
+  const apiSpecs = [];
   const sniffEvidence = new Map();
-  if (apiSpecs.length < 3) {
-    const candidates = paths
-      .filter((p) => !apiSpecs.includes(p) && SPEC_CANDIDATE.test(p) && /\.(ya?ml|json)$/i.test(p))
-      .sort((a, b) => depth(a) - depth(b) || a.length - b.length)
-      .slice(0, MAX_SPEC_SNIFFS);
-    for (const p of candidates) {
-      const text = await fetchRepoFile(provider, repo, branch, p, token);
-      if (text && SPEC_KEY.test(text.slice(0, 4000))) {
-        apiSpecs.push(p);
-        sniffEvidence.set(p, 'contains an "openapi"/"swagger" version key');
-      }
+  for (const p of allSpecLeads.slice(0, MAX_SPEC_SNIFFS)) {
+    const text = await fetchRepoFile(provider, repo, branch, p, token);
+    if (text && SPEC_KEY.test(text.slice(0, 4000))) {
+      apiSpecs.push(p);
+      sniffEvidence.set(p, 'contains an "openapi"/"swagger" version key');
     }
   }
 
@@ -630,9 +707,24 @@ async function analyze(provider, repo, branch, token) {
      Each one states something the files above prove, and says what to do
      about it. Nothing is emitted that the evidence string cannot back up. */
   if (usedFallback) {
+    const because = fallbackCause === 'missing'
+      ? 'Branch "' + requestedBranch + '" was not found'
+      : 'Branch "' + requestedBranch + '" listed no files';
     add('branch_fallback', 'info', 'Analysed the default branch instead',
-      'Branch "' + requestedBranch + '" listed no files, so Docify analysed "' + branch + '" — the repository\'s default branch.',
-      'Tree listing for ' + requestedBranch + ' returned 0 files; ' + branch + ' returned ' + all.length);
+      because + ', so Docify analysed "' + branch + '" — the repository\'s default branch.',
+      (fallbackCause === 'missing'
+        ? 'Provider returned 404 for ' + requestedBranch
+        : 'Tree listing for ' + requestedBranch + ' returned 0 files') + '; ' + branch + ' returned ' + all.length);
+  }
+  // Emitted EARLY on purpose: the panel shows at most four signals, and every
+  // absence or count below is qualified by this one. A caveat that can be
+  // sliced off the end of the list is a caveat that does not exist.
+  if (!tree.complete) {
+    add('tree_truncated', 'warn', 'The file list is partial',
+      'The provider returned only part of the file tree, so anything reported as absent below may simply not have been listed. Everything reported as found is real.',
+      provider === 'bitbucket'
+        ? 'Bitbucket lists source to a bounded depth; ' + all.length.toLocaleString('en-US') + ' files listed'
+        : 'Provider truncated the tree after ' + all.length.toLocaleString('en-US') + ' files');
   }
   // Only claim a README is ABSENT when the whole tree was listed. On a
   // truncated listing the file may simply be in the part the provider did not
@@ -641,48 +733,50 @@ async function analyze(provider, repo, branch, token) {
   if (!readmePath && tree.complete) {
     add('no_readme', 'warn', 'No README in this repository',
       'There is no README, so there is less prose for Docify to ground a guide in. Output will be derived from source files alone, which usually means fewer product-level explanations.',
-      'No file matching README.* among ' + all.length + ' listed files');
+      // paths.length, not all.length: the search ran over the examined files,
+      // and the evidence must count what was actually searched.
+      'No file named README (any extension) among ' + paths.length + ' examined files (vendored and build directories excluded)');
   }
   for (const p of apiSpecs.slice(0, 3)) {
     add('api_spec_found', 'info', 'An OpenAPI specification was found',
       'An OpenAPI spec was found at ' + p + ' — an API reference will be much richer if you add it as a source.',
-      sniffEvidence.get(p) ? p + ' ' + sniffEvidence.get(p) : 'File present in the tree: ' + p);
+      p + ' ' + (sniffEvidence.get(p) || 'confirmed to contain an "openapi"/"swagger" version key'));
   }
-  if (!apiSpecs.length && webFrameworks.length && tree.complete) {
+  if (!apiSpecs.length && webFrameworks.length && tree.complete && specSearchExhausted) {
     const [name, meta] = webFrameworks[0];
     add('no_api_spec', 'warn', 'No API specification found',
-      'No OpenAPI or Swagger file is in this repository, so an API reference would be generated from source files only. Adding a spec as a source makes endpoint, parameter and error documentation far more accurate.',
-      name + ' detected from "' + meta.dep + '" in ' + meta.from + '; no openapi/swagger file in ' + all.length + ' listed files');
+      // "was found", not "is in this repository": detection is by filename plus
+      // a bounded content sniff, so an unusually named spec can be missed.
+      'No OpenAPI or Swagger specification was found in this repository\'s files, so an API reference would be generated from source files only. Adding a spec as a source makes endpoint, parameter and error documentation far more accurate.',
+      name + ' detected from "' + meta.dep + '" in ' + meta.from + '; no openapi/swagger file among ' + paths.length + ' examined files');
   }
   if (isMonorepo) {
+    // "at least" whenever the count hit a cap or the tree was partial — the
+    // exact-sounding number would be wrong on any repository big enough to
+    // matter.
     add('monorepo', 'info', 'This looks like a monorepo',
-      'This repository contains ' + workspaces.length + ' packages. Documenting one package at a time gives sharper results than pointing Docify at the whole repository.',
+      'This repository contains ' + (workspacesCapped ? 'at least ' : '') + workspaces.length + ' packages. Documenting one package at a time gives sharper results than pointing Docify at the whole repository.',
       (monorepoMarkers.length ? monorepoMarkers.join(', ') + '; ' : '') + workspaces.slice(0, 6).join(', ') + (workspaces.length > 6 ? ', …' : ''));
   } else if (services.length >= 2) {
     add('multiple_services', 'info', 'Several services live in this repository',
-      'Docify found ' + services.length + ' services here. Generating per service, rather than for the repository as a whole, keeps each document focused.',
+      'Docify found ' + (servicesCapped ? 'at least ' : '') + services.length + ' services here. Generating per service, rather than for the repository as a whole, keeps each document focused.',
       services.slice(0, 6).join(', ') + (services.length > 6 ? ', …' : ''));
   }
   if (codeFileCount >= LARGE_REPO_FILES) {
     add('large_repository', 'info', 'Docify reads a bounded sample of this repository',
-      'This repository has ' + codeFileCount.toLocaleString('en-US') + ' code files. Docify grounds each document in a capped, ranked sample of files rather than the whole tree, so most of this repository will not be read in a single run. Narrowing the scope — one package, one folder, or scan rules — puts the files you care about inside that sample.',
+      'This repository ' + (tree.complete ? 'has ' : 'lists at least ') + codeFileCount.toLocaleString('en-US') + ' code files. Docify grounds each document in a capped, ranked sample of files rather than the whole tree, so most of this repository will not be read in a single run. Narrowing the scope — one package, one folder, or scan rules — puts the files you care about inside that sample.',
       codeFileCount.toLocaleString('en-US') + ' code files (' + all.length.toLocaleString('en-US') + ' files listed, vendored and build directories excluded)');
-  }
-  if (!tree.complete) {
-    add('tree_truncated', 'warn', 'The file list is partial',
-      'The provider returned only part of the file tree, so anything reported as absent below may simply not have been listed. Everything reported as found is real.',
-      provider === 'bitbucket'
-        ? 'Bitbucket lists source to a bounded depth; ' + all.length.toLocaleString('en-US') + ' files listed'
-        : 'Provider truncated the tree after ' + all.length.toLocaleString('en-US') + ' files');
   }
   // Same rule as no_readme: "no manifest" is an absence claim, only honest when
   // the tree was fully listed.
   if (!manifestPaths.length && tree.complete) {
     add('no_manifest', 'info', 'No dependency manifest found',
       'Docify could not find a package.json, requirements.txt, go.mod, Cargo.toml, pom.xml or Gemfile, so frameworks were not detected. Detection is based on parsed dependencies only — Docify does not guess a framework from folder names.',
-      'No known manifest among ' + all.length + ' listed files');
+      'No known manifest among ' + paths.length + ' examined files');
   }
-  if (docsFolders.length) {
+  // Two or more doc files: a lone docs/TODO.txt is not "documentation" and
+  // claiming it is would make the signal read as noise.
+  if (docsFolders.length && docDirCount.get(docsFolders[0]) >= 2) {
     add('existing_docs', 'info', 'This repository already has documentation',
       'Existing documentation lives in ' + docsFolders[0] + '. Docify never writes to your repository — generated documents stay in Docify and in the formats you export — so treat the output as a complement to what is already there.',
       docDirCount.get(docsFolders[0]) + ' documentation file' + (docDirCount.get(docsFolders[0]) === 1 ? '' : 's') + ' under ' + docsFolders[0]);
@@ -699,10 +793,14 @@ async function analyze(provider, repo, branch, token) {
     provider, repo, branch, requestedBranch, usedFallback,
     fileCount: all.length, codeFileCount, treeComplete: tree.complete,
     languages, frameworks, packageManagers,
+    // Which dependency in which manifest produced each framework claim — the
+    // panel surfaces this so a chip is never an unattributed assertion.
+    frameworkSources: Object.fromEntries([...frameworkHits.entries()].map(([n, v]) => [n, '"' + v.dep + '" in ' + v.from])),
     hasReadme: Boolean(readmePath), readmePath,
     apiSpecs: apiSpecs.slice(0, 10),
     hasTests: testFiles.length > 0, hasCi: ci.length > 0, ci,
-    isMonorepo, workspaces, services, deployment, docsFolders, entryPoints,
+    isMonorepo, workspaces, workspacesCapped, services, servicesCapped,
+    deployment, docsFolders, entryPoints,
     manifests: manifestPaths.slice(0, 40),
     signals,
     analyzedAt: new Date().toISOString(), cached: false

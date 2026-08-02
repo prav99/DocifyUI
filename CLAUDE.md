@@ -16,7 +16,7 @@ cd server && node --check src/<file>.js   # verify server changes parse
 cd server && npm test      # cross-account isolation, token integrity, plan caps, deletion
 ```
 
-`server/test/isolation.test.js` stands up a real server against a throwaway SQLite database. The security policy and privacy policy both cite it by name, so keep it honest: assert exact status codes (never `!== 200`), pair every "stranger is denied" assertion with a positive control proving the owner succeeds, and mutation-test it after changes — remove the guard you think it covers and confirm it fails. Also verify client changes in the browser preview and server changes with `node --check`.
+`server/test/isolation.test.js` stands up a real server against a throwaway SQLite database. `server/test/intel-honesty.test.js` does the same for repository-intelligence/preflight honesty: every "the analyzer must not claim X" suppression is paired with a positive control proving the claim still fires when the facts are known. The security policy and privacy policy both cite it by name, so keep it honest: assert exact status codes (never `!== 200`), pair every "stranger is denied" assertion with a positive control proving the owner succeeds, and mutation-test it after changes — remove the guard you think it covers and confirm it fails. Also verify client changes in the browser preview and server changes with `node --check`.
 
 ## Non-negotiable product rules
 

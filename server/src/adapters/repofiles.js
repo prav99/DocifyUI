@@ -84,6 +84,11 @@ export async function defaultBranchFor(provider, repo, token = '') {
   }
 }
 
+// Returns { paths, bounded }. `bounded` is true when the listing stopped at a
+// cap (pages, blob count, tree depth, provider truncation) — meaning counts
+// derived from `paths` are floors, not totals. Callers wording coverage as
+// "X of N eligible files" must say "at least N" when this is set, or the cap
+// masquerades as the size of the repository.
 async function listPaths(provider, repo, branch, token) {
   if (provider === 'gitlab') {
     const proj = encodeURIComponent(repo);
@@ -91,6 +96,7 @@ async function listPaths(provider, repo, branch, token) {
     // a sizable repo can be 100% directories. Follow pagination until we have
     // real files (blobs), not just the first page.
     const out = [];
+    let bounded = false;
     for (let page = 1; page <= 6; page++) {
       const r = await jfetch('https://gitlab.com/api/v4/projects/' + proj + '/repository/tree?recursive=true&per_page=100&page=' + page + '&ref=' + encodeURIComponent(branch), token);
       const rows = await r.json();
@@ -98,24 +104,30 @@ async function listPaths(provider, repo, branch, token) {
       out.push(...rows.filter((n) => n.type === 'blob').map((n) => n.path));
       const next = Number(r.headers.get('x-next-page'));
       if (!Number.isFinite(next) || next <= page) break;
-      if (out.length >= 60) break; // plenty for ranking + MAX_FILES cap
+      if (page === 6 || out.length >= 60) { bounded = true; break; } // plenty for ranking + MAX_FILES cap
     }
-    return out;
+    return { paths: out, bounded };
   }
   if (provider === 'bitbucket') {
     const out = [];
-    let url = 'https://api.bitbucket.org/2.0/repositories/' + repo + '/src/' + encodeURIComponent(branch) + '/?max_depth=3&pagelen=100&q=' + encodeURIComponent('type="commit_file"');
+    let bounded = false;
+    let url = 'https://api.bitbucket.org/2.0/repositories/' + repo + '/src/' + encodeURIComponent(branch) + '/?max_depth=3&pagelen=100';
     for (let i = 0; i < 3 && url; i++) {
       const d = await (await jfetch(url, token)).json();
-      out.push(...(d.values || []).map((v) => v.path));
+      for (const v of d.values || []) {
+        if (v.type === 'commit_file') out.push(v.path);
+        // A directory at the depth limit proves unlisted files below it.
+        else if (v.type === 'commit_directory' && v.path.split('/').length >= 3) bounded = true;
+      }
       url = d.next;
+      if (url && i === 2) bounded = true;
     }
-    return out;
+    return { paths: out, bounded };
   }
   // github (default)
   const r = await jfetch('https://api.github.com/repos/' + repo + '/git/trees/' + encodeURIComponent(branch) + '?recursive=1', token);
   const d = await r.json();
-  return (d.tree || []).filter((n) => n.type === 'blob').map((n) => n.path);
+  return { paths: (d.tree || []).filter((n) => n.type === 'blob').map((n) => n.path), bounded: Boolean(d.truncated) };
 }
 
 async function readFileRaw(provider, repo, branch, path, token) {
@@ -158,7 +170,9 @@ export async function fetchRepoFile(provider, repo, branch = 'main', path = '', 
    prompt-size decision and are unchanged. */
 export function coverageNote(cov) {
   if (!cov || !cov.read) return '';
-  const bits = ['Read ' + cov.read + ' of ' + cov.eligible + ' eligible source file' + (cov.eligible === 1 ? '' : 's')];
+  // "at least N" when the listing itself was cut short — the eligible count is
+  // then a floor set by the listing caps, not the size of the repository.
+  const bits = ['Read ' + cov.read + ' of ' + (cov.listingBounded ? 'at least ' : '') + cov.eligible + ' eligible source file' + (cov.eligible === 1 && !cov.listingBounded ? '' : 's')];
   if (cov.omittedFiles > 0) bits.push(cov.omittedFiles + ' not read (limit ' + cov.maxFiles + ' files per run)');
   if (cov.truncatedFiles > 0) bits.push(cov.truncatedFiles + ' truncated at ' + cov.maxBytesPerFile.toLocaleString('en-US') + ' characters');
   if (cov.unreadableFiles > 0) bits.push(cov.unreadableFiles + ' could not be downloaded');
@@ -168,12 +182,12 @@ export function coverageNote(cov) {
 function emptyCoverage(extra = {}) {
   return {
     listed: 0, eligible: 0, read: 0, omittedFiles: 0, truncatedFiles: 0, unreadableFiles: 0,
-    maxFiles: MAX_FILES, maxBytesPerFile: MAX_BYTES_PER_FILE, ...extra
+    listingBounded: false, maxFiles: MAX_FILES, maxBytesPerFile: MAX_BYTES_PER_FILE, ...extra
   };
 }
 
 async function listAndRead(provider, repo, branch, token) {
-  const all = await listPaths(provider, repo, branch, token);
+  const { paths: all, bounded } = await listPaths(provider, repo, branch, token);
   const eligible = all.filter((p) => CODE_EXT.test(p) && !SKIP.test(p));
   const paths = eligible
     .slice()
@@ -196,7 +210,8 @@ async function listAndRead(provider, repo, branch, token) {
     read: files.length,
     omittedFiles: Math.max(0, eligible.length - files.length),
     truncatedFiles,
-    unreadableFiles
+    unreadableFiles,
+    listingBounded: bounded
   });
   if (coverage.omittedFiles || coverage.truncatedFiles || coverage.unreadableFiles) {
     console.warn('[repofiles] ' + repo + '@' + branch + ': ' + coverageNote(coverage));

@@ -184,10 +184,14 @@ export async function resolveEffectiveConfig(userId, provider, repo, branch = 'm
   // presence of a rule set does not mean the customer wrote scope rules — a
   // caller must not tell them to "widen your rules" over Docify's own excludes.
   // True only when the resolved scan differs from DEFAULT_CONFIG.
+  // NOT "|| repoSources.yaml": a docify.yaml that only sets product metadata
+  // never touched the scan scope, and blaming "your documentation scope" for
+  // it would send the customer hunting for an exclusion they never wrote. The
+  // resolved-scan diff already catches a yaml or .docifyignore that DOES
+  // narrow scope, because their scan keys are merged before this comparison.
   const scan = finalConfig.scan || {};
   const scopeNarrowed = (Array.isArray(scan.include) && scan.include.length > 0) ||
-    JSON.stringify(scan.exclude || []) !== JSON.stringify((DEFAULT_CONFIG.scan && DEFAULT_CONFIG.scan.exclude) || []) ||
-    repoSources.yaml || repoSources.ignoreFile;
+    JSON.stringify(scan.exclude || []) !== JSON.stringify((DEFAULT_CONFIG.scan && DEFAULT_CONFIG.scan.exclude) || []);
   return {
     config: finalConfig, instructions, layers, sources: repoSources, scopeNarrowed,
     errors: [...errors, ...vErrors],

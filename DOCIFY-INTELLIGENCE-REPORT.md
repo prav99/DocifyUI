@@ -80,3 +80,78 @@ The product is meaningfully smarter and more polished than at the start of this 
 ```bash
 cd /Users/alkaraj/Desktop/DocifyUI && git push
 ```
+
+---
+
+# Second pass — 2 Aug 2026: "if it can't fully see it, it stays quiet"
+
+A dedicated end-to-end hardening pass over the same feature, run with a fresh
+adversarial review. **18 further defects fixed** — every one of them a place
+where the product could state something its evidence did not support — plus
+the one genuine end-to-end gap: **preflight had no UI**.
+
+## The end-to-end gap
+`POST /generations/preflight` existed and worked, but no client code called
+it. It is now wired into the Format step (`client/src/PreflightCheck.jsx`):
+before Generate, the customer sees the same source resolution the run will
+use — files that would reach the AI, branch actually used, quota spent vs
+remaining, and every warning. Advisory only; it never blocks Generate, and a
+transport failure renders nothing. Verified live against `gitlab-org/cli`.
+
+## Confidently-wrong claims removed
+- **"OpenAPI specification was found" from a filename** — `openapitools.json`
+  (a generator config) was claimed as a spec, with an "add as source" button.
+  Every candidate is now opened and confirmed to contain a real
+  `openapi:`/`swagger:` version key before anything is claimed; the absence
+  warning is suppressed if any candidate went unexamined.
+- **Frameworks from other people's dependencies** — `go.mod // indirect`
+  modules (the whole transitive graph since Go 1.17) and `[dev-dependencies]`
+  tables produced "gRPC / Gorilla Mux / Tokio" claims on repos that never
+  import them. Both filtered.
+- **"No README" from the suggestion engine on a truncated tree** — the same
+  lie fixed in pass one had survived in a second place (`DocType.jsx`). Gated
+  on `treeComplete`, matching the server signal.
+- **"Nothing to write from" when the check never ran** — preflight predicted
+  a template-only document when the repository was merely unreadable at that
+  moment. Both `no-grounding` and `no-spec` now fire only when the source
+  check actually completed (`repoChecked`), with positive-control tests
+  proving they still fire when the facts are known.
+- **compose `image:` services counted as repo code** — a repo with
+  `db`/`redis` containers was told "3 services live in this repository". Only
+  services with a `build:` key count now.
+- **`template.yaml` anywhere → "serverless"**, **any `symfony/*` component →
+  "Symfony"**, **`.m` → Objective-C (MATLAB), lone `.h` → C** — all replaced
+  with unambiguous markers or omitted.
+- **"your documentation scope" blamed for Docify's own defaults** — any
+  `docify.yaml`, even one that only set product metadata, flipped the blame
+  wording. Now only an actually-narrowed scan does. Related: the "all files
+  are lockfiles/build output" message no longer asserts a category nothing
+  inspected.
+- **The "file list is partial" caveat could be sliced off** — it was emitted
+  7th while the panel shows 4 signals. It is now emitted first, so no count
+  or absence renders without it.
+- **Counts that were caps presented as totals** — "contains 40 packages" (cap
+  40), "93 eligible files" (GitLab listing stops at 60 blobs), Bitbucket depth
+  boundary marked complete. All now say "at least N", and the Bitbucket
+  listing detects directories at the depth limit.
+- **404 branch reported as "listed no files"** — a missing ref and an empty
+  branch now produce different sentences, attributed to the branch that was
+  actually listed.
+- Smaller: README recognized with any extension (`README.org` no longer "has
+  no README"), framework chips carry their evidence as tooltips
+  (`"cobra" in go.mod`), cached scans disclose staleness in the panel footer,
+  "already has documentation" needs ≥2 doc files, absence evidence counts the
+  files actually examined, CLI detection added (Commander/yargs/oclif/clap/
+  Typer — closes pass one's known limitation 1) and stays quiet whenever a
+  web framework is present (frozen `pip freeze` lists).
+
+## Regression proof
+`server/test/intel-honesty.test.js` (new): 15 tests — pure detection-table
+tests plus a real-server preflight suite in the isolation-test style (exact
+status codes, every suppression paired with a positive control). Full suite
+**59/59**. The preflight gate was mutation-tested: removing it makes the
+suite fail. Client built clean; full wizard driven live (Source → insights →
+DocType suggestions → Format → pre-run check) against `gitlab-org/cli`.
+
+Also fixed in passing: a raw NUL byte shipped inside `repointel.js` (made the
+file read as binary to grep/tooling) — now the `\u0000` escape sequence.
