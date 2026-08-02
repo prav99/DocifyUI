@@ -83,6 +83,11 @@ export default function RepoInsights({ provider, repo, branch, isSpecAdded, onAd
   }, [provider, repo, branch]);
 
   if (!profile) return null; // still debouncing or in flight — stay silent
+  // A soft-failed analysis (ok:false) may still carry a "could not analyse"
+  // signal. Rendering it would show a failure reason under a "Detected
+  // automatically from the files" footer — a self-contradiction. Treat it as
+  // empty, exactly as DocType does.
+  if (profile.ok === false) return null;
 
   const languages = names(profile.languages);
   const frameworks = names(profile.frameworks);
@@ -102,7 +107,11 @@ export default function RepoInsights({ provider, repo, branch, isSpecAdded, onAd
   const shown = chips.slice(0, MAX_CHIPS);
   const hiddenChips = chips.length - shown.length;
 
-  const specSource = (path) => ({ provider, repo, branch: branch || 'main', path });
+  // profile.branch is the branch the analysis actually READ (the server
+  // resolves the real default when the requested one is empty or wrong). The
+  // spec lives on that branch, so fetching it against the requested branch
+  // would 404 on any repo whose default is not "main".
+  const specSource = (path) => ({ provider, repo, branch: profile.branch || branch || 'main', path });
   const offers = onAddSpec
     ? specs.filter((s) => !(isSpecAdded && isSpecAdded(specSource(s))))
     : [];

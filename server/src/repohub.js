@@ -179,8 +179,17 @@ export async function resolveEffectiveConfig(userId, provider, repo, branch = 'm
   }
 
   const { config: finalConfig, errors: vErrors, warnings: vWarnings } = validateConfig(merged);
+  // Did anyone actually narrow the scan scope, or is only the built-in default
+  // in effect? Every account auto-gets a seeded default rule set, so the mere
+  // presence of a rule set does not mean the customer wrote scope rules — a
+  // caller must not tell them to "widen your rules" over Docify's own excludes.
+  // True only when the resolved scan differs from DEFAULT_CONFIG.
+  const scan = finalConfig.scan || {};
+  const scopeNarrowed = (Array.isArray(scan.include) && scan.include.length > 0) ||
+    JSON.stringify(scan.exclude || []) !== JSON.stringify((DEFAULT_CONFIG.scan && DEFAULT_CONFIG.scan.exclude) || []) ||
+    repoSources.yaml || repoSources.ignoreFile;
   return {
-    config: finalConfig, instructions, layers, sources: repoSources,
+    config: finalConfig, instructions, layers, sources: repoSources, scopeNarrowed,
     errors: [...errors, ...vErrors],
     // Non-blocking: settings that were accepted historically but do nothing.
     // Surfaced rather than dropped in silence — a rule the engine ignores is a

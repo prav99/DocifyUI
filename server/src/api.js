@@ -1156,7 +1156,11 @@ async function resolveGenerationScope({ userId, provider, repo, branch, ruleSetI
     // excludes (lockfiles, node_modules, dist, vendor) can empty the list
     // unaided, and telling someone to widen rules they never wrote sends them
     // hunting for a file that does not exist.
-    out.userScoped = Boolean(eff.ruleSet) || Boolean(eff.sources && (eff.sources.yaml || eff.sources.ignoreFile));
+    // Only "your scope" when the customer actually narrowed it — a committed
+    // docify.yaml/.docifyignore, or a rule set whose scan differs from the
+    // built-in default. The auto-seeded default rule set is not the customer's
+    // doing, so its presence must not make us blame their rules.
+    out.userScoped = Boolean(eff.scopeNarrowed);
   } catch (e) {
     console.error('effective-config resolution failed, scoping to no files:', e.message);
     out.files = [];

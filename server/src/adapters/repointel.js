@@ -558,7 +558,17 @@ async function analyze(provider, repo, branch, token) {
     const res = uniq(workspaceGlobs).map(globToRe);
     workspaces = manifestDirs.filter((d) => res.some((re) => re.test(d)));
   }
-  if (!workspaces.length && manifestDirs.length >= 2) workspaces = manifestDirs.slice(0, 40);
+  // Multiple manifests alone do NOT make a monorepo — a conventional
+  // client/ + server/ + root split has three and is not one. Only fall back to
+  // "every manifest dir is a workspace" when there is corroborating evidence: a
+  // real workspace marker, or the manifests sitting under a recognised
+  // monorepo root (packages/apps/services/…). Otherwise the several-services
+  // branch below describes it honestly without claiming "N packages".
+  const WORKSPACE_ROOT = /^(packages|apps|services|libs|modules|projects|components)\//i;
+  if (!workspaces.length && manifestDirs.length >= 2 &&
+      (monorepoMarkers.length || manifestDirs.filter((d) => WORKSPACE_ROOT.test(d)).length >= 2)) {
+    workspaces = manifestDirs.slice(0, 40);
+  }
   workspaces = uniq(workspaces).sort().slice(0, 40);
   const isMonorepo = workspaces.length >= 2;
 
@@ -624,7 +634,11 @@ async function analyze(provider, repo, branch, token) {
       'Branch "' + requestedBranch + '" listed no files, so Docify analysed "' + branch + '" — the repository\'s default branch.',
       'Tree listing for ' + requestedBranch + ' returned 0 files; ' + branch + ' returned ' + all.length);
   }
-  if (!readmePath) {
+  // Only claim a README is ABSENT when the whole tree was listed. On a
+  // truncated listing the file may simply be in the part the provider did not
+  // return — and the panel shows at most four signals, so the "file list is
+  // partial" caveat can be cut off, leaving this standing as a bare false claim.
+  if (!readmePath && tree.complete) {
     add('no_readme', 'warn', 'No README in this repository',
       'There is no README, so there is less prose for Docify to ground a guide in. Output will be derived from source files alone, which usually means fewer product-level explanations.',
       'No file matching README.* among ' + all.length + ' listed files');
@@ -661,7 +675,9 @@ async function analyze(provider, repo, branch, token) {
         ? 'Bitbucket lists source to a bounded depth; ' + all.length.toLocaleString('en-US') + ' files listed'
         : 'Provider truncated the tree after ' + all.length.toLocaleString('en-US') + ' files');
   }
-  if (!manifestPaths.length) {
+  // Same rule as no_readme: "no manifest" is an absence claim, only honest when
+  // the tree was fully listed.
+  if (!manifestPaths.length && tree.complete) {
     add('no_manifest', 'info', 'No dependency manifest found',
       'Docify could not find a package.json, requirements.txt, go.mod, Cargo.toml, pom.xml or Gemfile, so frameworks were not detected. Detection is based on parsed dependencies only — Docify does not guess a framework from folder names.',
       'No known manifest among ' + all.length + ' listed files');
@@ -731,7 +747,11 @@ export async function analyzeRepository({ provider = 'github', repo = '', branch
 
   const run = analyze(p, r, b, token)
     .catch((e) => emptyProfile({ provider: p, repo: r, branch: b, reason: e.message || 'Repository could not be analysed.' }))
-    .then((profile) => { remember(key, profile); return profile; })
+    // Only cache a real result. A transient failure (rate limit, 5xx) returns
+    // ok:false — caching that for the full TTL would keep showing "could not be
+    // analysed" for five minutes after the provider recovered, so a retry is
+    // never wasted on a genuine answer.
+    .then((profile) => { if (profile && profile.ok) remember(key, profile); return profile; })
     .finally(() => inflight.delete(key));
   inflight.set(key, run);
   return await run;
