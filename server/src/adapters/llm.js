@@ -30,8 +30,13 @@ export function parseSkill(md) {
 const F = '```';
 
 function table(headers, rows) {
-  const line = (cells) => '| ' + cells.join(' | ') + ' |';
-  return [line(headers), line(headers.map(() => '---'))].concat(rows.map(line)).join('\n');
+  // A cell value is arbitrary text — a glossary definition of an enum ("one of
+  // debug | info | warn") or a shell example carries pipes, and an unescaped
+  // pipe silently splits the row into an extra column, shifting every value
+  // after it. Newlines break the row apart entirely.
+  const cell = (v) => String(v == null ? '' : v).replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
+  const line = (cells) => '| ' + cells.map(cell).join(' | ') + ' |';
+  return [line(headers), '| ' + headers.map(() => '---').join(' | ') + ' |'].concat(rows.map(line)).join('\n');
 }
 
 function steps(items) {
@@ -535,11 +540,29 @@ function escA(t) {
   return escX(t).replace(/"/g, '&quot;');
 }
 
+/* Inline markdown → markup, with code spans taken out of play first.
+   Running the bold pass before the code pass lets a `**kwargs` span pair its
+   asterisks with a later **bold**, producing overlapping tags such as
+   <codeph><b>x</codeph></b> — malformed XML that breaks DITA/DocBook
+   toolchains outright. Code spans are replaced by placeholders that no other
+   rule can match, then restored once the rest of the inline syntax is done. */
+function inlineMarkup(t, { code, bold, link }) {
+  const spans = [];
+  let s = escX(t).replace(/`([^`]+)`/g, (m, inner) => {
+    spans.push(inner);
+    return '\u0000CODE' + (spans.length - 1) + '\u0000';
+  });
+  s = s.replace(/\*\*([^*]+)\*\*/g, bold);
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, link);
+  return s.replace(/\u0000CODE(\d+)\u0000/g, (m, i) => code(spans[Number(i)]));
+}
+
 function inlineHtml(t) {
-  return escX(t)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  return inlineMarkup(t, {
+    code: (c) => '<code>' + c + '</code>',
+    bold: (m, inner) => '<strong>' + inner + '</strong>',
+    link: (m, txt, href) => '<a href="' + href.replace(/"/g, '&quot;') + '">' + txt + '</a>'
+  });
 }
 
 // Converts the Markdown this engine itself produces (a known subset) to HTML.
@@ -635,10 +658,11 @@ const PAGE_CSS = [
 ].join('\n');
 
 function inlineDocbook(t) {
-  return escX(t)
-    .replace(/\*\*([^*]+)\*\*/g, '<emphasis role="strong">$1</emphasis>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<link xlink:href="$2">$1</link>');
+  return inlineMarkup(t, {
+    code: (c) => '<code>' + c + '</code>',
+    bold: (m, inner) => '<emphasis role="strong">' + inner + '</emphasis>',
+    link: (m, txt, href) => '<link xlink:href="' + href.replace(/"/g, '&quot;') + '">' + txt + '</link>'
+  });
 }
 
 // Converts a section body (our Markdown subset) to DocBook 5 block content.
@@ -695,13 +719,14 @@ function mdToDocbook(md) {
 }
 
 function inlineDita(t) {
-  return escX(t)
-    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-    .replace(/`([^`]+)`/g, '<codeph>$1</codeph>')
+  return inlineMarkup(t, {
+    code: (c) => '<codeph>' + c + '</codeph>',
+    bold: (m, inner) => '<b>' + inner + '</b>',
     // The href has already been escaped for text; only the quote delimiter is
     // left to neutralize.
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, href) =>
-      '<xref href="' + href.replace(/"/g, '&quot;') + '" scope="external">' + txt + '</xref>');
+    link: (m, txt, href) =>
+      '<xref href="' + href.replace(/"/g, '&quot;') + '" scope="external">' + txt + '</xref>'
+  });
 }
 
 // Converts a section body (our Markdown subset) to DITA topic block content.
@@ -780,6 +805,11 @@ function firstDescriptiveLine(sections) {
       const line = raw.replace(/^[-*>\s]+/, '').replace(/[`*_#]/g, '').trim();
       if (!line || /^\|/.test(line) || /^-{3,}$/.test(line) || /^\d+\.\s*$/.test(line)) continue;
       if (line.length < 25) continue;
+      // Accepted quality fixes insert TODO scaffolding for the author to fill
+      // in. That is honest inside the document, but as the topic's summary — the
+      // line shown in a DITA map or search result — it would present an unfinished
+      // note as the description of the whole document.
+      if (/^TODO\b/i.test(line)) continue;
       const stop = line.indexOf('. ');
       return (stop > 20 ? line.slice(0, stop + 1) : line).slice(0, 220);
     }
@@ -1123,7 +1153,10 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
     // releases of the customer's document are unknown, so none are listed.
     sections = [...sections, ['Revision history',
       table(['Version', 'Date', 'Author', 'Change'], [
-        [docVersion || '—', fmtDate(oc), oc.author || 'Docify', 'Generated from `' + repo + '`']
+        // c.version, not docVersion: the cover block prints c.version, and a
+        // document whose cover says 2.4.0 while its own revision table says "—"
+        // contradicts itself on the same page.
+        [c.version || '—', fmtDate(oc), oc.author || 'Docify', 'Generated from `' + repo + '`']
       ]) +
       '\n\nOnly this generation is recorded. Earlier revisions are not known to Docify — add them here if your process requires a full history.']];
   }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import cluster from 'node:cluster';
+import { isSingletonWorker } from './cluster.js';
 import { prisma } from './db.js';
 import { requireAuth, freshToken } from './auth.js';
 import { SOURCES, DOCTYPES, FORMATS, PLANS, PLAN_LIMITS, planLimits, formatAllowed, docTypeName, formatDef } from './catalog.js';
@@ -379,7 +380,10 @@ async function shouldSample() {
   const age = last ? Date.now() - new Date(last.at).getTime() : Infinity;
   if (age < SAMPLE_EVERY_MS * 0.9) return false; // this interval is already recorded
   if (!cluster.isWorker) return true;            // single process (dev, or no cluster)
-  return cluster.worker.id === 1 || age > SAMPLE_EVERY_MS * 2;
+  // WORKER_INDEX is assigned by the primary and reused when a worker is
+  // respawned; cluster.worker.id is not — it increments forever, so after the
+  // first crash NO worker would satisfy `id === 1` and sampling would stop.
+  return isSingletonWorker() || age > SAMPLE_EVERY_MS * 2;
 }
 setInterval(async () => {
   try {
@@ -457,7 +461,12 @@ apiRouter.get('/status', async (req, res) => {
     uptime,
     days,
     incidents: incidents.slice(-10).reverse().map((i) => ({
-      start: i.start, end: i.end, approxMinutes: i.samples * 5
+      start: i.start, end: i.end,
+      // Measured from the incident's own timestamps. Multiplying the sample
+      // COUNT by five assumes a sampling cadence that a respawned cluster does
+      // not keep, and would under-report a real outage on the one page whose
+      // job is to be trusted.
+      approxMinutes: Math.max(5, Math.round((new Date(i.end) - new Date(i.start)) / 60000) || 5)
     })),
     monitoringSince: points.length ? points[0].at : null,
     generatedAt: new Date().toISOString()
@@ -1474,10 +1483,13 @@ async function runPipelineOnce(genId) {
    generations frozen at "running" forever. On boot, every orphaned run is
    resumed automatically — the kept-aiDocs guard inside runPipeline ensures a
    resume can only improve a row, never degrade grounded content. */
-setTimeout(async () => {
+async function recoverStuckGenerations() {
   // Every worker in the cluster runs this module, so the sweep is confined to
   // one process — otherwise each worker resumes the same rows in parallel.
-  if (cluster.isWorker && cluster.worker.id !== 1) return;
+  // Same stable designation as the sampler: cluster.worker.id keeps climbing
+  // across respawns, which would leave every worker declining the sweep and
+  // interrupted generations stranded forever.
+  if (cluster.isWorker && !isSingletonWorker()) return;
   try {
     const stuck = await prisma.generation.findMany({
       where: {
@@ -1497,7 +1509,13 @@ setTimeout(async () => {
       resumable.forEach((g, i) => setTimeout(() => runPipeline(g.id).catch((e) => console.error('recovery run failed:', e.message)), i * 4000));
     }
   } catch (e) { console.error('recovery scan skipped:', e.message); }
-}, 8000).unref?.();
+}
+// Running this only at boot recovers a deploy, but not a crash: when a worker
+// dies mid-pipeline its rows stay "running" until the NEXT restart, and the
+// customer keeps watching a spinner for a document they were already charged
+// for. Sweeping on an interval closes that window without a scheduler.
+setTimeout(recoverStuckGenerations, 8000).unref?.();
+setInterval(recoverStuckGenerations, 5 * 60 * 1000).unref?.();
 
 apiRouter.post('/generations', async (req, res) => {
   const { repo, branch = 'main', track, docTypes, format, formats, instructions = '', files = [], provider = 'github', skillName = '', skill = '', brief = null, output = null } = req.body || {};

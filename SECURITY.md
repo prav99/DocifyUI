@@ -29,7 +29,9 @@ third-party services we do not operate (code hosts, email providers, payment pro
   tests proving no non-session token can be replayed as a session.
 - Per-IP rate limiting (stricter on credential endpoints), request timeouts, security headers,
   size-limited bodies, multi-process clustering with automatic worker restart.
-- Not yet implemented, stated plainly: MFA, SSO/SAML, customer-visible audit logs, session
-  revocation, self-service password reset. Docify is not SOC 2 or ISO 27001 audited.
+- Not yet implemented, stated plainly: MFA, SSO/SAML, customer-visible audit logs.
+  Docify is not SOC 2 or ISO 27001 audited.
+- Implemented: self-service password reset (single-use hashed token, 60-minute expiry) and
+  session revocation — changing or resetting a password invalidates every session issued before it.
 
 The full customer-facing policy is served in-app at `/legal/security`.

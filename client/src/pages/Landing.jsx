@@ -998,11 +998,14 @@ export default function Landing() {
               Run the estimator with your own figures, then test the output on your own repository —
               five free generations, no credit card. If the numbers work, Docify Team is $79 a month
               billed annually ($99 monthly), with five seats included. Online payment is not live yet,
-              so we set paid plans up directly — just get in touch.
+              so we set paid plans up directly.
             </p>
             <div className="row mt6" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free — 5 documents<span className="ico">→</span></button>
               <button className="btn btn--ghostdark" onClick={() => { const el = document.getElementById('cost'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}>Estimate your cost</button>
+              {/* The paragraph above says paid plans are set up directly, so the
+                  way to do that has to be reachable from here. */}
+              <button className="btn btn--ghostdark" onClick={() => nav('/contact?topic=team')}>Talk to us about a paid plan</button>
             </div>
           </Reveal>
         </div>

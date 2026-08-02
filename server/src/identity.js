@@ -297,7 +297,14 @@ identityRouter.get('/' + IDP_PATTERN + '/callback', async (req, res) => {
         // real owner is told to set a fresh one.
         const proven = !!user.emailVerifiedAt;
         const patch = {};
-        if (!proven && user.passwordHash) patch.passwordHash = null;
+        if (!proven && user.passwordHash) {
+          patch.passwordHash = null;
+          // Taking the password away is not enough: whoever set it may still be
+          // holding a live session token, which would survive the takeover for
+          // up to seven days. Revoke every session issued before this moment —
+          // the real owner is signed in fresh by this very request.
+          patch.tokenVersion = { increment: 1 };
+        }
         if (!user.emailVerified) patch.emailVerified = true;
         // The provider proved the mailbox, so a pending signup OTP is moot —
         // leaving it would keep the /verify-otp path alive for the squatter.

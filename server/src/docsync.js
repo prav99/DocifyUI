@@ -777,6 +777,13 @@ async function reserveSyncQuota(req, res, trigger) {
 
 const releaseSyncQuota = (req, reservation) => releaseDocumentQuota(req.uid, reservation);
 
+// Refunding is only honest when the request cost nothing to answer. The
+// relevance gate can itself call the model (decision.engine === 'ai'), so a
+// blanket refund on a "skip" verdict would let anyone loop this endpoint for
+// unmetered model spend. Deterministic verdicts (rules/heuristic) cost nothing
+// and are refunded.
+const paidForModel = (decision) => !!decision && decision.engine === 'ai';
+
 // Pull the next unseen commits from the mapped repository, filter them through
 // the relevance engine, and queue updates only for customer-facing changes.
 syncRouter.post('/documents/:id/sync', async (req, res) => {
@@ -791,8 +798,10 @@ syncRouter.post('/documents/:id/sync', async (req, res) => {
   const ctx = await relevanceContext(req.uid, row.repo, row.branch);
   const created = [];
   const filtered = [];
+  let billableWork = false;
   for (const commit of next) {
     const decision = await evaluateCommit(commit, ctx);
+    if (paidForModel(decision)) billableWork = true;
     await recordDecision(req.uid, row, commit, decision);
     if (decision.verdict === 'skip') {
       filtered.push({ sha: commit.sha, message: commit.message, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy, demo: true });
@@ -807,8 +816,9 @@ syncRouter.post('/documents/:id/sync', async (req, res) => {
     const u = await prisma.syncUpdate.create({ data: { userId: req.uid, docId: row.id, ...built } });
     created.push(serializeUpdate(u, row.name));
   }
-  // Every commit was filtered out: no document was produced, so nothing is owed.
-  if (!created.length) await releaseSyncQuota(req, reservation);
+  // Every commit was filtered out: no document was produced, so nothing is owed
+  // — unless classifying them already cost a model call (see paidForModel).
+  if (!created.length && !billableWork) await releaseSyncQuota(req, reservation);
   await prisma.syncDoc.update({ where: { id: row.id }, data: { cursor: row.cursor + next.length } });
   res.json({
     created: created.length, updates: created, filtered,
@@ -848,7 +858,9 @@ syncRouter.post('/documents/:id/simulate', async (req, res) => {
   const decision = await evaluateCommit(commit, ctx);
   await recordDecision(req.uid, row, commit, decision);
   if (decision.verdict === 'skip') {
-    await releaseSyncQuota(req, reservation); // filtered out: no document produced
+    // No document was produced — refund, unless answering already cost a model
+    // call (see paidForModel).
+    if (!paidForModel(decision)) await releaseSyncQuota(req, reservation);
     return res.status(200).json({
       filtered: true,
       decision: { score: decision.score, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy },

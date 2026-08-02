@@ -40,6 +40,34 @@ function PageLoading() {
   return <div className="page"><p className="body01 t2">Loading…</p></div>;
 }
 
+/* Routes are code-split, so a page arrives as its own file. After a deploy the
+   old filenames are gone: a tab left open overnight asks for a chunk that no
+   longer exists, the import rejects, and React unmounts the whole tree — a
+   white screen with nothing to click. This turns that into an explanation and
+   a reload, which fetches the new build. */
+class ChunkBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(err) { console.error('route failed to load:', err); }
+  componentDidUpdate(prev) {
+    // A failed boundary stays failed; clear it when the user navigates away.
+    if (this.state.failed && prev.routeKey !== this.props.routeKey) this.setState({ failed: false });
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="page">
+        <h1 className="h04">This page could not be loaded</h1>
+        <p className="body01 t2 mt3">
+          Docify was updated while this tab was open, so part of the app is no longer available.
+          Reloading picks up the new version — nothing you were working on is lost.
+        </p>
+        <button className="btn btn--primary mt5" onClick={() => window.location.reload()}>Reload Docify</button>
+      </div>
+    );
+  }
+}
+
 // The click listener attaches to document and is never removed, so installing
 // it twice would double-count every click.
 let clickTrackingInstalled = false;
@@ -87,6 +115,52 @@ function ScrollTop() {
   return null;
 }
 
+function AppRoutes() {
+  const loc = useLocation();
+  return (
+      <ChunkBoundary routeKey={loc.pathname}>
+      <React.Suspense fallback={<PageLoading />}>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/login" element={<LoginRedirect />} />
+          <Route path="/reset" element={<ResetPassword />} />
+          <Route path="/oauth/complete" element={<OAuthComplete />} />
+          <Route path="/source" element={<RequireAuth><Source /></RequireAuth>} />
+          <Route path="/doctype" element={<RequireAuth><DocType /></RequireAuth>} />
+          <Route path="/format" element={<RequireAuth><Format /></RequireAuth>} />
+          <Route path="/generate" element={<RequireAuth><Generate /></RequireAuth>} />
+          <Route path="/quality" element={<RequireAuth><Quality /></RequireAuth>} />
+          <Route path="/quality/:genId" element={<RequireAuth><Quality /></RequireAuth>} />
+          <Route path="/export" element={<RequireAuth><ExportPage /></RequireAuth>} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/checkout" element={<RequireAuth><Checkout /></RequireAuth>} />
+          <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+          <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
+          <Route path="/automation/:id" element={<RequireAuth><Automation /></RequireAuth>} />
+          <Route path="/sync" element={<RequireAuth><DocSync /></RequireAuth>} />
+          <Route path="/repos" element={<RequireAuth><Repos /></RequireAuth>} />
+          <Route path="/standardize" element={<RequireAuth><Governance /></RequireAuth>} />
+          {/* Old URL keeps working — bookmarks, help links, history */}
+          <Route path="/governance" element={<Navigate to="/standardize" replace />} />
+          <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
+          <Route path="/history/:id" element={<RequireAuth><History /></RequireAuth>} />
+          <Route path="/founder" element={<RequireAuth><Founder /></RequireAuth>} />
+          <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+          <Route path="/docs" element={<Docs />} />
+          <Route path="/docs/:slug" element={<DocArticle />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/help/:topic" element={<Help />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/legal/:slug" element={<Legal />} />
+          <Route path="/status" element={<Status />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </React.Suspense>
+      </ChunkBoundary>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -96,44 +170,7 @@ function App() {
           <Analytics />
           <TopBar />
           <main>
-            <React.Suspense fallback={<PageLoading />}>
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/signup" element={<Signup />} />
-                <Route path="/login" element={<LoginRedirect />} />
-                <Route path="/reset" element={<ResetPassword />} />
-                <Route path="/oauth/complete" element={<OAuthComplete />} />
-                <Route path="/source" element={<RequireAuth><Source /></RequireAuth>} />
-                <Route path="/doctype" element={<RequireAuth><DocType /></RequireAuth>} />
-                <Route path="/format" element={<RequireAuth><Format /></RequireAuth>} />
-                <Route path="/generate" element={<RequireAuth><Generate /></RequireAuth>} />
-                <Route path="/quality" element={<RequireAuth><Quality /></RequireAuth>} />
-                <Route path="/quality/:genId" element={<RequireAuth><Quality /></RequireAuth>} />
-                <Route path="/export" element={<RequireAuth><ExportPage /></RequireAuth>} />
-                <Route path="/pricing" element={<Pricing />} />
-                <Route path="/checkout" element={<RequireAuth><Checkout /></RequireAuth>} />
-                <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-                <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
-                <Route path="/automation/:id" element={<RequireAuth><Automation /></RequireAuth>} />
-                <Route path="/sync" element={<RequireAuth><DocSync /></RequireAuth>} />
-                <Route path="/repos" element={<RequireAuth><Repos /></RequireAuth>} />
-                <Route path="/standardize" element={<RequireAuth><Governance /></RequireAuth>} />
-                {/* Old URL keeps working — bookmarks, help links, history */}
-                <Route path="/governance" element={<Navigate to="/standardize" replace />} />
-                <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
-                <Route path="/history/:id" element={<RequireAuth><History /></RequireAuth>} />
-                <Route path="/founder" element={<RequireAuth><Founder /></RequireAuth>} />
-                <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-                <Route path="/docs" element={<Docs />} />
-                <Route path="/docs/:slug" element={<DocArticle />} />
-                <Route path="/help" element={<Help />} />
-                <Route path="/help/:topic" element={<Help />} />
-                <Route path="/contact" element={<Contact />} />
-                <Route path="/legal/:slug" element={<Legal />} />
-                <Route path="/status" element={<Status />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </React.Suspense>
+            <AppRoutes />
           </main>
           <Toasts />
           {/* The help widget floats over every page — it can arrive a beat late

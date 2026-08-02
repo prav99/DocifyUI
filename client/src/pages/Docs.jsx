@@ -85,7 +85,7 @@ const PILLARS = [
         { p: 'In Doc sync, a change is additionally scored against your document\'s outline to choose the section it belongs in — the reasoning panel shows the candidate sections and why one won, so a placement is reviewable before you accept it.' },
         { p: 'Combined with the quality gate, this gives a safe default: regenerate what changed, re-score it, and hold anything that no longer clears the bar for human review.' }
       ]},
-      { slug: 'technical-doc-generation', name: 'Technical documentation generation', sum: 'API references, guides, runbooks — in DITA, Markdown, HTML, DocBook, ePub, PDF, and Word.', body: [
+      { slug: 'technical-doc-generation', name: 'Technical documentation generation', sum: 'API references, user and installation guides, quick starts, troubleshooting, release notes, and admin guides — in DITA, Markdown, HTML, DocBook, ePub, PDF, and Word.', body: [
         { p: 'Seven technical document types cover the reference-to-tutorial spectrum, and every one exports to seven formats including real binary .docx and .pdf with your page setup, headers, footers, page numbers, and watermark applied.' },
         { ul: ['~25 output options: cover and identity, structure, page & branding, legal', 'Type-specific previews: changelogs render as timelines, troubleshooting as symptom cards', 'SKILL.md support: your own outline, tone, and terminology rules reshape any type'] }
       ]},
@@ -267,7 +267,7 @@ const SUPPORTING = [
   { t: 'Account & security', items: [
     { slug: 'roles-permissions', name: 'Roles and permissions', sum: 'Owner and Writer — what exists today, and what does not.', body: [
       { p: 'Team members are either the account Owner or a Writer; the Owner manages sources, automation, billing, and adding members. Sign in with Google, a code host, or email and password.' },
-      { p: 'Stated plainly, because it matters when you are evaluating us: finer-grained roles, SSO (SAML/OIDC), multi-factor authentication, customer-visible audit logs, member removal, and self-service password reset are not built today. Where the pricing page offers SSO or audit logs "on request", that means we will scope and build them with an Enterprise customer — not that they are waiting to be switched on.' }
+      { p: 'Stated plainly, because it matters when you are evaluating us: finer-grained roles, SSO (SAML/OIDC), multi-factor authentication, and customer-visible audit logs are not built today. Self-service password reset, session revocation on password change, and member removal are available. Where the pricing page offers SSO or audit logs "on request", that means we will scope and build them with an Enterprise customer — not that they are waiting to be switched on.' }
     ]},
     { slug: 'oauth-connections', name: 'OAuth connections & tokens', sum: 'How Docify stores and renews source credentials.', body: [
       { p: 'OAuth tokens are stored server-side, never in the browser. Providers with expiring tokens (Bitbucket, GitLab) include refresh tokens, and Docify renews access silently. Revoking access at the provider immediately invalidates the stored credentials.' }

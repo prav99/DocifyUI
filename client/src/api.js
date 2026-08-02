@@ -27,8 +27,14 @@ export function onSessionExpired(fn) {
 }
 
 // Returns true when this 401 ended the session (so callers can say so).
-function handleUnauthorized(path, opts) {
+//
+// `sentWith` is the token the failed request actually carried. A long-lived
+// poll started before a password change would otherwise come back 401 and
+// clear the NEW token this tab was just issued, signing the user out of a
+// session that is perfectly valid.
+function handleUnauthorized(path, opts, sentWith) {
   if (opts.ignore401 || !token || CREDENTIAL_PATHS.test(path)) return false;
+  if (sentWith && sentWith !== token) return false; // stale reply, current session is fine
   setToken(null);
   if (sessionExpiredHandler) sessionExpiredHandler();
   return true;
@@ -36,12 +42,13 @@ function handleUnauthorized(path, opts) {
 
 export async function api(path, opts = {}) {
   let res;
+  const sentWith = token;
   try {
     res = await fetch('/api' + path, {
       method: opts.method || 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: 'Bearer ' + token } : {})
+        ...(sentWith ? { Authorization: 'Bearer ' + sentWith } : {})
       },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
     });
@@ -51,7 +58,7 @@ export async function api(path, opts = {}) {
     throw new Error('Network error — check your connection and try again');
   }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && handleUnauthorized(path, opts)) {
+  if (res.status === 401 && handleUnauthorized(path, opts, sentWith)) {
     throw new Error('Your session has expired — please sign in again');
   }
   if (!res.ok) throw new Error(data.error || 'Request failed (' + res.status + ')');

@@ -29,11 +29,18 @@ export default function Contact() {
 
   const [name, setName] = React.useState(user?.name || '');
   const [email, setEmail] = React.useState(user?.email || '');
+  // Pricing sends the chosen plan through, so the form arrives already about
+  // that plan — landing on a blank support form after clicking "subscribe" is
+  // a dead end that loses the visitor's intent.
+  const PLAN_TOPIC = { enterprise: 'Enterprise', starter: 'Starter', team: 'Team' };
+  const planName = PLAN_TOPIC[presetTopic] || '';
   const [topic, setTopic] = React.useState(
-    presetTopic === 'enterprise' ? 'Enterprise / sales' : ''
+    planName ? (presetTopic === 'enterprise' ? 'Enterprise / sales' : planName + ' plan — subscribe') : ''
   );
   const [message, setMessage] = React.useState(
-    presetTopic === 'enterprise' ? 'I’d like to talk about the Enterprise plan for my team.\n\n' : ''
+    planName
+      ? 'I’d like to talk about the ' + planName + ' plan for my team.\n\n'
+      : ''
   );
   const [sending, setSending] = React.useState(false);
   const [fieldErr, setFieldErr] = React.useState({});

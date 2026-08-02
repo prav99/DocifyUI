@@ -20,7 +20,7 @@ const TOPICS = {
     ],
     issues: [
       ['"Password must be at least 8 characters"', 'Use 8 or more characters. Mixing upper/lower case, digits, and symbols moves the strength meter to "Strong" — the meter is advice, the 8-character minimum is the rule.'],
-      ['Forgotten password', 'There is no self-service reset yet. Email support from the address on the account and we will help you regain access.'],
+      ['Forgotten password', 'Use “Forgot password?” on the sign-in page. We email a single-use link that stays valid for an hour; opening it lets you set a new password and signs you in. If the email does not arrive, check spam, then contact support from the address on the account.'],
       ['"An account with this email already exists"', 'Switch to Log in — the address is already registered.'],
       ['"Invalid email or password"', 'Check for typos and caps lock. Passwords are case-sensitive.'],
       ['Verification code expired', 'Codes last 10 minutes. Click "Resend code" for a fresh one.'],
@@ -232,12 +232,12 @@ const TOPICS = {
     steps: [
       'Writing style tab: set your organization voice once and every future document follows it — pick a style-guide bias (Docify, Microsoft, or Google conventions), define preferred terminology one pair per line (sign in => log in, login), list prohibited words, and add free-form policy notes. Saving bumps the profile version; "Reset to default profile" clears customizations.',
       'Connected sources tab shows each provider connection and whether credentials are on file.',
-      'Add teammates by email — the seat is recorded immediately with Writer access. Invitation emails and a self-serve acceptance flow are not built yet, so tell your teammate to sign up with that exact address.',
+      'Add teammates by email — the seat is recorded immediately with Writer access and an invitation email goes out when mail is configured on the server. There is no click-to-accept flow yet, so your teammate signs up with that exact address to take the seat.',
       'Your current plan, billing cycle, seat count, and document usage this month are shown under Plan.'
     ],
     issues: [
       ['My teammate got no email', 'None is sent yet — adding a member records the seat, it does not email anyone. Ask them to sign up with the same address you entered.'],
-      ['Need to free a seat', 'Removing a member is not built yet. Email support and we will adjust the account.'],
+      ['Need to free a seat', 'Open Team & settings → Team and choose Remove next to the member. The seat is freed immediately and can be reused for a new invite. The account owner cannot be removed.'],
       ['Need more seats', 'Starter includes 2 seats and Team includes 5, with extra Team seats at $12 each. Enterprise is arranged with us directly.']
     ]
   },
@@ -247,7 +247,7 @@ const TOPICS = {
     intro: 'Free covers evaluation: 5 watermarked documents a month, 1 source, PDF and Word only. Starter is $29/month ($24 annual) for 2 seats and 60 documents. Team is $99/month ($79 annual) for 5 seats and 250 documents, plus $12 per extra seat. Enterprise is arranged with us directly.',
     steps: [
       'Toggle monthly vs annual billing — annual is discounted (about 17% on Starter, 20% on Team).',
-      'Pick a plan to open checkout; Enterprise routes to a conversation with us.',
+      'Free starts immediately with no card. Paid plans are set up with us directly — choosing Starter, Team, or Enterprise opens a short form with the plan filled in, and we reply to get you subscribed.',
       'Document limits are enforced on the server, so the number on the pricing page is the number your account actually gets.'
     ],
     issues: [
