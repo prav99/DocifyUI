@@ -19,10 +19,8 @@ const WORKERS = Math.max(1, Number(process.env.WEB_CONCURRENCY) || os.availableP
    record N samples for the same interval. Running index.js directly (dev, or
    `node src/index.js`) leaves WORKER_INDEX unset, which is index 0: a single
    process is its own singleton. */
-export const WORKER_INDEX = Number.isFinite(Number(process.env.WORKER_INDEX))
-  ? Number(process.env.WORKER_INDEX)
-  : 0;
-export const isSingletonWorker = () => WORKER_INDEX === 0;
+export { WORKER_INDEX, isSingletonWorker } from './worker.js';
+import { WORKER_INDEX } from './worker.js';
 
 // Importing this module (for the helper above) must never fork a cluster, so
 // the supervisor only runs when this file is the process entry point.

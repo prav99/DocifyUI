@@ -165,6 +165,40 @@ after(async () => {
   for (const f of DB_ARTIFACTS()) if (fs.existsSync(f)) fs.unlinkSync(f);
 });
 
+/* Production runs `node src/cluster.js`, but every test above boots
+   `src/index.js` directly — so a fault that only exists in cluster mode ships
+   invisibly. One did: a module imported cluster.js, which starts the server
+   with a top-level `await import('./index.js')`, and the resulting ESM cycle
+   around that await deadlocked. Workers never listened and never crashed, so
+   the platform served 502s while every test here passed. */
+describe('the production entry point actually serves traffic', () => {
+  test('a clustered boot answers requests', async () => {
+    const port = await freePort();
+    const proc = spawn('node', ['src/cluster.js'], {
+      cwd: serverDir,
+      env: { ...env, PORT: String(port), WEB_CONCURRENCY: '2', NODE_ENV: 'production' },
+      stdio: 'ignore'
+    });
+    try {
+      let status = 0;
+      for (let i = 0; i < 60; i++) {
+        try {
+          const r = await fetch('http://localhost:' + port + '/api/ping');
+          status = r.status;
+          if (r.ok) break;
+        } catch { /* not listening yet */ }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      assert.equal(status, 200,
+        'the clustered entry point never served /api/ping — production would return 502');
+    } finally {
+      proc.kill('SIGTERM');
+      await new Promise((r) => setTimeout(r, 500));
+      proc.kill('SIGKILL');
+    }
+  });
+});
+
 describe('cross-account isolation', () => {
   test('the fixture is genuinely readable by its owner (positive control)', async () => {
     assert.equal(aliceDocStatus, 'complete',

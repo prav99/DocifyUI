@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import cluster from 'node:cluster';
-import { isSingletonWorker } from './cluster.js';
+import { isSingletonWorker } from './worker.js';
 import { prisma } from './db.js';
 import { requireAuth, freshToken } from './auth.js';
 import { SOURCES, DOCTYPES, FORMATS, PLANS, PLAN_LIMITS, planLimits, formatAllowed, docTypeName, formatDef } from './catalog.js';
