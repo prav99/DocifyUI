@@ -54,6 +54,28 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .stepbar>div{height:2px;background:var(--button-primary);transition:width .15s var(--ease)}
 .topbar-actions{display:flex;gap:var(--sp-03);align-items:center}
 .userchip{font-size:12px;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace;padding:4px 8px;background:var(--layer-01)}
+/* The logo is a role=link span, not an anchor — keep it from inheriting the
+   global link underline, and give the keyboard user a visible ring. */
+.topbar .logo{text-decoration:none}
+.topbar .logo:hover{text-decoration:none}
+.topbar .logo:focus-visible,.topnav a:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+/* ============ Accessibility: skip-to-content + focus visibility ============ */
+/* Off-screen until focused, then it slides into the top-left corner. */
+.skip-link{position:fixed;top:-56px;left:8px;z-index:300;background:var(--button-primary);color:#fff;padding:10px 16px;font-size:14px;text-decoration:none;transition:top .12s var(--ease)}
+.skip-link:focus{top:8px;color:#fff;text-decoration:none;outline:2px solid #fff;outline-offset:-4px}
+main:focus{outline:none} /* the skip target is focused programmatically; no ring on the whole page */
+/* Shared interactive controls whose focus state was previously implicit. The
+   ring matches the Carbon blue used on .btn, .input and the wizard tiles. */
+.linkbtn:focus-visible,.chip:focus-visible,.tabs button:focus-visible,.seg button:focus-visible,
+.provbtn:focus-visible,.mclose:focus-visible,.toast .tclose:focus-visible,.filechip button:focus-visible,
+.fwlink:focus-visible,.calccycle:focus-visible,.colorchip:focus-visible,.umenu button:focus-visible,
+.userchip--btn:focus-visible,.sitefoot-col a:focus-visible,.sitefoot-links a:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+/* Toggle and radio line hide their native control; surface focus on the part
+   the user can actually see. */
+.toggle:focus-within .track{outline:2px solid var(--focus);outline-offset:2px}
+.radioline:focus-within{outline:2px solid var(--focus);outline-offset:-2px}
+@media(prefers-reduced-motion:reduce){.skip-link{transition:none}}
 
 /* Buttons */
 .btn{font-family:inherit;font-size:14px;line-height:1.29;letter-spacing:.16px;display:inline-flex;align-items:center;justify-content:space-between;gap:32px;height:48px;padding:0 15px;min-width:78px;border:1px solid transparent;border-radius:0;cursor:pointer;transition:background .07s var(--ease),border-color .07s var(--ease);text-align:left;white-space:nowrap;color:var(--text-primary);background:transparent}
@@ -236,7 +258,10 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 @media(max-width:800px){.pricegrid{grid-template-columns:130px repeat(3,1fr)}}
 
 /* Matrix + tables */
-.matrix{border-collapse:collapse;width:100%}
+/* Scrolls within itself at every width (like .dtable): a comparison matrix with
+   more columns than the container can hold used to push the whole page sideways
+   between the phone breakpoint and full width. */
+.matrix{border-collapse:collapse;width:100%;display:block;overflow-x:auto}
 .matrix th,.matrix td{border:1px solid var(--border-subtle);padding:var(--sp-04) var(--sp-05);font-size:14px;text-align:center}
 .matrix th{background:var(--layer-01);font-weight:600;font-size:12px;letter-spacing:.32px}
 .matrix td:first-child,.matrix th:first-child{text-align:left}
@@ -662,7 +687,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 
 /* ============ MOAT panel: ranking outlook across AI models ============ */
 .moat{background:#161616;padding:24px;border-left:4px solid var(--button-primary)}
-.moatgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.moatgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:16px}
 .moatcard{background:#262626;padding:16px 20px}
 .moatpct{font-size:42px;line-height:1.1;color:#ffffff;margin-top:10px}
 .moatpctsign{font-size:20px;color:#8d8d8d;margin-left:2px}
@@ -683,7 +708,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .qhero{display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:stretch}
 @media(max-width:800px){.qhero{grid-template-columns:1fr}}
 .qgauge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px}
-.dimgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.dimgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:12px}
 .dimcard{background:var(--layer-01);padding:14px 16px;display:flex;flex-direction:column;gap:8px;border:1px solid transparent}
 .dimcard--click{cursor:pointer;transition:border-color .11s var(--ease),transform .11s var(--ease),box-shadow .11s var(--ease)}
 .dimcard--click:hover,.dimcard--click:focus-visible{border-color:var(--button-primary);transform:translateY(-2px);box-shadow:0 4px 10px rgba(22,22,22,.10);outline:none}
@@ -694,7 +719,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .dimfill--ok{background:var(--support-success)}
 .dimfill--warn{background:var(--support-warning)}
 .dimfill--bad{background:var(--support-error)}
-.asstgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+.asstgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:16px}
 .asstcard{background:var(--layer-01);border-top:3px solid var(--border-subtle);padding:16px 20px}
 .asstcard--click{cursor:pointer;transition:box-shadow .11s var(--ease),transform .11s var(--ease)}
 .asstcard--click:hover,.asstcard--click:focus-visible{box-shadow:0 4px 10px rgba(22,22,22,.10);transform:translateY(-2px);outline:none}
@@ -772,7 +797,10 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .wizstep.on .wiznum{background:var(--button-primary);border-color:var(--button-primary);color:#fff}
 .wizstep.done{color:var(--text-primary)}
 .wizstep.done .wiznum{background:var(--support-success);border-color:var(--support-success);color:#fff}
-.profgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+/* min(100%,Npx) so a container narrower than the track minimum collapses to a
+   single full-width column instead of overflowing — the fixed 340px minimum
+   otherwise spills out of a phone-width viewport (page padding leaves ~328px). */
+.profgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:16px}
 .profcard{background:#ffffff;border:1px solid var(--border-subtle);border-top:3px solid var(--button-primary);padding:20px 24px;transition:box-shadow .11s var(--ease)}
 .profcard:hover{box-shadow:0 4px 12px rgba(22,22,22,.10)}
 .prun{background:#ffffff;border:1px solid var(--border-subtle);border-left:3px solid var(--border-subtle);padding:14px 20px}
@@ -872,7 +900,7 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .acc-btn:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .acc-chev{transition:transform .15s var(--ease);color:var(--text-secondary)}
 .acc-item.open .acc-chev{transform:rotate(180deg)}
-.acc-body{padding:8px 8px 28px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px 24px}
+.acc-body{padding:8px 8px 28px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:16px 24px}
 .optrow{display:flex;flex-direction:column;gap:8px}
 .optrow .input,.optrow .select{height:40px}
 .colorchip{width:24px;height:24px;border:1px solid var(--border-subtle);cursor:pointer;padding:0}

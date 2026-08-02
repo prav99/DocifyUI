@@ -121,12 +121,34 @@ function activateKeys(onActivate) {
   };
 }
 
+/* Radiogroups follow the ARIA roving-tabindex pattern: only the selected option
+   is in the tab order, and Arrow keys move both focus and selection between the
+   others. Without the arrow handling a keyboard-only user could reach the
+   checked option but never change it — every other RadioRow carries tabIndex -1. */
+function radioKeys(onActivate) {
+  return (e) => {
+    if (e.key === ' ' || e.key === 'Enter') { if (onActivate) { e.preventDefault(); onActivate(); } return; }
+    const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight';
+    const back = e.key === 'ArrowUp' || e.key === 'ArrowLeft';
+    if (!fwd && !back) return;
+    const group = e.currentTarget.closest('[role="radiogroup"]');
+    if (!group) return;
+    const radios = Array.from(group.querySelectorAll('[role="radio"]'))
+      .filter((el) => el.getAttribute('aria-disabled') !== 'true');
+    const i = radios.indexOf(e.currentTarget);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = radios[(i + (fwd ? 1 : radios.length - 1)) % radios.length];
+    if (next) { next.focus(); next.click(); } // click() runs the row's onClick — the single source of selection
+  };
+}
+
 /* ---------------- Radio row with a one-line explanation ---------------- */
 function RadioRow({ on, label, sub, tag, onClick, readOnly = false }) {
   return (
     <div className={'radioline' + (on ? ' on' : '')} onClick={readOnly ? undefined : onClick}
       role="radio" aria-checked={on} aria-disabled={readOnly || undefined}
-      tabIndex={readOnly ? -1 : on ? 0 : -1} onKeyDown={readOnly ? undefined : activateKeys(onClick)}
+      tabIndex={readOnly ? -1 : on ? 0 : -1} onKeyDown={readOnly ? undefined : radioKeys(onClick)}
       style={{ alignItems: 'flex-start', cursor: readOnly ? 'default' : undefined }}>
       <span className="rdot" style={{ marginTop: 2 }} />
       <span>
@@ -1063,6 +1085,9 @@ function Detail({ id, onBack, onEdit }) {
   const cfg = p.config;
   const origin = window.location.origin.replace(':5173', ':4000');
   const hookUrl = origin + '/api/webhooks/git/' + p.id;
+  // Bitbucket and Jira webhooks can't send the secret as a signed header, so the
+  // receiver also accepts it as ?token= — this is the exact URL those hosts paste.
+  const tokenUrl = hookUrl + '?token=' + encodeURIComponent(p.secret || '');
 
   async function copy(text, what) {
     try { await navigator.clipboard.writeText(text); toast('success', 'Copied', what); }
@@ -1156,7 +1181,17 @@ function Detail({ id, onBack, onEdit }) {
             <button className="btn btn--tertiary btn--sm" onClick={() => copy(p.secret, 'Webhook secret')}>Copy</button>
             <button className="btn btn--ghost btn--sm" onClick={rotate}>Rotate</button>
           </div>
-          <p className="helper mt3"><b>GitHub</b> — Settings → Webhooks: JSON content type, paste the secret · <b>GitLab</b> — secret as Secret token · <b>Bitbucket</b> — append <span className="mono">?token=&lt;secret&gt;</span>.</p>
+          <p className="label01 t2 mb2 mt5">BITBUCKET &amp; JIRA URL
+            <span className="helper" style={{ fontWeight: 400, marginLeft: 8 }}>secret carried in the URL — these hosts can&rsquo;t sign it as a header</span></p>
+          <div className="row" style={{ gap: 8 }}>
+            <span className="mono" style={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}>{showSecret ? tokenUrl : hookUrl + '?token=' + '•'.repeat(12)}</span>
+            <button className="btn btn--tertiary btn--sm" onClick={() => copy(tokenUrl, 'Webhook URL with token')}>Copy</button>
+          </div>
+          <div className="whook-steps mt5">
+            <p className="helper"><b>GitHub</b> — Settings → Webhooks → Add webhook: paste the <b>Payload URL</b>, set Content type to <span className="mono">application/json</span>, paste the <b>Secret</b>, and send <span className="mono">push</span> (and pull-request) events.</p>
+            <p className="helper mt2"><b>GitLab</b> — Settings → Webhooks: paste the Payload URL and put the secret in <b>Secret token</b>.</p>
+            <p className="helper mt2"><b>Bitbucket / Jira</b> — paste the <b>Bitbucket &amp; Jira URL</b> above (secret already appended); no separate secret field to fill.</p>
+          </div>
           <div className="divider" style={{ margin: '16px 0' }} />
           <h2 className="h02 mb3">Simulate a merge</h2>
           <p className="helper mb3">

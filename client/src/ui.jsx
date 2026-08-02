@@ -3,6 +3,32 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, toast } from './store.jsx';
 import posthog from './posthog.js';
 
+/* ---------- In-app navigation from a real anchor ----------
+   These controls stay <a href> elements so they are keyboard-focusable, land
+   in the accessibility tree as links, and support right-click / cmd-click to
+   open in a new tab. A plain left-click is intercepted and routed in-SPA;
+   any modified click falls through to the browser. */
+function routeTo(nav, to) {
+  return (e) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (e.button && e.button !== 0)) return;
+    e.preventDefault();
+    nav(to);
+  };
+}
+
+// The routed content lives in the app shell's <main> landmark. We resolve it at
+// click time and make it programmatically focusable so the skip link moves both
+// focus and scroll there — a page-level focus reset that assistive tech follows.
+function skipToContent(e) {
+  e.preventDefault();
+  const main = document.querySelector('main');
+  if (!main) return;
+  if (!main.id) main.id = 'main-content';
+  main.setAttribute('tabindex', '-1');
+  main.focus();
+  main.scrollIntoView();
+}
+
 /* ---------- Repository-hub contextual action ----------
    One consistent escape hatch wherever a repository is being selected:
    "Add or manage repositories" carries a ?return= parameter so the hub can
@@ -66,9 +92,11 @@ export function PreviewFrame({ html, title = 'Document preview' }) {
 /* ---------- Contextual help link: one per screen, topic = /help/<id> ---------- */
 export function HelpLink({ topic, style = {} }) {
   const nav = useNavigate();
+  const to = '/help/' + topic;
   return (
     <a
-      onClick={() => nav('/help/' + topic)}
+      href={to}
+      onClick={routeTo(nav, to)}
       title="Open the help article for this page"
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', ...style }}
     >
@@ -186,44 +214,56 @@ export function TopBar() {
   const path = '/' + (loc.pathname.split('/')[1] || '');
   const idx = STEPS.indexOf(path);
   const marketing = ['/pricing', '/docs'];
+  const home = user ? '/source' : '/';
   return (
     <header className="topbar">
+      {/* First tabbable element on every page: lets keyboard and screen-reader
+          users jump past the nav straight to the routed content. */}
+      <a href="#main-content" className="skip-link" onClick={skipToContent}>Skip to content</a>
       {/* Logged-in users belong in their workflow — the logo takes them to
           the Source step (the post-login home), never back to the marketing
-          landing page. */}
-      <span className="logo" onClick={() => nav(user ? '/source' : '/')}>
+          landing page. role=link + key handling because it is not an anchor. */}
+      <span className="logo" role="link" tabIndex={0}
+        onClick={() => nav(home)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(home); } }}>
         <LogoMark size={22} />
         <span className="logotext">Doc<span className="logogen">ify</span></span>
       </span>
-      <nav className="topnav">
+      <nav className="topnav" aria-label="Primary">
         {marketing.map((m) => (
-          <a key={m} className={path === m ? 'on' : ''} onClick={() => nav(m)}>
+          <a key={m} href={m} className={path === m ? 'on' : ''}
+            aria-current={path === m ? 'page' : undefined} onClick={routeTo(nav, m)}>
             {m.slice(1).charAt(0).toUpperCase() + m.slice(2)}
           </a>
         ))}
         {user && (
-          <a className={path === '/automation' ? 'on' : ''} onClick={() => nav('/automation')}>
+          <a href="/automation" className={path === '/automation' ? 'on' : ''}
+            aria-current={path === '/automation' ? 'page' : undefined} onClick={routeTo(nav, '/automation')}>
             Automation
           </a>
         )}
         {user && (
-          <a className={path === '/sync' ? 'on' : ''} onClick={() => nav('/sync')}>
+          <a href="/sync" className={path === '/sync' ? 'on' : ''}
+            aria-current={path === '/sync' ? 'page' : undefined} onClick={routeTo(nav, '/sync')}>
             Doc sync
           </a>
         )}
         {user && (
-          <a className={path === '/repos' ? 'on' : ''} onClick={() => nav('/repos')}>
+          <a href="/repos" className={path === '/repos' ? 'on' : ''}
+            aria-current={path === '/repos' ? 'page' : undefined} onClick={routeTo(nav, '/repos')}>
             Repositories
           </a>
         )}
         {user && (
-          <a className={path === '/standardize' ? 'on' : ''} onClick={() => nav('/standardize')}>
+          <a href="/standardize" className={path === '/standardize' ? 'on' : ''}
+            aria-current={path === '/standardize' ? 'page' : undefined} onClick={routeTo(nav, '/standardize')}>
             Standardize
           </a>
         )}
         {user && (
-          <a className={path === '/history' ? 'on' : ''} onClick={() => nav('/history')}>
-            Documents<span className="navnew">●</span>
+          <a href="/history" className={path === '/history' ? 'on' : ''}
+            aria-current={path === '/history' ? 'page' : undefined} onClick={routeTo(nav, '/history')}>
+            Documents<span className="navnew" aria-hidden="true">●</span>
           </a>
         )}
       </nav>
@@ -319,7 +359,7 @@ export function NavBar({ back, backLabel = 'Back', next, nextLabel = 'Continue',
 }
 
 /* ---------- Modal ---------- */
-export function Modal({ open, onClose, children }) {
+export function Modal({ open, onClose, children, label }) {
   const panel = useRef(null);
   const restoreTo = useRef(null);
   // Escape closes, focus moves into the dialog and stays there while it is
@@ -354,7 +394,7 @@ export function Modal({ open, onClose, children }) {
   if (!open) return null;
   return (
     <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" role="dialog" aria-modal="true" ref={panel}>{children}</div>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={label} ref={panel}>{children}</div>
     </div>
   );
 }

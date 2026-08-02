@@ -169,9 +169,13 @@ export default function ExportPage() {
           <div className="tile tile--white" style={{ padding: 24 }}>
             <h2 className="h02 mb5">Downloads</h2>
             <div className="stack">
+              <p className="label01 t2" style={{ margin: 0 }}>
+                The document{fixedCount > 0 ? ' — with every applied fix already in it' : ''}
+              </p>
               <button className="btn btn--primary" style={{ width: '100%' }} onClick={() => dl('doc')}>
                 Download {fmtDefn ? fmtDefn.name : gen.format.toUpperCase()}<span className="ico">↓</span>
               </button>
+              <p className="label01 t2" style={{ margin: '10px 0 0' }}>A report on this document&apos;s quality</p>
               <div className="qr-split" onKeyDown={(e) => { if (e.key === 'Escape') { setMenuOpen(false); setCfgOpen(false); } }}>
                 <button className="btn btn--tertiary qr-split-main" disabled={!report || !!busyFmt}
                   aria-haspopup="menu" aria-expanded={menuOpen}

@@ -31,20 +31,52 @@ function useSmoothProgress(backendPct, running, done) {
   return disp;
 }
 
-/* Rough time-remaining from observed real-progress velocity. Returns null when
-   there isn't enough signal (e.g. mid a long stage) rather than a wrong number. */
-function useEta(realPct, running, done) {
-  const start = useRef(null);
+/* A once-a-second clock, so elapsed time is live without the poll driving it. */
+function useNow(active) {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!running) { start.current = null; return; }
-    if (start.current == null && realPct > 0) start.current = { t: Date.now(), p: realPct };
-  }, [running, realPct]);
-  if (done || !running || !start.current) return null;
-  const dt = (Date.now() - start.current.t) / 1000;
-  const dp = realPct - start.current.p;
-  if (dt < 1.5 || dp < 2) return null;
-  const remain = (100 - realPct) / (dp / dt);
-  return remain > 2 && remain < 900 ? Math.round(remain) : null;
+    if (!active) return undefined;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
+}
+
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + 's';
+  return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+}
+
+/* Elapsed wall-clock for the whole run and for the stage currently executing.
+   Both are measured, not estimated.
+
+   There is deliberately NO "time remaining" here. The backend moves the
+   percentage at real work boundaries, and one of those stages (writing the
+   sections) is a model call that dominates the run — so any rate extrapolated
+   from the fast stages before it produces a countdown that is confidently
+   wrong. Elapsed time is a number we can stand behind; a made-up ETA is not. */
+function useRunTiming(gen, running) {
+  const now = useNow(running);
+  const runStart = useRef(null);
+  const stageStart = useRef(null);
+  const lastStep = useRef(null);
+  const genId = gen ? gen.id : null;
+  const step = gen ? gen.step || 0 : 0;
+
+  useEffect(() => { runStart.current = null; lastStep.current = null; stageStart.current = null; }, [genId]);
+  useEffect(() => {
+    if (!running) return;
+    if (runStart.current == null) runStart.current = Date.now();
+    if (lastStep.current !== step) { lastStep.current = step; stageStart.current = Date.now(); }
+  }, [running, step]);
+
+  if (!running || runStart.current == null) return { elapsed: null, stageElapsed: null };
+  return {
+    elapsed: now - runStart.current,
+    stageElapsed: stageStart.current == null ? null : now - stageStart.current
+  };
 }
 
 /* ---------- Source-view syntax highlighting (escape first, then wrap) ---------- */
@@ -110,6 +142,64 @@ export function buildChips(gen) {
   return { chips, accent: oc.accentColor && oc.accentColor !== '#0f62fe' ? oc.accentColor : null };
 }
 
+/* ---------- What this run actually produced ----------
+   Everything here is read back from the generation the server returned:
+   `output.scopeWarning` is the pipeline's own explanation (files excluded by
+   scope, an empty branch, a branch fallback), and `grounded` is true only when
+   the run produced AI-written sections rather than blueprint structure.
+   Nothing is inferred — if the server recorded no reason, we say that instead
+   of guessing one. */
+function RunOutcome({ gen }) {
+  const warn = ((gen.output || {}).scopeWarning || '').trim();
+  const grounded = gen.grounded !== false;
+  const isRepo = typeof gen.repo === 'string' && gen.repo.includes('/');
+  const mono = { overflowWrap: 'anywhere' };
+
+  if (grounded && !warn) {
+    return (
+      <p className="helper mt5" style={{ overflowWrap: 'anywhere' }}>
+        Source-grounded — the sections below were written from your source material, not from the
+        document blueprint.
+        {isRepo ? <> Read from <span className="mono" style={mono}>{gen.repo}</span>
+          {gen.branch ? <> on branch <span className="mono" style={mono}>{gen.branch}</span></> : null}.</> : null}
+      </p>
+    );
+  }
+
+  const heading = grounded
+    ? 'One thing to know about this run'
+    : 'This document shows the blueprint structure, not your source content';
+
+  return (
+    <div className="mt5" role="note" style={{
+      background: '#fff8e1', border: '1px solid #f1c21b', borderLeft: '3px solid #f1c21b',
+      padding: '12px 16px', fontSize: 13, lineHeight: 1.55, overflowWrap: 'anywhere'
+    }}>
+      <strong>{heading}</strong>
+      {warn ? <p className="mt2" style={{ margin: '6px 0 0' }}>{warn}</p> : null}
+      {!grounded && !warn && (
+        <p className="mt2" style={{ margin: '6px 0 0' }}>
+          No AI-written sections were produced for this run, so what you see below is the standardized
+          structure for this document type rather than content from your sources. The server did not
+          record a reason for this run.
+        </p>
+      )}
+      {!grounded && warn && (
+        <p className="mt2" style={{ margin: '6px 0 0' }}>
+          Because of this, the document below is the standardized structure for this document type
+          rather than content from your sources.
+        </p>
+      )}
+      {isRepo && (
+        <p className="helper mt2" style={{ margin: '6px 0 0' }}>
+          Branch read: <span className="mono" style={mono}>{gen.branch || 'default'}</span> ·
+          repository <span className="mono" style={mono}>{gen.repo}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Generate() {
   const nav = useNavigate();
   const { flow } = useFlow();
@@ -166,11 +256,11 @@ export default function Generate() {
   const gRunning = gen ? (gen.status === 'running' || gen.status === 'queued') && !pollErr : !pollErr;
   const gDone = gen ? gen.status === 'complete' : false;
   const displayPct = useSmoothProgress(gen ? (gen.progress || 0) : 0, gRunning, gDone);
-  const eta = useEta(gen ? (gen.progress || 0) : 0, gRunning, gDone);
+  const { elapsed, stageElapsed } = useRunTiming(gen, gRunning);
 
   if (!gen) {
     return (
-      <div className="page">
+      <div className="page" aria-live="polite">
         {pollErr ? (
           <div className="genfail">
             <b>Could not load this generation.</b> <span>{pollErr}</span>
@@ -178,7 +268,18 @@ export default function Generate() {
               onClick={() => setResume((n) => n + 1)}>Try again</button>
             <button className="btn btn--tertiary btn--sm btn--center" onClick={() => nav('/format')}>← Back</button>
           </div>
-        ) : <p className="body01 t2">Loading…</p>}
+        ) : (
+          <>
+            <h1 className="h04">Generating your document</h1>
+            <p className="body01 t2 mt3">Loading this run…</p>
+            <div className="tile tile--white mt6" style={{ padding: 24 }} aria-hidden="true">
+              <div className="genprev-skel" style={{ padding: 0 }}>
+                <div className="skel w60" style={{ height: 18 }} />
+                <div className="skel w90" /><div className="skel w80" /><div className="skel" />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -188,6 +289,15 @@ export default function Generate() {
   const running = gen.status === 'running' || gen.status === 'queued';
   const steps = gen.steps || [];
   const activeStep = gen.step || 0;
+  const stageLabel = done ? 'Generation complete' : (steps[activeStep] || gen.stage || 'Starting…');
+  // The pipeline moves the percentage at real work boundaries, so a stage can
+  // legitimately sit still for a while. Saying how long it has been there is
+  // measured reassurance; it is not a prediction of when it will end.
+  const slowStage = running && !pollErr && stageElapsed != null && stageElapsed > 25000;
+  // A run that failed before writing any content had its reserved document
+  // handed back by the server (releaseDocumentQuota); one that failed after
+  // delivering content did not, so only claim the refund when it applies.
+  const refunded = failed && !gen.content;
 
   return (
     <>
@@ -196,25 +306,41 @@ export default function Generate() {
           <h1 className="h04">Generating {done && gen.title ? gen.title.toLowerCase() : 'your document'}</h1>
           <HelpLink topic="generate" />
         </div>
-        <p className="body01 t2 mt3">
-          From <span className="mono">{gen.repo}</span> → {(gen.formats && gen.formats.length ? gen.formats : [gen.format]).map((f) => f.toUpperCase()).join(' · ')}
+        <p className="body01 t2 mt3" style={{ overflowWrap: 'anywhere' }}>
+          From <span className="mono">{gen.repo}</span>
+          {gen.branch && String(gen.repo || '').includes('/') ? <> @ <span className="mono">{gen.branch}</span></> : null}
+          {' → '}{(gen.formats && gen.formats.length ? gen.formats : [gen.format]).map((f) => f.toUpperCase()).join(' · ')}
           {gen.docTypes.length > 1 ? ' · ' + gen.docTypes.length + ' documents, each previewed separately' : ''}
         </p>
 
         {!failed && (
-          <div className="genprog mt6" role="progressbar" aria-valuenow={Math.round(displayPct)} aria-valuemin={0} aria-valuemax={100} aria-label="Generation progress">
+          <div className="genprog mt6">
             <div className="genprog-head">
-              <span className="genprog-title">{done ? 'Generation complete' : (steps[activeStep] || gen.stage || 'Starting…')} <b>{Math.round(displayPct)}%</b></span>
-              <span className="genprog-meta">
-                {done ? 'All stages finished'
-                  : <>Step {Math.min(activeStep + 1, steps.length)} of {steps.length}{gen.stageDetail ? ' · ' + gen.stageDetail : ''}{eta ? ' · ~' + eta + 's left' : ''}</>}
+              <span className="genprog-title" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                {stageLabel} <b>{Math.round(displayPct)}%</b>
+              </span>
+              <span className="genprog-meta" style={{ minWidth: 0, overflowWrap: 'anywhere' }} aria-live="polite">
+                {done ? 'All ' + steps.length + ' stages finished'
+                  : <>Step {Math.min(activeStep + 1, steps.length)} of {steps.length}
+                    {gen.stageDetail ? ' · ' + gen.stageDetail : ''}
+                    {elapsed != null ? ' · ' + fmtDuration(elapsed) + ' elapsed' : ''}</>}
               </span>
             </div>
-            <div className="genprog-track"><div className={'genprog-fill' + (done ? ' is-done' : '')} style={{ width: displayPct + '%' }} /></div>
+            <div className="genprog-track" role="progressbar" aria-valuenow={Math.round(displayPct)}
+              aria-valuemin={0} aria-valuemax={100} aria-label="Generation progress">
+              <div className={'genprog-fill' + (done ? ' is-done' : '')} style={{ width: displayPct + '%' }} />
+            </div>
+            {slowStage && (
+              <p className="helper" style={{ marginTop: 8 }}>
+                This stage has been running for {fmtDuration(stageElapsed)}. Stages advance when real work
+                finishes rather than on a timer, so a long one is normal — this page keeps updating, and
+                you can leave it and reopen the document later from Documents.
+              </p>
+            )}
           </div>
         )}
         {pollErr && !failed && !done && (
-          <div className="genfail mt6">
+          <div className="genfail mt6" role="alert">
             <b>Progress updates stopped.</b>
             <span>{pollErr} — the run may still be finishing on the server, but this page is no longer being updated.</span>
             <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
@@ -222,11 +348,33 @@ export default function Generate() {
           </div>
         )}
         {failed && (
-          <div className="genfail mt6">
-            <b>Generation failed.</b> <span>{gen.stageDetail || 'Something went wrong during generation.'}</span>
-            <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }} onClick={() => nav('/format')}>← Back &amp; retry</button>
+          <div className="tile tile--white mt6" role="alert"
+            style={{ padding: 24, borderLeft: '3px solid var(--support-error)', overflowWrap: 'anywhere' }}>
+            <h2 className="h02">Generation failed</h2>
+            <p className="body01 mt3">{gen.stageDetail || 'The server did not record a reason for this failure.'}</p>
+            <p className="helper mt3">
+              Failed at step {Math.min(activeStep + 1, steps.length || 1)} of {steps.length || 1}
+              {steps[activeStep] ? ' · ' + steps[activeStep] : ''}
+              {elapsed != null ? ' · after ' + fmtDuration(elapsed) : ''}
+            </p>
+            {refunded && (
+              <p className="helper mt2">
+                Nothing was delivered, so the document reserved for this run was returned to your monthly
+                allowance.
+              </p>
+            )}
+            <div className="row mt5" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn--primary btn--center" onClick={() => nav('/format')}>
+                Change the options and run it again<span className="ico">→</span>
+              </button>
+              <button className="btn btn--tertiary btn--center" onClick={() => setResume((n) => n + 1)}>
+                Check the status again
+              </button>
+              <button className="btn btn--ghost btn--center" onClick={() => nav('/history')}>Open Documents</button>
+            </div>
           </div>
         )}
+        {done && <RunOutcome gen={gen} />}
 
         <div className="genlayout mt7">
           <div className="tile tile--white" style={{ padding: 24, alignSelf: 'start' }}>
@@ -239,7 +387,7 @@ export default function Generate() {
                     <span className="sicon">
                       {state === 'done' ? <IcCheck /> : state === 'doing' ? <span className="spin" /> : <span className="dotcircle" />}
                     </span>
-                    <span className="genstep-txt">
+                    <span className="genstep-txt" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
                       {s}
                       {state === 'doing' && gen.stageDetail ? <span className="genstep-sub">{gen.stageDetail}</span> : null}
                     </span>
@@ -269,18 +417,32 @@ export default function Generate() {
               </>
             ) : (
               <div className="tile tile--white genprev">
-                <div className="genprev-head">
+                <div className="genprev-head" style={{ flexWrap: 'wrap', gap: 8 }}>
                   <h2 className="h02" style={{ margin: 0 }}>Preview</h2>
-                  {!failed && !pollErr && <span className="genprev-live"><span className="genprev-dot" /> building live</span>}
+                  {/* The dot tracks the run, not the preview: the document is
+                      rendered once at the end, so calling this a live build
+                      would describe something that is not happening. */}
+                  {running && !pollErr && <span className="genprev-live"><span className="genprev-dot" /> run in progress</span>}
                 </div>
                 {gen.preview ? (
-                  <div className="genprev-frame"><PreviewFrame html={gen.preview} title="Live preview" /></div>
+                  <>
+                    <p className="helper" style={{ padding: '10px 20px 0' }}>
+                      The previous version of this document. It is replaced when this run finishes.
+                    </p>
+                    <div className="genprev-frame"><PreviewFrame html={gen.preview} title="Previous version of this document" /></div>
+                  </>
                 ) : (
-                  <div className="genprev-skel" aria-hidden="true">
-                    <div className="skel w60" style={{ height: 18 }} />
-                    <div className="skel w90" /><div className="skel w80" /><div className="skel" />
-                    <div className="skel w90" style={{ marginTop: 22 }} /><div className="skel w60" /><div className="skel w80" />
-                  </div>
+                  <>
+                    <p className="helper" style={{ padding: '10px 20px 0' }}>
+                      {failed ? 'This run produced no document.'
+                        : 'The document is rendered once the sections are written — it appears here at the “Preparing preview” stage.'}
+                    </p>
+                    <div className="genprev-skel" aria-hidden="true">
+                      <div className="skel w60" style={{ height: 18 }} />
+                      <div className="skel w90" /><div className="skel w80" /><div className="skel" />
+                      <div className="skel w90" style={{ marginTop: 22 }} /><div className="skel w60" /><div className="skel w80" />
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -319,6 +481,20 @@ function FormatPreview({ gen, out, view }) {
       <div className="tile mt5" style={{ padding: 24, borderLeft: '3px solid var(--support-error)' }}>
         <p className="h01">{out.name} preview failed</p>
         <p className="body01 t2 mt2">{out.error} — every other output is unaffected. Regenerate to retry this one.</p>
+      </div>
+    );
+  }
+  // The server withholds the text of a format the plan does not include, so
+  // the cell exists but is empty. Say why, rather than showing "Preparing…"
+  // for something that will never arrive.
+  if (out.locked) {
+    return (
+      <div className="tile mt5" style={{ padding: 24, borderLeft: '3px solid var(--support-warning)' }}>
+        <p className="h01">{out.name} is not included in your plan</p>
+        <p className="body01 t2 mt2">
+          This document was generated, but {out.name} output is a paid export format — its content is not
+          sent to the browser and it cannot be downloaded on your current plan.
+        </p>
       </div>
     );
   }
@@ -406,8 +582,8 @@ function Preview({ gen }) {
   async function dlActive() {
     setDl(true);
     try {
-      await download('/generations/' + gen.id + '/download?fmt=' + activeFmt + '&doc=' + activeDoc);
-      toast('success', 'Download started', out.title + ' · ' + out.name);
+      const name = await download('/generations/' + gen.id + '/download?fmt=' + activeFmt + '&doc=' + activeDoc);
+      toast('success', 'Download started', name || (out.title + ' · ' + out.name));
     } catch (e) { toast('error', 'Download failed', e.message); }
     finally { setDl(false); }
   }
@@ -415,25 +591,44 @@ function Preview({ gen }) {
   const cellErr = (d, f) => (outputs[d + '::' + f] || {}).error;
   const docHasError = (d) => formats.some((f) => cellErr(d, f));
 
+  // Left/Right move between tabs, Home/End jump to the ends — the pattern a
+  // screen-reader user expects from role="tablist", and the only way to reach
+  // the other previews without a mouse in a compact viewport.
+  const tabKeys = (list, current, set) => (e) => {
+    const i = list.indexOf(current);
+    let n = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') n = (i + 1) % list.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') n = (i - 1 + list.length) % list.length;
+    else if (e.key === 'Home') n = 0;
+    else if (e.key === 'End') n = list.length - 1;
+    if (n == null) return;
+    e.preventDefault();
+    set(list[n]);
+    const el = e.currentTarget.querySelectorAll('[role="tab"]')[n];
+    if (el) el.focus();
+  };
+
   return (
-    <div>
+    <div style={{ minWidth: 0 }}>
       <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
         <h2 className="h02">Preview</h2>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <div className="seg" style={{ width: 220 }}>
-            <button className={view === 'rendered' ? 'on' : ''} onClick={() => setView('rendered')}>Rendered</button>
-            <button className={view === 'source' ? 'on' : ''} onClick={() => setView('source')}>Source</button>
+          <div className="seg" style={{ width: 220, maxWidth: '100%' }} role="group" aria-label="Preview mode">
+            <button aria-pressed={view === 'rendered'} className={view === 'rendered' ? 'on' : ''} onClick={() => setView('rendered')}>Rendered</button>
+            <button aria-pressed={view === 'source'} className={view === 'source' ? 'on' : ''} onClick={() => setView('source')}>Source</button>
           </div>
-          <button className="btn btn--ghost" disabled={dl || !!out.error} onClick={dlActive}>
-            {dl ? 'Preparing…' : 'Download ' + out.name}
+          <button className="btn btn--ghost" disabled={dl || !!out.error || !!out.locked} onClick={dlActive}>
+            {dl ? 'Preparing…' : out.locked ? out.name + ' not in your plan' : 'Download ' + out.name + (out.ext || '')}
           </button>
         </div>
       </div>
 
       {docTypes.length > 1 && (
-        <div className="prevtabs prevtabs--doc mt4" role="tablist" aria-label="Document previews">
+        <div className="prevtabs prevtabs--doc mt4" role="tablist" aria-label="Document previews"
+          onKeyDown={tabKeys(docTypes, activeDoc, setDoc)}>
           {docTypes.map((d) => (
-            <button key={d} role="tab" aria-selected={d === activeDoc}
+            <button key={d} role="tab" aria-selected={d === activeDoc} tabIndex={d === activeDoc ? 0 : -1}
+              aria-controls="preview-panel"
               className={'prevtab' + (d === activeDoc ? ' on' : '') + (docHasError(d) ? ' err' : '')}
               onClick={() => setDoc(d)}>
               {names[d] || d}{docHasError(d) ? ' ⚠' : ''}
@@ -443,29 +638,26 @@ function Preview({ gen }) {
       )}
 
       {formats.length > 1 && (
-        <div className="prevtabs prevtabs--fmt mt3" role="tablist" aria-label="Output format previews">
-          {formats.map((f) => (
-            <button key={f} role="tab" aria-selected={f === activeFmt}
-              className={'prevtab prevtab--sm' + (f === activeFmt ? ' on' : '') + (cellErr(activeDoc, f) ? ' err' : '')}
-              onClick={() => setFmt(f)}>
-              {(outputs[activeDoc + '::' + f] || {}).name || f.toUpperCase()}{cellErr(activeDoc, f) ? ' ⚠' : ''}
-            </button>
-          ))}
+        <div className="prevtabs prevtabs--fmt mt3" role="tablist" aria-label="Output format previews"
+          onKeyDown={tabKeys(formats, activeFmt, setFmt)}>
+          {formats.map((f) => {
+            const cell = outputs[activeDoc + '::' + f] || {};
+            return (
+              <button key={f} role="tab" aria-selected={f === activeFmt} tabIndex={f === activeFmt ? 0 : -1}
+                aria-controls="preview-panel"
+                className={'prevtab prevtab--sm' + (f === activeFmt ? ' on' : '') + (cell.error ? ' err' : '')}
+                onClick={() => setFmt(f)}>
+                {cell.name || f.toUpperCase()}{cell.error ? ' ⚠' : cell.locked ? ' 🔒' : ''}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      <p className="helper mt3">
+      <p className="helper mt3" style={{ overflowWrap: 'anywhere' }}>
         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{out.title || names[activeDoc]}</span>
-        {' · '}{out.name} output
+        {' · '}{out.name} output{out.ext ? ' (' + out.ext + ')' : ''}
       </p>
-
-      {gen.grounded === false && (
-        <div className="mt3" style={{ background: '#fff8e1', border: '1px solid #f1c21b', borderLeft: '3px solid #f1c21b', padding: '10px 14px', fontSize: 13, lineHeight: 1.5 }}>
-          <strong>Sample structure shown.</strong> AI grounding was not active for this run, so the content
-          below demonstrates the document structure rather than your repository&rsquo;s actual code.
-          Repository-grounded generation activates automatically when AI generation is enabled on the server.
-        </div>
-      )}
 
       <div className="row mt2" style={{ flexWrap: 'wrap', gap: 6 }}>
         {chips.map((c, i) => <span key={c.label + i} className={'tag ' + c.cls}>{c.label}</span>)}
@@ -477,7 +669,9 @@ function Preview({ gen }) {
       </div>
 
       {/* key forces a clean remount per cell — no state reuse across tabs */}
-      <FormatPreview key={key + ':' + view} gen={gen} out={out} view={view} />
+      <div id="preview-panel" role="tabpanel" tabIndex={-1} aria-label={(out.title || 'Document') + ' — ' + out.name} style={{ minWidth: 0 }}>
+        <FormatPreview key={key + ':' + view} gen={gen} out={out} view={view} />
+      </div>
     </div>
   );
 }

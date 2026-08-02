@@ -22,7 +22,7 @@ import { verifyNotion, listNotion, verifyNotionItem } from './adapters/notion.js
 import { inspectSpec } from './adapters/openapi.js';
 import { generateDocument, generateDocumentSmart, judge, aiScore, scoreReport, FIX_DIFFS, renderQualityReport, renderMarkdownPreview, FRAMEWORK } from './adapters/llm.js';
 import { buildReportModel, renderReportHtml, renderReportPdf, renderReportPptx, traceableReportName } from './adapters/report.js';
-import { fetchRepoFiles, fetchRepoFilesResolved } from './adapters/repofiles.js';
+import { fetchRepoFilesResolved } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge, paymentsLive } from './adapters/stripe.js';
 import { sendMail, mailEnabled } from './adapters/mailer.js';
@@ -487,7 +487,14 @@ const aiLimit = rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMI
 // counting those against a 20/min model budget would 429 the user in the
 // middle of the run they just paid for.
 const aiSpendLimit = (req, res, next) => (req.method === 'GET' ? next() : aiLimit(req, res, next));
-apiRouter.use('/generations', aiSpendLimit);
+// The pre-generation check spends nothing on the model, but it does fan out to
+// the code host, so it gets its own budget instead of eating the AI one:
+// counting an advisory check against the model allowance would 429 the customer
+// out of the very generation the check exists to protect.
+const preflightLimit = rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_PREFLIGHT || 30), keyBy: 'user' });
+apiRouter.use('/generations', (req, res, next) => (
+  /^\/preflight\/?$/i.test(req.path) ? preflightLimit(req, res, next) : aiSpendLimit(req, res, next)
+));
 apiRouter.use('/sync/rewrite', aiSpendLimit);
 apiRouter.use('/sync/documents', (req, res, next) => (
   // Trailing slashes and case are normalised first: Express runs with strict
@@ -978,8 +985,15 @@ function renderPreviewFor(g, docType, fmt) {
 
 function serializeGen(g, opts = {}) {
   const formats = genFormats(g);
+  const oc = j(g.output, {});
   const base = {
     grounded: j(g.aiDocs, []).length > 0, // real AI content vs template structure
+    // What actually grounded the run (file counts, real branch), written by the
+    // pipeline. Null for rows generated before this was recorded — the UI must
+    // show nothing rather than invent a count.
+    grounding: (oc.grounding && typeof oc.grounding === 'object') ? oc.grounding : null,
+    // The pipeline's own explanation when a document came out thin.
+    scopeWarning: oc.scopeWarning || '',
     id: g.id, repo: g.repo, branch: g.branch, track: g.track,
     docTypes: j(g.docTypes, []), format: g.format, formats, instructions: g.instructions,
     files: j(g.files, []), skillName: g.skillName || '',
@@ -1088,6 +1102,104 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 // model bills for one document.
 const activeRuns = new Set();
 
+/* ONE resolution path for "what would the AI actually see".
+   The pipeline runs it for real; POST /generations/preflight runs it to warn
+   the customer BEFORE a document is spent. Sharing it is the only way the
+   warning and the finished document can be guaranteed to agree.
+
+   Never throws — every failure is reported in the returned shape, because both
+   callers must degrade rather than abort. */
+async function resolveGenerationScope({ userId, provider, repo, branch, ruleSetId = '' }) {
+  const requested = branch || 'main';
+  const out = {
+    repo: String(repo || ''), requestedBranch: requested, branch: requested, usedFallback: false,
+    // readCount is what the provider returned BEFORE the customer's scope rules;
+    // files is what survives them. The difference is the whole point of the check.
+    files: [], readCount: 0, listed: 0, coverage: null, note: '', error: '',
+    scopeApplied: false, scopeFailed: false, userScoped: false,
+    instructions: '', audience: ''
+  };
+  if (!repo || !String(repo).includes('/')) return out;
+  // Authenticated via a connected Source token when possible, unauthenticated
+  // for public repositories otherwise.
+  let token = '';
+  try {
+    const src = await prisma.source.findFirst({ where: { userId, provider } });
+    if (src && src.token) token = await freshToken(src);
+  } catch { /* public-repo fallback */ }
+  let got;
+  try {
+    got = await fetchRepoFilesResolved(provider, repo, requested, token);
+  } catch (e) {
+    out.error = (e && e.message) || 'source could not be read';
+    return out;
+  }
+  out.branch = got.branch || requested;
+  out.usedFallback = !!got.usedFallback;
+  out.listed = got.listed || 0;
+  out.coverage = got.coverage || null;
+  out.note = got.note || '';
+  out.error = got.error || '';
+  out.files = got.files || [];
+  out.readCount = out.files.length;
+  if (!out.readCount) return out;
+  // An exclusion the customer wrote is a security boundary, not a hint — so
+  // scoping only ever REMOVES files. If the rules cannot be resolved at all the
+  // safe answer is to send nothing rather than guess.
+  try {
+    const eff = await resolveEffectiveConfig(userId, provider, repo, out.branch, { ruleSetId: String(ruleSetId || '') });
+    out.files = out.files.filter((f) => passesScan(f.path, eff.config));
+    out.scopeApplied = true;
+    out.instructions = eff.instructions || '';
+    out.audience = (eff.config.product && eff.config.product.audience) || '';
+    // Whether the customer actually WROTE a scope. Docify's own default
+    // excludes (lockfiles, node_modules, dist, vendor) can empty the list
+    // unaided, and telling someone to widen rules they never wrote sends them
+    // hunting for a file that does not exist.
+    out.userScoped = Boolean(eff.ruleSet) || Boolean(eff.sources && (eff.sources.yaml || eff.sources.ignoreFile));
+  } catch (e) {
+    console.error('effective-config resolution failed, scoping to no files:', e.message);
+    out.files = [];
+    out.scopeFailed = true;
+  }
+  return out;
+}
+
+// Why a scope filter emptied the file list. One explanation, worded for when it
+// is said — preflight warns before the run, the pipeline records it after — but
+// both are built from the same resolved facts, so they cannot disagree.
+function scopeEmptyReason(scope, tense = 'past') {
+  const reach = tense === 'future' ? 'none would be sent to the AI' : 'none were sent to the AI';
+  return scope.userScoped
+    ? 'All ' + scope.readCount + ' files read from ' + scope.repo +
+      ' are excluded by your documentation scope — ' + reach +
+      '. Widen docify.yaml, .docifyignore, or the assigned rule set to include source files.'
+    : 'All ' + scope.readCount + ' files read from ' + scope.repo +
+      ' are lockfiles, dependencies, or build output, which Docify never sends to the AI. Point it at a branch containing source code.';
+}
+
+// The requested branch held no readable source. Same two facts either way.
+function branchFallbackReason(scope, tense = 'past') {
+  return 'Branch "' + scope.requestedBranch + '" had no readable source, so Docify ' +
+    (tense === 'future' ? 'would document' : 'documented') + ' "' + scope.branch +
+    '" — this repository\'s default branch.';
+}
+
+// Non-repository source material selected in the wizard, read from the SAME
+// output keys the pipeline reads. Counting them is what separates "this
+// document would be template-only" from "this document is grounded in Jira".
+function connectorSelection(output = {}) {
+  const list = (k) => (Array.isArray(output[k]) ? output[k] : []);
+  const sel = {
+    jiraIssues: list('jiraIssues').length,
+    openapiSpecs: list('openapiSpecs').length,
+    notionPages: list('notionPages').length,
+    confluencePages: list('confluencePages').length
+  };
+  sel.total = sel.jiraIssues + sel.openapiSpecs + sel.notionPages + sel.confluencePages;
+  return sel;
+}
+
 async function runPipeline(genId) {
   if (activeRuns.has(genId)) return;
   activeRuns.add(genId);
@@ -1124,76 +1236,46 @@ async function runPipelineOnce(genId) {
     };
     const setPreview = async (html) => { try { await prisma.generation.update({ where: { id: genId }, data: { preview: String(html).slice(0, 400000) } }); } catch { /* ignore */ } };
     await mark('parse');
-    // Real repository content when available: authenticated via a connected
-    // Source token when possible, unauthenticated for public repos otherwise.
-    let srcToken = '';
-    try {
-      const src = await prisma.source.findFirst({ where: { userId: gen.userId, provider: gen.provider } });
-      if (src && src.token) srcToken = await freshToken(src);
-    } catch { /* public-repo fallback */ }
-    // Jira-only generations have no repository — an empty file set is valid
-    // as long as Jira issue bundles (below) provide the source material.
-    let repoFiles = [];
-    // The branch that actually produced files — not necessarily the one asked
+    // Real repository content when available, resolved through the SAME helper
+    // POST /generations/preflight uses: branch → file list → the customer's
+    // scope rules. Jira-only generations have no repository — an empty file set
+    // is valid as long as the connector bundles (below) provide source material.
+    //
+    // The branch that actually produced files is not necessarily the one asked
     // for. Everything downstream (scope rules, docify.yaml lookup, the stored
     // record) must use the REAL branch, or a repo whose trunk is "master"
     // silently documents nothing while still consuming quota.
-    let usedBranch = gen.branch;
+    const scope = await resolveGenerationScope({
+      userId: gen.userId, provider: gen.provider, repo: gen.repo, branch: gen.branch,
+      ruleSetId: String(j(gen.output, {}).ruleSetId || '')
+    });
+    const usedBranch = scope.branch;
     let branchNote = '';
-    try {
-      const got = await fetchRepoFilesResolved(gen.provider, gen.repo, gen.branch, srcToken);
-      repoFiles = got.files;
-      usedBranch = got.branch || gen.branch;
-      if (got.usedFallback) {
-        branchNote = 'Branch "' + got.requestedBranch + '" had no readable source, so Docify documented "' + got.branch + '" — this repository\'s default branch.';
-        console.warn('[branch] ' + gen.repo + ': ' + branchNote);
-      }
-    } catch (e) { console.error('repo fetch skipped (' + gen.repo + '):', e.message); }
+    if (scope.usedFallback) {
+      branchNote = branchFallbackReason(scope, 'past');
+      console.warn('[branch] ' + gen.repo + ': ' + branchNote);
+    }
+    if (scope.error) console.error('repo fetch skipped (' + gen.repo + '): ' + scope.error);
     if (usedBranch !== gen.branch) {
       await prisma.generation.update({ where: { id: genId }, data: { branch: usedBranch } }).catch(() => {});
     }
-    await mark('extract', repoFiles.length ? repoFiles.length + ' files read from ' + usedBranch : 'reading source');
+    await mark('extract', scope.readCount ? scope.readCount + ' files read from ' + usedBranch : 'reading source');
     // Unified rules engine: the same rule sets + docify.yaml that govern
     // automation and Doc sync also scope NORMAL generation — files outside the
     // configured scan scope never reach the AI, and rule-set instructions /
-    // audience travel with the prompt.
-    //
-    // An exclusion the customer wrote is a security boundary, not a hint —
-    // so scoping only ever REMOVES files. It must never fall back to sending
-    // the excluded ones, and if the rules cannot be resolved at all the safe
-    // answer is to send nothing rather than guess. Ending up with no files is
-    // the same situation as a repository that could not be fetched, which the
-    // pipeline already handles, so this degrades rather than hard-failing a
-    // run that would otherwise succeed.
-    let effInstructions = '';
-    let effAudience = '';
-    let scopedFiles = repoFiles;
+    // audience travel with the prompt. Ending up with no files is the same
+    // situation as a repository that could not be fetched, which the pipeline
+    // already handles, so this degrades rather than hard-failing a run that
+    // would otherwise succeed.
+    const effInstructions = scope.instructions;
+    const effAudience = scope.audience;
+    let scopedFiles = scope.files;
     let scopeNote = '';
-    if (repoFiles.length) {
-      try {
-        const eff = await resolveEffectiveConfig(gen.userId, gen.provider, gen.repo, usedBranch,
-          { ruleSetId: String(j(gen.output, {}).ruleSetId || '') });
-        scopedFiles = repoFiles.filter((f) => passesScan(f.path, eff.config));
-        effInstructions = eff.instructions || '';
-        effAudience = (eff.config.product && eff.config.product.audience) || '';
-        if (!scopedFiles.length) {
-          // Only point at the customer's configuration when they actually
-          // wrote one. Docify's own default excludes (lockfiles, node_modules,
-          // dist, vendor) can empty the list unaided, and telling someone to
-          // widen rules they never wrote sends them hunting for a file that
-          // does not exist.
-          const userScoped = Boolean(eff.ruleSet) || (eff.sources && (eff.sources.yaml || eff.sources.ignoreFile));
-          scopeNote = userScoped
-            ? 'All ' + repoFiles.length + ' files read from ' + gen.repo +
-              ' are excluded by your documentation scope — none were sent to the AI. Widen docify.yaml, .docifyignore, or the assigned rule set to include source files.'
-            : 'All ' + repoFiles.length + ' files read from ' + gen.repo +
-              ' are lockfiles, dependencies, or build output, which Docify never sends to the AI. Point it at a branch containing source code.';
-        }
-      } catch (e) {
-        // Unknown rules means unknown exclusions: send nothing.
-        console.error('effective-config resolution failed, scoping to no files:', e.message);
-        scopedFiles = [];
+    if (scope.readCount) {
+      if (scope.scopeFailed) {
         scopeNote = 'Your documentation rules could not be read, so no repository files were sent to the AI. Please retry.';
+      } else if (!scopedFiles.length) {
+        scopeNote = scopeEmptyReason(scope, 'past');
       }
       if (scopeNote) {
         console.warn('[scope] ' + gen.repo + ': ' + scopeNote);
@@ -1217,6 +1299,10 @@ async function runPipelineOnce(genId) {
     // A silent branch switch would be its own honesty problem: tell the user
     // which branch was actually read.
     if (branchNote) scopeNote = scopeNote ? branchNote + ' ' + scopeNote : branchNote;
+    // Repository files that survived scoping, captured BEFORE the connector
+    // bundles are prepended — the stored provenance has to distinguish "12
+    // files from your repo" from "12 Jira issues".
+    const scopedRepoCount = scopedFiles.length;
     // NON-REPOSITORY sources become real source material: every selected
     // Jira issue, OpenAPI spec, Notion page, and Confluence page is fetched
     // and normalized to markdown the AI reads alongside — or instead of —
@@ -1347,8 +1433,10 @@ async function runPipelineOnce(genId) {
     // the existing row carries real AI sections from an earlier run, keep
     // them and re-render from those sections instead of degrading.
     const prevAiDocs = j(gen.aiDocs, []);
+    let keptPreviousSections = false;
     if (!(aiDocs && aiDocs.length) && prevAiDocs.length) {
       aiDocs = prevAiDocs;
+      keptPreviousSections = true;
       const kept = generateDocument({ ...genArgs, aiDocs });
       title = kept.title;
       content = kept.content;
@@ -1418,6 +1506,28 @@ async function runPipelineOnce(genId) {
       outWithPolicy.resolvedPolicy = auditPolicy;
     }
     if (styleReport) outWithPolicy.styleReport = styleReport;
+    // PROVENANCE: exactly what grounded THIS run, so the UI can describe the
+    // finished document truthfully instead of implying the whole repository
+    // was read. Every number here is counted, not estimated.
+    outWithPolicy.grounding = {
+      branch: usedBranch,
+      requestedBranch: gen.branch,
+      usedFallbackBranch: usedBranch !== gen.branch,
+      // Source items actually handed to the model, split by where they came from.
+      files: scopedFiles.length,
+      repoFiles: scopedRepoCount,
+      connectorFiles: Math.max(0, scopedFiles.length - scopedRepoCount),
+      // What the caps left behind: the fetcher reads at most 12 files, so
+      // "read 12 of 168 eligible" is the honest way to say it.
+      filesRead: (scope.coverage && scope.coverage.read) || 0,
+      filesEligible: (scope.coverage && scope.coverage.eligible) || 0,
+      coverageNote: scope.note || '',
+      // True when this run produced no AI sections and the previous run's were
+      // re-rendered instead — the counts above then describe an attempt, not
+      // the source of the text on the page.
+      keptPreviousSections,
+      at: new Date().toISOString()
+    };
     // IMPORT HISTORY: when regeneration replaces existing content, the
     // outgoing document is snapshotted as a version first — nothing is ever
     // silently lost — and the approval state resets: a changed document is a
@@ -1501,7 +1611,10 @@ async function recoverStuckGenerations() {
         createdAt: { lt: new Date(Date.now() - 60000) }
       },
       orderBy: { createdAt: 'desc' },
-      take: 10
+      take: 10,
+      // Only the id is used. Without this the sweep pulls ten full documents
+      // (content + preview + aiDocs) out of the database every five minutes.
+      select: { id: true }
     });
     const resumable = stuck.filter((g) => !activeRuns.has(g.id));
     if (resumable.length) {
@@ -1516,6 +1629,162 @@ async function recoverStuckGenerations() {
 // for. Sweeping on an interval closes that window without a scheduler.
 setTimeout(recoverStuckGenerations, 8000).unref?.();
 setInterval(recoverStuckGenerations, 5 * 60 * 1000).unref?.();
+
+/* ---------------- Pre-generation check ----------------
+   Same request body as POST /generations, but it spends nothing: no model
+   call, no quota reservation, no rows written. It runs the SAME resolution the
+   pipeline runs — real branch, real file list, the customer's own scope rules
+   — and reports what generation would actually see, so a thin result is
+   predicted BEFORE a document is spent rather than explained afterwards.
+
+   Every warning is emitted only when the underlying fact is true of THIS
+   request; nothing here is a fixed list, a guess, or a model opinion. And it is
+   advisory only: it never writes, never blocks, and any internal failure is
+   reported as "could not check" rather than as a reason not to generate. */
+
+// A spec among the sources is what makes an API reference a reference rather
+// than a description of the code that implements it. Detected from the real
+// resolved files — path first, then a content sniff — never assumed.
+const SPEC_PATH_RE = /(^|\/)(openapi|swagger)[^/]*\.(ya?ml|json)$/i;
+const SPEC_YAML_RE = /^\s*(openapi|swagger)\s*:\s*["']?\d/im;
+const SPEC_JSON_RE = /"(openapi|swagger)"\s*:\s*"\d/;
+function looksLikeSpec(f) {
+  if (SPEC_PATH_RE.test(String(f.path || ''))) return true;
+  const head = String(f.content || '').slice(0, 4000);
+  return SPEC_YAML_RE.test(head) || SPEC_JSON_RE.test(head);
+}
+
+apiRouter.post('/generations/preflight', async (req, res) => {
+  const b = req.body || {};
+  const warnings = [];
+  const warn = (id, level, title, detail) => warnings.push({ id, level, title, detail });
+  const provider = ['github', 'gitlab', 'bitbucket'].includes(b.provider) ? b.provider : 'github';
+  const repo = String(b.repo || '');
+  const track = b.track === 'marketing' ? 'marketing' : 'technical';
+  const docTypes = (Array.isArray(b.docTypes) ? b.docTypes : []).map(String).slice(0, 20);
+  const output = b.output && typeof b.output === 'object' ? b.output : {};
+  const requestedFormats = [...new Set((Array.isArray(b.formats) && b.formats.length ? b.formats : [b.format])
+    .filter(Boolean).map(String))];
+  const connectors = connectorSelection(output);
+
+  // 1 — Allowance. No network, always answerable, and the one refusal that
+  // stops the run outright at POST /generations.
+  const limit = planLimits(req.user.plan).docsPerMonth;
+  let used = null;
+  try { used = await documentsUsedThisMonth(req.uid); } catch (e) { console.error('preflight usage read failed:', e.message); }
+  const wanted = Math.max(1, docTypes.length);
+  const remaining = (limit == null || used == null) ? null : Math.max(0, limit - used);
+  if (remaining != null && wanted > remaining) {
+    warn('quota', 'error',
+      remaining === 0 ? 'No documents left this month' : 'Not enough documents left this month',
+      quotaError(req.user.plan, limit, used, wanted).error);
+  }
+
+  // 2 — Catalog and entitlement, using the same helpers POST /generations
+  // enforces with, so "ok" here can never mean "refused there".
+  const known = new Set((DOCTYPES[track] || []).map((d) => d.id));
+  const badType = docTypes.find((d) => !known.has(d));
+  if (!docTypes.length) warn('doc-type', 'error', 'No document type selected', 'Choose at least one document type to generate.');
+  else if (badType) warn('doc-type', 'error', 'Unknown document type', 'This plan\'s catalog has no document type "' + badType + '" on the ' + track + ' track.');
+  for (const f of requestedFormats) {
+    const def = formatDef(track, f);
+    if (!def) { warn('format', 'error', 'Unknown format', 'No output format called "' + f + '" exists on the ' + track + ' track.'); continue; }
+    if (!def.ok) { warn('format', 'error', def.name + ' is not supported yet', def.name + ' cannot be produced today, so this run would be refused.'); continue; }
+    if (!formatAllowed(req.user.plan, f)) {
+      warn('plan-format', 'error', def.name + ' is not in your plan',
+        def.name + ' is not included in the ' + (PLANS[req.user.plan] || PLANS.free).name + ' plan, so this run would be refused. Upgrade, or choose an included format.');
+    }
+  }
+
+  // 3 — The real source resolution: exactly what the pipeline will do.
+  let scope = null;
+  let checked = false;
+  try {
+    scope = await resolveGenerationScope({
+      userId: req.uid, provider, repo, branch: String(b.branch || 'main'),
+      ruleSetId: String(output.ruleSetId || '')
+    });
+    checked = true;
+  } catch (e) {
+    // The helper is written not to throw; if it ever does, say the check did
+    // not run instead of reporting a repository as empty.
+    console.error('preflight scope resolution failed:', e && e.message);
+    warn('precheck-unavailable', 'info', 'Source check could not run',
+      'Docify could not inspect the repository just now, so this check says nothing about it. Generation is unaffected.');
+  }
+
+  const fileCount = scope ? scope.files.length : 0;
+  const branchUsed = scope ? scope.branch : String(b.branch || 'main');
+  const hasRepo = Boolean(repo && repo.includes('/'));
+
+  if (scope && hasRepo) {
+    if (scope.error) {
+      warn('source-unreadable', 'error', 'The repository could not be read', scope.error);
+    } else if (scope.usedFallback) {
+      warn('branch-fallback', 'warning', 'Branch "' + scope.requestedBranch + '" has no readable source',
+        branchFallbackReason(scope, 'future'));
+    }
+    if (scope.scopeFailed) {
+      warn('scope-unreadable', 'error', 'Your documentation rules could not be read',
+        'Docify never guesses at exclusions, so no repository files would be sent to the AI. Retry, or check the rule set assigned to this repository.');
+    } else if (scope.readCount && !fileCount) {
+      warn('scope-excludes-all', 'warning', 'Every file is excluded by your scope rules',
+        scopeEmptyReason(scope, 'future'));
+    }
+    // What the per-run caps leave behind, straight from the fetcher's own count.
+    if (scope.note && scope.coverage && scope.coverage.omittedFiles > 0) {
+      warn('coverage', 'info', 'Not every file fits in one run', scope.note +
+        ' Docify reads the highest-ranked files first; the rest do not reach the AI.');
+    }
+  }
+
+  // 4 — Nothing to write from: no repository files AND no connector sources.
+  // This is the case that produces a template-shaped document, which is the
+  // outcome a customer most resents paying for.
+  const willGround = fileCount > 0 || connectors.total > 0;
+  if (!willGround) {
+    warn('no-grounding', 'error', 'Nothing to write from',
+      (hasRepo
+        ? 'No source files from ' + repo + ' on "' + branchUsed + '" would reach the AI, and no Jira issues, OpenAPI specs, Notion or Confluence pages are selected. '
+        : 'No repository is selected and no Jira issues, OpenAPI specs, Notion or Confluence pages are selected. ') +
+      'The document would be built from its template structure only — headings and standard guidance, not your product.');
+  }
+
+  // 5 — An API reference with no spec anywhere among the sources. Checked
+  // against the real resolved files, not assumed from the document type.
+  if (docTypes.includes('api') && !connectors.openapiSpecs) {
+    const specInRepo = scope ? scope.files.some(looksLikeSpec) : false;
+    if (!specInRepo) {
+      warn('no-spec', 'warning', 'No API spec among the sources',
+        'An API reference is strongest when it is generated from an OpenAPI or Swagger spec. None was selected and none was found in the files in scope, so the endpoints, parameters, and status codes would be inferred from source code' +
+        (willGround ? '' : ' — and there is no source code in scope either') + '.');
+    }
+  }
+
+  res.json({
+    // ok is false only when something would actually refuse the run or leave it
+    // with nothing to say. Warnings alone never mean "do not generate".
+    ok: !warnings.some((w) => w.level === 'error'),
+    willGround,
+    // Repository files that would reach the AI. Connector items are counted
+    // separately below, because a Jira-only run has 0 files and is still grounded.
+    fileCount,
+    branchUsed,
+    checked,
+    sources: {
+      repositoryFiles: fileCount,
+      repositoryFilesRead: scope ? scope.readCount : 0,
+      repositoryFilesEligible: (scope && scope.coverage && scope.coverage.eligible) || 0,
+      jiraIssues: connectors.jiraIssues,
+      openApiSpecs: connectors.openapiSpecs,
+      notionPages: connectors.notionPages,
+      confluencePages: connectors.confluencePages
+    },
+    documentsRequested: wanted,
+    quota: { used, limit, remaining },
+    warnings
+  });
+});
 
 apiRouter.post('/generations', async (req, res) => {
   const { repo, branch = 'main', track, docTypes, format, formats, instructions = '', files = [], provider = 'github', skillName = '', skill = '', brief = null, output = null } = req.body || {};
@@ -1554,18 +1823,28 @@ apiRouter.post('/generations', async (req, res) => {
   const over = await reserveDocumentQuota(req.uid, req.user.plan, wanted, { generationId: genId, trigger: 'manual' });
   if (over) return res.status(402).json({ ...over, upgrade: true });
   const steps = buildSteps({ provider, instructions, skillName });
-  const gen = await prisma.generation.create({
-    data: {
-      id: genId,
-      userId: req.uid, repo: repo || provider, branch, track,
-      provider: ['github', 'gitlab', 'bitbucket'].includes(provider) ? provider : 'github',
-      docTypes: JSON.stringify(docTypes), format: primaryFormat, instructions,
-      files: JSON.stringify(files), skillName: String(skillName), skill: String(skill),
-      brief: JSON.stringify(brief || {}),
-      output: JSON.stringify({ ...(output || {}), formats: requested }),
-      status: 'queued', steps: JSON.stringify(steps)
-    }
-  });
+  let gen;
+  try {
+    gen = await prisma.generation.create({
+      data: {
+        id: genId,
+        userId: req.uid, repo: repo || provider, branch, track,
+        provider: ['github', 'gitlab', 'bitbucket'].includes(provider) ? provider : 'github',
+        docTypes: JSON.stringify(docTypes), format: primaryFormat, instructions,
+        files: JSON.stringify(files), skillName: String(skillName), skill: String(skill),
+        brief: JSON.stringify(brief || {}),
+        output: JSON.stringify({ ...(output || {}), formats: requested }),
+        status: 'queued', steps: JSON.stringify(steps)
+      }
+    });
+  } catch (e) {
+    // The reservation is taken before this row exists, and runPipeline (which
+    // owns the failure refund) never starts if the row was never written — so
+    // the documents would stay consumed for a run that produced nothing. Hand
+    // them back here, then let the error surface.
+    await releaseDocumentQuota(req.uid, genId);
+    throw e;
+  }
   runPipeline(gen.id); // fire and forget — polled by the client
   res.status(201).json({ generation: serializeGen(gen) });
 });
@@ -2091,16 +2370,24 @@ async function triggerRegeneration(uid, auto, { trigger, commit, branch, repo })
   }
   const steps = ['Merge ' + (commit ? String(commit).slice(0, 7) + ' ' : '') + 'detected on ' + base.branch,
     ...buildSteps({ provider: 'github', instructions: tpl.instructions, skillName: tpl.skillName || '' })];
-  const gen = await prisma.generation.create({
-    data: {
-      id: genId,
-      userId: uid, repo: base.repo || tpl.repo, branch: base.branch, track: tpl.track,
-      docTypes: tpl.docTypes, format: tpl.format, instructions: tpl.instructions,
-      files: tpl.files, skillName: tpl.skillName || '', skill: tpl.skill || '',
-      brief: tpl.brief || '{}', output: tpl.output || '{}',
-      status: 'queued', steps: JSON.stringify(steps)
-    }
-  });
+  let gen;
+  try {
+    gen = await prisma.generation.create({
+      data: {
+        id: genId,
+        userId: uid, repo: base.repo || tpl.repo, branch: base.branch, track: tpl.track,
+        docTypes: tpl.docTypes, format: tpl.format, instructions: tpl.instructions,
+        files: tpl.files, skillName: tpl.skillName || '', skill: tpl.skill || '',
+        brief: tpl.brief || '{}', output: tpl.output || '{}',
+        status: 'queued', steps: JSON.stringify(steps)
+      }
+    });
+  } catch (e) {
+    // Reservation taken above; runPipeline never starts without a row, so the
+    // merge would silently burn a document. Refund before failing out.
+    await releaseDocumentQuota(uid, genId);
+    throw e;
+  }
   await recordRun(auto.id, { ...base, status: 'running', genId: gen.id });
   runPipeline(gen.id).then(async () => {
     try {
@@ -2569,10 +2856,19 @@ async function profileRun(profile, event) {
       return { status: 'skipped', note: pipelineOver.error };
     }
     let gen;
-    if (inPlace) {
-      gen = await prisma.generation.update({ where: { id: genId }, data });
-    } else {
-      gen = await prisma.generation.create({ data: { id: genId, userId: uid, ...data } });
+    try {
+      if (inPlace) {
+        gen = await prisma.generation.update({ where: { id: genId }, data });
+      } else {
+        gen = await prisma.generation.create({ data: { id: genId, userId: uid, ...data } });
+      }
+    } catch (writeErr) {
+      // The reservation is already taken, but runPipeline (which owns the
+      // failure refund) has not started — a write failure here would leave the
+      // merge charged for a document it never produced. Refund, then let the
+      // outer catch record the run as failed.
+      await releaseDocumentQuota(uid, genId);
+      throw writeErr;
     }
     await save({ genId: gen.id, version });
     await runPipeline(gen.id);

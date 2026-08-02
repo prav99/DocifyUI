@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { getCatalog } from '../api.js';
+import React, { useEffect, useMemo, useState } from 'react';
+import { api, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
 import { NavBar, IcCheck, HelpLink } from '../ui.jsx';
 
@@ -52,6 +52,158 @@ function readAsText(file) {
   });
 }
 
+/* ---------------- Repository-aware suggestions ----------------
+   Every hint below is a plain rule over the repository profile the server
+   computes from the repository's own files (GET /hub/intel) — no model, no
+   judgement. The rule and the evidence it fired on are both shown, and nothing
+   is ever pre-selected, so a wrong guess is visible instead of silent. */
+
+const HOSTS = ['github', 'gitlab', 'bitbucket'];
+
+// Profile fields arrive from another service and can also come back out of
+// sessionStorage, so shape is treated as untrusted: anything that is not a
+// usable string is dropped rather than rendered.
+const asList = (v) => (Array.isArray(v) ? v : v == null ? [] : [v])
+  .map((x) => {
+    if (typeof x === 'string') return x;
+    if (x && typeof x === 'object') return String(x.name || x.id || x.label || x.path || x.file || '');
+    return '';
+  })
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const PROFILE_KEYS = ['languages', 'frameworks', 'apiSpecs', 'hasReadme', 'isMonorepo',
+  'workspaces', 'services', 'deployment', 'hasTests', 'hasCi', 'signals'];
+
+function normalizeProfile(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw.profile && typeof raw.profile === 'object' ? raw.profile : raw;
+  // A failed analysis comes back as a fully-empty profile (ok:false): every
+  // list empty, hasReadme:false. Trusting it would let "hasReadme === false"
+  // read as "this repository has no README" when the truth is only that Docify
+  // could not read the tree — a claim the files never made. Only `=== false`,
+  // so a flow-stored profile that omits `ok` still counts.
+  if (p.ok === false) return null;
+  // An object with none of the documented fields is not a profile — showing
+  // hints derived from it would be inventing them.
+  if (!PROFILE_KEYS.some((k) => p[k] !== undefined)) return null;
+  return p;
+}
+
+const evidence = (items) => {
+  const shown = items.slice(0, 2).map((s) => (s.length > 42 ? s.slice(0, 41) + '…' : s));
+  const rest = items.length - shown.length;
+  return shown.join(', ') + (rest > 0 ? ' +' + rest + ' more' : '');
+};
+
+// Dependency-style tokens are matched as whole words, not substrings: a naive
+// "gin" substring would also fire on "login", inventing a framework the
+// manifest never listed.
+const wordsOf = (s) => s.toLowerCase().split(/[^a-z0-9.+#]+/).filter(Boolean);
+const byWord = (items, tokens) => items.filter((s) => wordsOf(s).some((w) => tokens.includes(w)));
+
+const API_FRAMEWORKS = ['express', 'fastify', 'koa', 'nest', 'nestjs', 'hapi', 'django', 'drf', 'flask',
+  'fastapi', 'rails', 'sinatra', 'spring', 'laravel', 'gin', 'echo', 'chi', 'actix', 'axum', 'phoenix',
+  'aspnet', 'graphql', 'grpc'];
+const CLI_TOKENS = ['cli', 'commander', 'clap', 'cobra', 'argparse', 'yargs', 'oclif'];
+const LIB_TOKENS = ['library', 'sdk'];
+
+// Returns { suggestions, notes }. `notes` are honest cautions about grounding,
+// not recommendations — they never select anything.
+function buildSuggestions(p, flow) {
+  const out = [];
+  const notes = [];
+  const add = (id, why) => { if (!out.some((s) => s.id === id)) out.push({ id, why }); };
+
+  const specs = asList(p.apiSpecs);
+  const frameworks = asList(p.frameworks);
+  const signals = asList(p.signals);
+  const deployment = asList(p.deployment);
+  const workspaces = asList(p.workspaces);
+  const services = asList(p.services);
+
+  if (specs.length) {
+    add('api', 'because ' + (specs.length > 1 ? specs.length + ' API specifications were' : 'an API specification was')
+      + ' found (' + evidence(specs) + ')');
+  } else {
+    const fw = byWord(frameworks, API_FRAMEWORKS);
+    if (fw.length) add('api', 'because a server framework was detected (' + evidence(fw) + ')');
+  }
+
+  const cli = byWord(frameworks.concat(signals), CLI_TOKENS);
+  const lib = byWord(frameworks.concat(signals), LIB_TOKENS);
+  if (cli.length || lib.length) {
+    const what = cli.length ? 'a command-line tool' : 'a library';
+    const found = evidence(cli.length ? cli : lib);
+    add('quickstart', 'because this scans as ' + what + ' (' + found + '), which readers try before they read');
+    add('userguide', 'because this scans as ' + what + ' (' + found + ')');
+  }
+
+  // `deployment` is the server's own evidence-backed detection (Dockerfile,
+  // k8s manifests, Helm, Terraform, Vercel, Netlify, …). Trust it directly
+  // rather than re-filtering it through a token list here — that only dropped
+  // real deploy configs the server had already confirmed.
+  if (deployment.length) {
+    add('install', 'because deployment configuration was found (' + evidence(deployment) + ')');
+    add('admin', 'because deployment configuration was found (' + evidence(deployment) + ')');
+  }
+
+  if (p.hasReadme === false) {
+    add('userguide', 'because there is no README — nothing in the repository explains it in prose yet');
+    notes.push('No README was found. Docify grounds documents on the files it reads, so a repository with no prose '
+      + 'gives it less to work from — the instructions box below is the fastest way to supply that context.');
+  }
+
+  const jira = (flow.jiraIssues || []).length;
+  if (jira) add('relnotes', 'because you selected ' + jira + ' Jira issue' + (jira > 1 ? 's' : '') + ' as a source');
+
+  if (p.isMonorepo === true) {
+    const parts = workspaces.length ? workspaces : services;
+    notes.push('This looks like a monorepo' + (parts.length ? ' (' + evidence(parts) + ')' : '')
+      + '. One run documents one repository, not one package — name the package or path you want in the instructions below.');
+  }
+
+  return { suggestions: out.slice(0, 4), notes };
+}
+
+// A profile carried in the flow is reused only when it is unambiguously this
+// repository's — a leftover profile from a previously chosen repository would
+// produce confident, wrong hints. Nothing is written back to the flow here for
+// the same reason: a cache with no ownership stamp is worse than a refetch.
+function storedProfileFor(flow) {
+  const raw = flow.repoProfile;
+  if (!raw || typeof raw !== 'object') return null;
+  const tagged = String(raw.repo || (raw.profile && raw.profile.repo) || '');
+  if (tagged && tagged !== String(flow.repo || '')) return null;
+  return normalizeProfile(raw);
+}
+
+// The Source step may already hold the profile in the flow; reuse it rather
+// than paying for a second scan. A missing or failing profile is not an error
+// state on this step — the hint simply does not appear.
+function useRepoProfile(flow) {
+  const stored = useMemo(() => storedProfileFor(flow), [flow.repoProfile, flow.repo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const provider = String(flow.provider || '');
+  const repo = String(flow.repo || '');
+  const branch = String(flow.branch || '');
+  const [profile, setProfile] = useState(stored);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (stored) { setProfile(stored); setLoading(false); return; }
+    if (!repo || !HOSTS.includes(provider)) { setProfile(null); setLoading(false); return; }
+    let alive = true;
+    setLoading(true);
+    const q = '/hub/intel?provider=' + encodeURIComponent(provider) + '&repo=' + encodeURIComponent(repo)
+      + (branch ? '&branch=' + encodeURIComponent(branch) : '');
+    api(q)
+      .then((d) => { if (alive) setProfile(normalizeProfile(d)); })
+      .catch(() => { if (alive) setProfile(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [stored, provider, repo, branch]);
+  return { profile, loading };
+}
+
 export default function DocType() {
   const { flow, setFlow } = useFlow();
   const [catalog, setCatalog] = useState(null);
@@ -67,10 +219,11 @@ export default function DocType() {
       .catch((e) => { if (alive) setCatErr(e.message || 'Could not load the document catalogue'); });
     return () => { alive = false; };
   }, [reload]);
+  const { profile, loading: intelLoading } = useRepoProfile(flow);
   if (catErr) {
     return (
       <div className="page">
-        <div className="genfail">
+        <div className="genfail" role="alert">
           <b>Could not load document types.</b> <span>{catErr}</span>
           <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
             onClick={() => setReload((n) => n + 1)}>Try again</button>
@@ -78,7 +231,21 @@ export default function DocType() {
       </div>
     );
   }
-  if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
+  if (!catalog) {
+    return (
+      <div className="page" aria-busy="true">
+        <h1 className="h04">What should Docify produce?</h1>
+        <p className="body01 t2 mt3" role="status">Loading document types…</p>
+        <div className="grid3 mt7" aria-hidden="true">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="tile" style={{ minHeight: 116 }}>
+              <div className="skel w60" /><div className="skel w90" /><div className="skel w80" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const types = catalog.doctypes[flow.track] || [];
 
@@ -170,6 +337,20 @@ export default function DocType() {
   const count = flow.docTypes.length;
   const refs = refFiles(flow);
 
+  // A suggestion is only offered when this track actually sells that document
+  // type, so the panel can never point at something the grid below does not
+  // contain.
+  const advice = profile ? buildSuggestions(profile, flow) : { suggestions: [], notes: [] };
+  const suggestions = advice.suggestions
+    .map((s) => ({ ...s, def: types.find((t) => t.id === s.id) }))
+    .filter((s) => s.def);
+  const suggestedIds = new Set(suggestions.map((s) => s.id));
+  const unpicked = suggestions.filter((s) => !flow.docTypes.includes(s.id)).map((s) => s.id);
+  const applyAll = () => {
+    if (!unpicked.length) return;
+    setFlow((f) => ({ docTypes: [...f.docTypes, ...unpicked.filter((id) => !f.docTypes.includes(id))], genId: null }));
+  };
+
   return (
     <>
       <div className="page">
@@ -186,29 +367,87 @@ export default function DocType() {
             onClick={() => setTrack('marketing')}>Marketing material</button>
         </div>
 
+        {intelLoading && (
+          <p className="helper mt6" role="status">Reading {flow.repo || 'your repository'} to suggest document types…</p>
+        )}
+
+        {!intelLoading && suggestions.length > 0 && (
+          <section className="tile tile--white mt6" aria-labelledby="sugHead"
+            style={{ padding: 20, maxWidth: 860, borderLeft: '3px solid var(--link-primary)' }}>
+            <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'baseline' }}>
+              <h2 className="h02" id="sugHead">Suggested for this repository</h2>
+              {flow.repo ? <span className="tag tag--outline">{flow.repo}</span> : null}
+            </div>
+            <p className="helper mt2">
+              Matched by rule from what Docify found in the repository — specs, dependencies, and configuration
+              files. It is a starting point, not a verdict: nothing is selected until you select it.
+            </p>
+            <ul style={{ listStyle: 'none', margin: '16px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {suggestions.map((s) => {
+                const on = flow.docTypes.includes(s.id);
+                return (
+                  <li key={s.id} className="row row--between" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                    <span className="body01" style={{ flex: '1 1 320px' }}>
+                      <b>{s.def.name}</b> <span className="helper">— {s.why}</span>
+                    </span>
+                    <button className="btn btn--tertiary btn--sm" aria-pressed={on}
+                      onClick={() => toggleType(s.id)}>
+                      {on ? 'Selected ✓' : 'Add ' + s.def.name}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {unpicked.length > 1 && (
+              <button className="btn btn--secondary btn--sm mt5" onClick={applyAll}>
+                Select all {unpicked.length} suggestions
+              </button>
+            )}
+            {advice.notes.map((n) => (
+              <p key={n} className="helper mt5" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>{n}</p>
+            ))}
+          </section>
+        )}
+
+        {!intelLoading && suggestions.length === 0 && advice.notes.length > 0 && (
+          <div className="mt6" style={{ maxWidth: 860 }}>
+            {advice.notes.map((n) => <p key={n} className="helper">{n}</p>)}
+          </div>
+        )}
+
+        {types.length === 0 && (
+          <p className="body01 t2 mt6">No document types are available for this track right now. Switch tracks, or reload the page.</p>
+        )}
+
         <div className="grid3 mt6">
           {types.map((d) => {
             const on = flow.docTypes.includes(d.id);
             return (
               <div key={d.id} className={'tile tile--click cbtile' + (on ? ' tile--selected' : '')}
                 role="checkbox" aria-checked={on} tabIndex={0}
-                aria-label={d.name + ' — ' + d.desc}
+                aria-label={d.name + ' — ' + d.desc + (suggestedIds.has(d.id) ? ' (suggested for this repository)' : '')}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleType(d.id); } }}
                 onClick={() => toggleType(d.id)}>
                 <span className="cb">{on ? <IcCheck c="#ffffff" /> : null}</span>
-                <div className="row">
+                <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
                   <p className="h01">{d.name}</p>
                   {d.common ? <span className="tag tag--blue">Most common</span> : null}
+                  {suggestedIds.has(d.id) ? <span className="tag tag--teal">Suggested</span> : null}
                 </div>
                 <p className="helper mt2">{d.desc}</p>
                 {d.standard ? <div className="mt3"><span className="tag tag--outline">{d.standard}</span></div> : null}
                 {d.framework && (
                   <>
-                    <button className="fwlink" onClick={(e) => { e.stopPropagation(); setFwOpen(fwOpen === d.id ? null : d.id); }}>
+                    {/* The tile's own key handler calls preventDefault, which
+                        swallows Space on this button and toggles the document
+                        type instead — the key event must stop at the button. */}
+                    <button className="fwlink" aria-expanded={fwOpen === d.id}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); setFwOpen(fwOpen === d.id ? null : d.id); }}>
                       {fwOpen === d.id ? 'Hide standard framework' : 'Standard framework →'}
                     </button>
                     {fwOpen === d.id && (
-                      <div className="fwpanel" onClick={(e) => e.stopPropagation()}>
+                      <div className="fwpanel" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                         <p className="fwrow"><b>Purpose</b> {d.framework.purpose}</p>
                         <p className="fwrow"><b>Audience</b> {d.framework.audience}</p>
                         <p className="fwrow"><b>Tone</b> {d.framework.tone}</p>

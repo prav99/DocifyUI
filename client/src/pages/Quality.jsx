@@ -446,11 +446,12 @@ export default function Quality() {
                   {blendOpen === a.id && a.blend && (
                     <div className="asstblend" onClick={(e) => e.stopPropagation()}>
                       {a.blend.map((b) => (
-                        <div key={b.dim} className="blendrow">
-                          <span style={{ minWidth: 130 }}>{b.name}</span>
-                          <div className="blendbar"><div style={{ width: b.pct + '%' }} /></div>
-                          <span className="mono" style={{ minWidth: 34, textAlign: 'right' }}>{b.pct}%</span>
-                          <span className="mono t2" style={{ minWidth: 56, textAlign: 'right' }}>yours {b.score}</span>
+                        // Wraps so the weight bar drops to its own line rather than
+                        // forcing horizontal scroll inside a narrow assistant card.
+                        <div key={b.dim} className="blendrow" style={{ flexWrap: 'wrap' }}>
+                          <span style={{ flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{b.name}</span>
+                          <span className="mono t2" style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>{b.pct}% weight · you {b.score}</span>
+                          <div className="blendbar" style={{ flex: '1 1 100%' }} title={b.pct + '% weight'}><div style={{ width: b.pct + '%' }} /></div>
                         </div>
                       ))}
                       <p className="helper mt3">How this assistant weighs each quality dimension when deciding what to retrieve and cite — next to your current score on that dimension.</p>
@@ -520,8 +521,11 @@ export default function Quality() {
                 ))}
               </div>
             )}
-            <p className="body01 t2 mb5">Checked against your resolved writing policy — base style, document-type profile, organization terminology, and your custom instructions. {report.style.filter((s) => !s.pass).length} findings need review, {report.style.filter((s) => s.pass).length} checks pass.</p>
-            {report.style.map((r) => (
+            <p className="body01 t2 mb5">Checked against your resolved writing policy — base style, document-type profile, organization terminology, and your custom instructions. {(report.style || []).filter((s) => !s.pass).length} findings need review, {(report.style || []).filter((s) => s.pass).length} checks pass.</p>
+            {(report.style || []).length === 0 && (
+              <p className="body01 t2">No style-guide findings were recorded for this document.</p>
+            )}
+            {(report.style || []).map((r) => (
               <div key={r.t} className="issue" style={{ borderLeftColor: r.pass ? 'var(--support-success)' : 'var(--support-warning)' }}>
                 <div className="row row--between">
                   <p className="h01">{r.t}</p>
@@ -620,6 +624,7 @@ export default function Quality() {
             </div>
 
             {/* Filter the findings by dimension and status */}
+            {report.issues.length > 0 && (
             <div className="qfilter mt7">
               <span className="label01 t2">SHOW</span>
               <button className={'fchip' + (dimFilter === 'all' ? ' on' : '')} onClick={() => setDimFilter('all')}>
@@ -635,8 +640,13 @@ export default function Quality() {
                 <button key={id} className={'fchip' + (statusFilter === id ? ' on' : '')} onClick={() => setStatusFilter(id)}>{label}</button>
               ))}
             </div>
+            )}
             {visibleIssues.length === 0 && (
-              <p className="body01 t2 mt5">No findings match this filter — try All findings.</p>
+              <p className="body01 t2 mt5">
+                {report.issues.length === 0
+                  ? 'No rubric findings — every deterministic check passed on this document. Style-guide and link findings, if any, are listed under their own tabs.'
+                  : 'No findings match this filter — switch to All findings above.'}
+              </p>
             )}
 
             {[...new Set(visibleIssues.map((i) => i.cat))].map((cat) => (

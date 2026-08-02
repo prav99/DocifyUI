@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
 import { NavBar, Modal, SrcMark, IcCheck, HelpLink, RepoHubCta } from '../ui.jsx';
+import RepoInsights from '../RepoInsights.jsx';
 import posthog from '../posthog.js';
 
 // How each source gets configured.
@@ -652,6 +653,14 @@ export default function Source() {
   const cfg = flow.srcCfg || {};
   const setCfg = (id, patch) =>
     setFlow((f) => ({ srcCfg: { ...(f.srcCfg || {}), [id]: { ...((f.srcCfg || {})[id] || {}), ...patch } } }));
+  // The catalogue knows each repository's REAL default branch. Carrying it
+  // forward is what stops a "master" repo from being documented as "main"
+  // — which reads an empty tree and produces a document grounded in nothing
+  // while still costing the customer a document.
+  const branchOf = (provider, name) => {
+    const hit = ((cat && cat.repos) || []).find((r) => r.provider === provider && r.name === name);
+    return (hit && hit.branch) || '';
+  };
 
   const loadCatalog = useCallback(() => {
     setCatalogErr('');
@@ -873,6 +882,45 @@ export default function Source() {
     finally { setBusy(false); }
   }
 
+  /* A specification detected inside a repository becomes a real OpenAPI source:
+     the same /openapi/inspect call the picker below makes, the same spec shape
+     in srcCfg.openapi.specs. Nothing here is a shortcut around that flow — an
+     entry the picker could not have produced would break generation. */
+  const sameSpecSource = (a, b) => !!a && !!b && a.provider === b.provider && a.repo === b.repo
+    && (a.branch || 'main') === (b.branch || 'main') && a.path === b.path;
+  const isSpecAdded = (source) => ((cfg.openapi || {}).specs || []).some((s) => sameSpecSource(s.source, source));
+
+  async function addSpecFromRepo(source) {
+    if (isSpecAdded(source)) return toast('info', 'Already added', 'That specification is already one of your sources.');
+    try {
+      const d = await api('/openapi/inspect', { method: 'POST', body: source });
+      const sum = d.summary;
+      const errors = sum.issues.filter((i) => i.level === 'error').length;
+      const entry = {
+        uid: Math.random().toString(36).slice(2, 9),
+        source, title: sum.title, version: sum.version, specVersion: sum.specVersion,
+        endpoints: sum.endpoints, ops: 'all', opsCount: sum.operations.length,
+        findings: sum.issues.length, errors
+      };
+      // Selecting the source and storing the spec must be ONE update: two
+      // setFlow calls would let a re-render see "openapi selected, no spec",
+      // which reads as an unfinished source and disables Continue.
+      setFlow((f) => {
+        const cur = ((f.srcCfg || {}).openapi) || {};
+        if ((cur.specs || []).some((s) => sameSpecSource(s.source, source))) return {};
+        return {
+          sources: (f.sources || []).includes('openapi') ? f.sources : [...(f.sources || []), 'openapi'],
+          srcCfg: { ...(f.srcCfg || {}), openapi: { ...cur, specs: [...(cur.specs || []), entry] } }
+        };
+      });
+      posthog.capture('repo_intel_spec_added', { provider: source.provider, endpoints: sum.endpoints });
+      toast('success', 'Specification added',
+        entry.title + (entry.version ? ' v' + entry.version : '') + ' · ' + entry.endpoints + ' endpoints from ' + source.path);
+    } catch (e) {
+      toast('error', 'Could not read that specification', e.message);
+    }
+  }
+
   const hostIds = sources.filter((id) => KIND[id] === 'picker');
   const allReady = sources.length > 0 && sources.every(isReady);
   const pending = sources.filter((id) => !isReady(id)).map((id) => byId(id).name);
@@ -935,14 +983,6 @@ export default function Source() {
         } else if (c.scope && c.scopeLabel) srcScope[id] = { scope: c.scope, label: c.scopeLabel };
         else if (c.sel && PICK_AFTER[id]) srcScope[id] = { scope: c.sel, label: PICK_AFTER[id] + ' ' + c.sel };
       }
-      // The catalogue knows each repository's REAL default branch. Carrying it
-      // forward is what stops a "master" repo from being documented as "main"
-      // — which reads an empty tree and produces a document grounded in
-      // nothing while still costing the customer a document.
-      const branchOf = (provider, name) => {
-        const hit = ((cat && cat.repos) || []).find((r) => r.provider === provider && r.name === name);
-        return (hit && hit.branch) || '';
-      };
       // Additional repositories (beyond the primary per host) travel with the
       // flow — each one gets its own generation with identical settings.
       const extraRepos = [];
@@ -1237,6 +1277,13 @@ export default function Source() {
                           ))}
                           {c.sel && (c.extra || []).length > 0 && (
                             <p className="helper mt2">Each additional repository gets its own generation with the same settings.</p>
+                          )}
+                          {/* Additive only: loads after a repository is chosen,
+                              renders nothing when the scan finds nothing, and
+                              never gates Continue. */}
+                          {c.sel && (
+                            <RepoInsights key={p + '|' + c.sel} provider={p} repo={c.sel} branch={branchOf(p, c.sel)}
+                              isSpecAdded={isSpecAdded} onAddSpec={addSpecFromRepo} />
                           )}
                           {mode === 'name' ? nameInput
                             : mode === 'list' ? (

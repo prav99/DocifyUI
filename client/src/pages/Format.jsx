@@ -31,6 +31,47 @@ const refFiles = (f) => (f.files || [])
 // to what genuinely reaches the model rather than sent and silently dropped.
 const INSTRUCTION_BUDGET = 4000;
 
+// One line per format whose name does not tell you what you actually get.
+// Each describes the artifact the exporter really produces
+// (server/src/adapters/llm.js) — not a recommendation, and no claim about
+// which is "better". Formats whose name is self-explanatory get no line.
+const WHEN_TO_USE = {
+  technical: {
+    dita: 'Worth it only if you already publish through DITA-OT or a CCMS — otherwise Markdown or PDF is far less work.',
+    docbook: 'A DocBook 5.0 article for publishing toolchains — source XML to process, not a finished document.',
+    markdown: 'Repo-native: commit it beside the code, and most static-site generators render it as-is.',
+    pdf: 'The safest thing to send outside the team — fixed layout, opens anywhere, nothing to install.',
+    word: 'For review rounds: comments and tracked changes in Word or Google Docs.',
+    html: 'One self-contained page with its styles inline — host it anywhere, no build step.',
+    epub: 'An EPUB3 XHTML content document to feed an e-book packager — not a packaged .epub file.'
+  },
+  marketing: {
+    pdf: 'The safest thing to send outside the team — fixed layout, opens anywhere.',
+    word: 'For stakeholder edits: comments and tracked changes in Word or Google Docs.',
+    markdown: 'Plain copy blocks to paste into a CMS or a static site.',
+    htmlsnip: 'A page section to paste into a page you already have — a fragment, not a standalone page.',
+    email: 'Single-column HTML with inline styles, so it survives email clients.'
+  }
+};
+
+// The cheapest plan above the current one whose entitlement includes this
+// format, read from the same planLimits the server enforces. Never a hardcoded
+// tier name — if the packaging changes, this line changes with it.
+function unlockingPlan(catalog, currentPlanId, formatId) {
+  const limits = catalog.planLimits || {};
+  const plans = catalog.plans || {};
+  const price = (p) => (p && p.monthly != null ? p.monthly : Infinity);
+  const current = price(plans[currentPlanId]);
+  const candidate = Object.values(plans)
+    .filter((p) => p && p.id && price(p) > current)
+    .sort((a, b) => price(a) - price(b))
+    .find((p) => {
+      const f = (limits[p.id] || {}).formats;
+      return f === null || (Array.isArray(f) && f.includes(formatId));
+    });
+  return candidate ? candidate.name || candidate.id : '';
+}
+
 export default function Format() {
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
@@ -65,7 +106,7 @@ export default function Format() {
   if (catErr) {
     return (
       <div className="page">
-        <div className="genfail">
+        <div className="genfail" role="alert">
           <b>Could not load output formats.</b> <span>{catErr}</span>
           <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
             onClick={() => setReload((n) => n + 1)}>Try again</button>
@@ -74,7 +115,38 @@ export default function Format() {
       </div>
     );
   }
-  if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
+  if (!catalog) {
+    return (
+      <div className="page" aria-busy="true">
+        <h1 className="h04">Choose output formats</h1>
+        <p className="body01 t2 mt3" role="status">Loading output formats…</p>
+        <div className="grid4 mt7" aria-hidden="true">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="tile" style={{ minHeight: 96 }}>
+              <div className="skel w60" /><div className="skel w90" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  // Reachable by refreshing or deep-linking straight to /format: the wizard is
+  // per-tab state, so a fresh tab has no document types. Generating with none
+  // is a 400 from the server — say so here instead of at the last click.
+  if (!(flow.docTypes || []).length) {
+    return (
+      <>
+        <div className="page">
+          <h1 className="h04">Choose output formats</h1>
+          <p className="body01 t2 mt3" style={{ maxWidth: 720 }}>
+            Nothing is queued yet — formats describe how a document is written out, so pick what to produce first.
+          </p>
+          <button className="btn btn--primary mt6" onClick={() => nav('/doctype')}>Choose document types</button>
+        </div>
+        <NavBar back="/doctype" note="Select at least one document type" />
+      </>
+    );
+  }
 
   const oc = { ...OUT_DEFAULTS, ...(flow.outputCfg || {}) };
   const setOut = (k, v) => setFlow((f) => ({ outputCfg: { ...(f.outputCfg || {}), [k]: v }, genId: null }));
@@ -132,14 +204,19 @@ export default function Format() {
   const toggleFormat = (f) => {
     if (!f.ok) { toast('info', 'Coming soon', f.name + ' is on the roadmap — pick a supported format for now'); return; }
     if (isLocked(f.id)) {
-      toast('info', f.name + ' is a paid format',
-        'The ' + planLabel + ' plan exports ' + (allowedFormats || []).map((x) => (list.find((y) => y.id === x) || {}).name || x).filter(Boolean).join(' and ') + '. Upgrade to unlock ' + f.name + '.');
+      const on = unlocksWith(f.id);
+      toast('info', f.name + ' is not included in your plan',
+        'The ' + planLabel + ' plan exports ' + (allowedFormats || []).map((x) => (list.find((y) => y.id === x) || {}).name || x).filter(Boolean).join(' and ')
+        + '. ' + (on ? f.name + ' is included from the ' + on + ' plan.' : 'Contact us to add ' + f.name + '.'));
       return;
     }
     const next = selected.includes(f.id) ? selected.filter((x) => x !== f.id) : [...selected, f.id];
     setFlow({ formats: next, format: next[0] || '', genId: null });
   };
   const selNames = selected.map((id) => (list.find((f) => f.id === id) || {}).name).filter(Boolean);
+  const guidance = WHEN_TO_USE[flow.track] || {};
+  const unlocksWith = (id) => unlockingPlan(catalog, planName, id);
+  const anySelectable = list.some((f) => f.ok && !isLocked(f.id));
 
   async function generate() {
     setBusy(true);
@@ -234,10 +311,16 @@ export default function Format() {
         <div className="grid4 mt7">
           {list.map((f) => {
             const idx = selected.indexOf(f.id);
+            const locked = isLocked(f.id);
+            // Only stated for a locked format, and only when a plan genuinely
+            // lists it — never "upgrade for this" with no plan behind it.
+            const unlock = locked && f.ok ? unlocksWith(f.id) : '';
+            const when = guidance[f.id];
             return (
-              <div key={f.id} className={'tile tile--click' + (idx >= 0 ? ' tile--selected' : '') + (isLocked(f.id) ? ' tile--disabled' : '')}
+              <div key={f.id} className={'tile tile--click' + (idx >= 0 ? ' tile--selected' : '') + (locked ? ' tile--disabled' : '')}
                 role="checkbox" aria-checked={idx >= 0} tabIndex={0}
-                aria-label={f.name + ' — ' + f.desc + (f.ok ? '' : ' (coming soon)') + (isLocked(f.id) ? ' (not included in your plan)' : '')}
+                aria-label={f.name + ' — ' + f.desc + (when ? '. ' + when : '') + (f.ok ? '' : ' (coming soon)')
+                  + (locked ? ' (not included in your plan' + (unlock ? '; included from the ' + unlock + ' plan' : '') + ')' : '')}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFormat(f); } }}
                 onClick={() => toggleFormat(f)}>
                 <div className="row row--between">
@@ -247,14 +330,41 @@ export default function Format() {
                       for it would be selling something we cannot ship. */}
                   {idx >= 0 ? <span className="tag tag--blue">{selected.length > 1 ? '✓ ' + (idx + 1) : '✓'}</span>
                     : !f.ok ? <span className="tag tag--gray">Coming soon</span>
-                    : isLocked(f.id) ? <span className="tag tag--gray">Upgrade</span>
+                    : locked ? <span className="tag tag--gray">Upgrade</span>
                     : null}
                 </div>
                 <p className="helper mt2">{f.desc}</p>
+                {when ? <p className="helper mt2">{when}</p> : null}
+                {locked && f.ok ? (
+                  <p className="helper mt2">
+                    {unlock
+                      ? 'Not on ' + planLabel + ' — included from the ' + unlock + ' plan.'
+                      : 'Not included in the ' + planLabel + ' plan.'}
+                    {' '}
+                    {/* Inside the tile's own key handler: without this, Space
+                        on the link is swallowed by the tile (which calls
+                        preventDefault) and toggles the format instead. */}
+                    <button className="linkbtn" style={{ fontSize: 12 }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); nav('/pricing'); }}>Compare plans</button>
+                  </p>
+                ) : null}
               </div>
             );
           })}
         </div>
+
+        {list.length === 0 && (
+          <p className="body01 t2 mt6">No output formats are available for this track. Go back and choose document types again.</p>
+        )}
+        {list.length > 0 && !anySelectable && (
+          <div className="genfail mt6" role="alert">
+            <b>The {planLabel} plan cannot export any of these formats.</b>{' '}
+            <span>Nothing on this step can be selected, so a run cannot start.</span>
+            <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
+              onClick={() => nav('/pricing')}>Compare plans</button>
+          </div>
+        )}
 
         {/* ---- Output options ---- */}
         <div className="mt7">

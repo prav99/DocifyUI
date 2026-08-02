@@ -25,7 +25,10 @@ export function Toasts() {
     };
   }, []);
   return (
-    <div id="toasts">
+    // A polite live region so a screen reader announces each toast as it
+    // arrives. The container is always mounted (empty between toasts) so the
+    // assistive tech has something to watch before the first one appears.
+    <div id="toasts" role="status" aria-live="polite" aria-atomic="false">
       {items.map((t) => (
         <div key={t.id} className={'toast toast--' + t.kind}>
           <div>

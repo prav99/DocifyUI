@@ -161,6 +161,20 @@ export default function History() {
   const openRow = (id) => { nav(openId === id ? '/history' : '/history/' + id); };
 
   const setStatus = async (id, to) => {
+    // Reverting a live document to draft withdraws it from the automation
+    // approval gate — confirm before undoing an approval or a publish, and
+    // state exactly what stops happening.
+    if (to === 'draft') {
+      const cur = (rows || []).find((x) => x.id === id);
+      const from = cur && cur.approval;
+      if (from === 'published' || from === 'approved') {
+        const was = (APPROVAL_TAG[from] || [])[1];
+        const consequence = from === 'published'
+          ? 'Your automation pipeline stops distributing this version until it is approved and published again.'
+          : 'Its approval is cleared until it is approved again.';
+        if (!window.confirm('Send this document back to draft? It is currently ' + was + '. ' + consequence)) return;
+      }
+    }
     setBusy(id + to);
     try {
       const r = await api('/history/' + id + '/status', { method: 'POST', body: { to } });
@@ -184,6 +198,18 @@ export default function History() {
   };
 
   const restore = async (id, v) => {
+    // Restore rewrites the live document. It is reversible (the current copy is
+    // snapshotted first) but it also drops the document back to draft, so the
+    // confirmation states both — and the extra consequence when it is live.
+    const cur = (rows || []).find((x) => x.id === id);
+    const from = cur && cur.approval;
+    const liveNote = from === 'published'
+      ? ' It is currently Published, so restoring returns it to draft and your pipeline stops distributing it until you approve and publish again.'
+      : from === 'approved'
+        ? ' It is currently Approved, so restoring returns it to draft and clears that approval.'
+        : '';
+    if (!window.confirm('Restore v' + v.version + '? It becomes the live document as a fresh draft. '
+      + 'The current content is saved as a new version first, so nothing is lost.' + liveNote)) return;
     setBusy(id + 'restore');
     try {
       await api('/history/' + id + '/restore', { method: 'POST', body: { versionId: v.id } });

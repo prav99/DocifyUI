@@ -633,9 +633,18 @@ export default function Repos() {
   const allSelected = rows.length > 0 && rows.every((r) => selected[r.id]);
 
   const bulk = async (body, label) => {
+    const asked = selIds.length;
     try {
-      await api('/hub/repositories', { method: 'PATCH', body: { ids: selIds, ...body } });
-      toast('success', label, selIds.length + ' repositor' + (selIds.length === 1 ? 'y' : 'ies') + ' updated');
+      // The server reports how many rows it actually changed. Trusting the
+      // requested count instead would let a partial failure (an id that is gone
+      // or not owned) read as a clean success.
+      const d = await api('/hub/repositories', { method: 'PATCH', body: { ids: selIds, ...body } });
+      const n = typeof d.updated === 'number' ? d.updated : asked;
+      const missed = asked - n;
+      const noun = (k) => k + ' repositor' + (k === 1 ? 'y' : 'ies');
+      if (n === 0) toast('warning', 'Nothing changed', 'None of the ' + noun(asked) + ' could be updated.');
+      else toast(missed > 0 ? 'warning' : 'success', label,
+        noun(n) + ' updated' + (missed > 0 ? ' · ' + missed + ' could not be updated' : ''));
       setSelected({});
       loadRepos();
       loadRuleSets(); // usage counts change with assignments
@@ -645,9 +654,15 @@ export default function Repos() {
   const removeSel = async () => {
     if (!window.confirm('Remove ' + selIds.length + ' repositor' + (selIds.length === 1 ? 'y' : 'ies')
       + ' from your catalogue? Nothing in the repositor' + (selIds.length === 1 ? 'y' : 'ies') + ' itself changes.')) return;
+    const asked = selIds.length;
     try {
-      await api('/hub/repositories', { method: 'DELETE', body: { ids: selIds } });
-      toast('info', 'Removed', selIds.length + ' repositor' + (selIds.length === 1 ? 'y' : 'ies') + ' disconnected');
+      const d = await api('/hub/repositories', { method: 'DELETE', body: { ids: selIds } });
+      const n = typeof d.removed === 'number' ? d.removed : asked;
+      const missed = asked - n;
+      const noun = (k) => k + ' repositor' + (k === 1 ? 'y' : 'ies');
+      if (n === 0) toast('warning', 'Nothing removed', 'None of the ' + noun(asked) + ' could be removed.');
+      else toast(missed > 0 ? 'warning' : 'info', 'Removed',
+        noun(n) + ' disconnected' + (missed > 0 ? ' · ' + missed + ' could not be removed' : ''));
       setSelected({});
       loadRepos();
     } catch (e) { toast('error', 'Remove failed', humanError(e.message)); }
@@ -656,7 +671,15 @@ export default function Repos() {
   const checkOne = async (r) => {
     setBusyRow(r.id);
     try {
-      await api('/hub/repositories/' + r.id + '/check', { method: 'POST' });
+      // The probe's verdict is the whole point of the button — report it rather
+      // than letting the status dot change with no acknowledgement.
+      const d = await api('/hub/repositories/' + r.id + '/check', { method: 'POST' });
+      const rep = d.repository || {};
+      if (rep.status === 'connected') {
+        toast('success', r.repo + ' is reachable', [rep.visibility, rep.branch && 'branch ' + rep.branch].filter(Boolean).join(' · ') || 'Connected.');
+      } else {
+        toast('error', r.repo + ' could not be reached', humanError(rep.statusMsg) || 'The provider rejected the request.');
+      }
       loadRepos();
     } catch (e) { toast('error', 'Check failed', humanError(e.message)); }
     finally { setBusyRow(''); }
@@ -664,7 +687,9 @@ export default function Repos() {
 
   const assignRuleSet = async (r, ruleSetId) => {
     try {
-      await api('/hub/repositories', { method: 'PATCH', body: { ids: [r.id], ruleSetId } });
+      const d = await api('/hub/repositories', { method: 'PATCH', body: { ids: [r.id], ruleSetId } });
+      // A dropdown that snaps back with no word is a silent failure — say so.
+      if (typeof d.updated === 'number' && d.updated === 0) toast('error', 'Assignment failed', r.repo + ' could not be updated.');
       loadRepos();
       loadRuleSets(); // usage counts change with assignments
     } catch (e) { toast('error', 'Assignment failed', humanError(e.message)); }

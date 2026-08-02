@@ -14,6 +14,7 @@ import { DEFAULT_CONFIG, mergeConfig, validateConfig, loadRepoConfig } from './a
 import { listRepos as ghList, listOrgRepos as ghOrg } from './adapters/github.js';
 import { listProjects as glList, listGroupProjects as glOrg } from './adapters/gitlab.js';
 import { listRepos as bbList, listWorkspaceRepos as bbOrg } from './adapters/bitbucket.js';
+import { analyzeRepository, emptyProfile } from './adapters/repointel.js';
 
 export const hubRouter = Router();
 
@@ -402,6 +403,32 @@ hubRouter.get('/effective-config', async (req, res) => {
   }
   const eff = await resolveEffectiveConfig(req.uid, provider, repo, branch, { ruleSetId: String(req.query.ruleSetId || '') });
   res.json({ provider, repo, branch, ...eff });
+});
+
+/* -------------------------- Repository intelligence ------------------------
+   What Docify can tell the customer about a repository BEFORE they spend a
+   document on it: languages, frameworks, whether there is a README or an API
+   spec, and the warnings that follow from those facts.
+
+   Fails soft by design. This backs an advisory panel, so a provider outage or
+   a rate limit must degrade that panel — never break the page that hosts it.
+   The answer is always 200 with a profile; `ok:false` plus `reason` says why
+   it is empty. */
+hubRouter.get('/intel', async (req, res) => {
+  const provider = PROVIDERS.includes(String(req.query.provider)) ? String(req.query.provider) : 'github';
+  const repo = String(req.query.repo || '').trim();
+  const branch = String(req.query.branch || 'main').trim() || 'main';
+  if (!REPO_RE.test(repo)) {
+    return res.json(emptyProfile({ provider, repo, branch, reason: 'Enter a repository as owner/name.' }));
+  }
+  try {
+    // Same token resolution as every other route here: the caller's connected
+    // Source when there is one, unauthenticated for public repositories.
+    const token = await userToken(req.uid, provider);
+    res.json(await analyzeRepository({ provider, repo, branch, token }));
+  } catch (e) {
+    res.json(emptyProfile({ provider, repo, branch, reason: e.message || 'Repository could not be analysed.' }));
+  }
 });
 
 /* ================= Organisation connections + unified catalogue =================

@@ -728,7 +728,7 @@ function ReviewQueue({ pending, onDecided, refresh }) {
             <button className="btn btn--tertiary" onClick={() => { setEditing(true); setDraft(editSeed(sel)); }} disabled={busy || editing}>
               Edit content
             </button>
-            <button className="btn btn--ghost" style={{ color: 'var(--support-error)' }} onClick={() => decide('reject')} disabled={busy}>
+            <button className="btn btn--ghost" style={{ color: 'var(--support-error)' }} onClick={() => decide('reject')} disabled={busy || editing}>
               Reject
             </button>
             <span className="navnote">Approval splices the change into the document and cuts a new version.</span>
