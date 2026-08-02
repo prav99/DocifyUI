@@ -14,8 +14,8 @@ const CAT_DESC = {
   'Consumability': 'Whether individual sections hold up when retrieved out of context.'
 };
 
-// The header used to say "generated just now" for every document, however old
-// it was. Report the real age instead.
+// The header states the document's real age — a fixed "just now" would claim a
+// freshness an old document does not have.
 function fmtAge(iso) {
   const t = iso ? new Date(iso).getTime() : NaN;
   if (Number.isNaN(t)) return '';
@@ -478,7 +478,6 @@ export default function Quality() {
                 </React.Fragment>
               ))}
             </div>
-
           </>
         )}
 

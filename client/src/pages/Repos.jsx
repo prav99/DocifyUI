@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { toast } from '../store.jsx';
@@ -17,24 +17,71 @@ const NEW_REPO_KEY = 'docify_new_repos';
 const PROVIDER_TAG = { github: 'GH', gitlab: 'GL', bitbucket: 'BB' };
 const fmtDate = (iso) => { try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return '—'; } };
 
-function StatusDot({ status }) {
+/* Provider probes report raw transport codes. A status line has to say what the
+   customer can DO about it — "HTTP 404" on its own is not an answer. Messages
+   that already carry an explanation (they contain an em dash) are left alone. */
+function humanError(msg) {
+  const s = String(msg || '').trim();
+  if (!s) return '';
+  const m = s.match(/HTTP (\d{3})/);
+  if (!m || s.includes('—')) return s;
+  const code = m[1];
+  const said = code === '404' ? 'not found — check the owner/name spelling, or connect an account that can see it if it is private'
+    : code === '401' || code === '403' ? 'access denied — reconnect the provider account, or check that it can reach this repository'
+    : code === '429' ? 'rate limited by the provider — connecting an account raises the limit; try again shortly'
+    : code.startsWith('5') ? 'the provider is unavailable right now — try again shortly'
+    : 'the provider rejected the request (' + code + ')';
+  return s.replace(/HTTP \d{3}/, said);
+}
+
+function StatusDot({ status, msg }) {
   const color = status === 'connected' ? 'var(--support-success, #24a148)'
     : status === 'error' ? 'var(--support-error, #da1e28)' : '#8d8d8d';
+  const reason = status === 'error' ? humanError(msg) : '';
   const label = status === 'connected' ? 'Connected' : status === 'error' ? 'Error' : 'Not checked yet';
-  return <span className="repostatus" title={label}><span style={{ background: color }} />{label}</span>;
+  return <span className="repostatus" title={reason || label}><span style={{ background: color }} />{label}</span>;
+}
+
+/* Switch control: a div needs the keyboard behaviour a checkbox gets for free. */
+function Toggle({ on, onChange, className, children }) {
+  const flip = () => onChange(!on);
+  return (
+    <div className={(className ? className + ' ' : '') + 'toggle' + (on ? ' on' : '')}
+      role="switch" aria-checked={on} tabIndex={0} onClick={flip}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } }}>
+      <span className="track" /><span className="body01">{children}</span>
+    </div>
+  );
 }
 
 /* ---------------- Side panel (shared) ---------------- */
 function Panel({ open, onClose, title, children, wide }) {
+  const bodyRef = useRef(null);
+  // Inline arrow props change identity every render, so the latest handler is
+  // read through a ref — otherwise the effect would re-run and steal focus
+  // back from whatever field the user is typing in.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
+    const restore = document.activeElement;
+    document.addEventListener('keydown', onKey);
+    if (bodyRef.current) bodyRef.current.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (restore && restore.focus) restore.focus();
+    };
+  }, [open]);
   if (!open) return null;
   return (
-    <div className="hubpanel-wrap" role="dialog" aria-label={title} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="hubpanel-wrap" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={'hubpanel' + (wide ? ' hubpanel--wide' : '')}>
         <div className="hubpanel-head">
           <h3 className="h02">{title}</h3>
           <button className="mclose" aria-label="Close" onClick={onClose}>✕</button>
         </div>
-        <div className="hubpanel-body">{children}</div>
+        <div className="hubpanel-body" ref={bodyRef} tabIndex={-1}>{children}</div>
       </div>
     </div>
   );
@@ -58,7 +105,7 @@ function AddReposPanel({ open, onClose, ruleSets, onAdded, stashNew }) {
       setRepos('');
       onAdded();
       onClose();
-    } catch (e) { toast('error', 'Could not add repositories', e.message); }
+    } catch (e) { toast('error', 'Could not add repositories', humanError(e.message)); }
     finally { setBusy(false); }
   }
 
@@ -86,9 +133,7 @@ function AddReposPanel({ open, onClose, ruleSets, onAdded, stashNew }) {
           {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
         </select>
       </div>
-      <div className={'toggle' + (verify ? ' on' : '')} onClick={() => setVerify(!verify)} role="switch" aria-checked={verify} tabIndex={0}>
-        <span className="track" /><span className="body01">Verify connections now (slower for large batches)</span>
-      </div>
+      <Toggle on={verify} onChange={setVerify}>Verify connections now (slower for large batches)</Toggle>
       <div className="row mt6">
         <button className="btn btn--primary btn--center" disabled={busy || !repos.trim()} onClick={add}>
           {busy ? 'Connecting…' : 'Connect'}
@@ -104,11 +149,15 @@ function EffectiveConfigPanel({ repo, onClose }) {
   const [eff, setEff] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    if (!repo) return;
+    if (!repo) return undefined;
+    let live = true;
     setEff(null); setError('');
     api('/hub/effective-config?repoId=' + repo.id)
-      .then(setEff)
-      .catch((e) => setError(e.message));
+      .then((d) => { if (live) setEff(d); })
+      .catch((e) => { if (live) setError(humanError(e.message)); });
+    // Resolution reads the repository over the network — a slow answer for a
+    // repo the user already closed must never land in the open panel.
+    return () => { live = false; };
   }, [repo]);
   const c = eff && eff.config;
   return (
@@ -140,8 +189,16 @@ function EffectiveConfigPanel({ repo, onClose }) {
                 {' · discards below ' + c.thresholds.discard_below}
                 {c.rules.document_only && c.rules.document_only.length ? ' · only surfaces: ' + c.rules.document_only.join(', ') : ''}
               </p>
-              {c.scan.include.length > 0 && <p className="body01 t2 mt2">Scan includes: <span className="mono">{c.scan.include.join(', ')}</span></p>}
-              <p className="body01 t2 mt2">Excluded paths: <span className="mono">{c.scan.exclude.slice(0, 6).join(', ')}{c.scan.exclude.length > 6 ? ' +' + (c.scan.exclude.length - 6) + ' more' : ''}</span></p>
+              <p className="body01 t2 mt2">Included paths: <span className="mono">
+                {c.scan.include.length
+                  ? c.scan.include.slice(0, 6).join(', ') + (c.scan.include.length > 6 ? ' +' + (c.scan.include.length - 6) + ' more' : '')
+                  : 'every path (no include filter)'}
+              </span></p>
+              <p className="body01 t2 mt2">Excluded paths: <span className="mono">
+                {c.scan.exclude.length
+                  ? c.scan.exclude.slice(0, 6).join(', ') + (c.scan.exclude.length > 6 ? ' +' + (c.scan.exclude.length - 6) + ' more' : '')
+                  : 'none'}
+              </span></p>
               {c.product.audience && <p className="body01 t2 mt2">Audience: {c.product.audience}</p>}
               {eff.instructions && (
                 <>
@@ -161,49 +218,82 @@ function EffectiveConfigPanel({ repo, onClose }) {
 /* ---------------- Rule set editor panel ---------------- */
 const SURFACES = ['public_api', 'http_api', 'cli', 'configuration', 'error_messages', 'webhooks', 'ui', 'auth'];
 const COMMIT_TYPES = ['chore', 'refactor', 'test', 'style', 'ci', 'build', 'docs', 'perf'];
+/* Mirrors DEFAULT_CONFIG in server/src/adapters/relevance.js. A rule set that
+   defines nothing still runs with these, so the editor shows them rather than
+   an empty box that implies "nothing is filtered". */
+const DEFAULT_IGNORE_TYPES = ['chore', 'refactor', 'test', 'style', 'ci', 'build'];
+const DEFAULT_EXCLUDE = [
+  '**/*.lock', '**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml',
+  '**/go.sum', '**/Cargo.lock', '**/poetry.lock',
+  '**/node_modules/**', '**/dist/**', '**/build/**', '**/vendor/**',
+  '**/.github/**', '**/.circleci/**'
+];
+const globLines = (s) => s.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+const numOr = (v, fb) => (v === undefined || v === null || v === '' ? fb : Number(v));
 
 function RuleSetPanel({ open, ruleSet, onClose, onSaved }) {
   const editing = ruleSet && ruleSet.id;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [ignoreTypes, setIgnoreTypes] = useState(['chore', 'refactor', 'test', 'style', 'ci', 'build']);
+  const [ignoreTypes, setIgnoreTypes] = useState(DEFAULT_IGNORE_TYPES);
   const [ignoreDeps, setIgnoreDeps] = useState(true);
   const [documentOnly, setDocumentOnly] = useState([]);
   const [autoDoc, setAutoDoc] = useState(80);
   const [discard, setDiscard] = useState(40);
   const [audience, setAudience] = useState('');
+  const [include, setInclude] = useState('');
   const [exclude, setExclude] = useState('');
   const [instructions, setInstructions] = useState('');
   const [busy, setBusy] = useState(false);
+  // A save replaces the whole stored config, so keys this editor does not
+  // expose (product.name, always_document_paths, review_below, …) are carried
+  // forward instead of being silently dropped.
+  const baseConfig = useRef({});
 
   useEffect(() => {
     if (!open) return;
     const c = (ruleSet && ruleSet.config) || {};
+    baseConfig.current = c;
     setName(ruleSet ? ruleSet.name || '' : '');
     setDescription(ruleSet ? ruleSet.description || '' : '');
-    setIgnoreTypes((c.rules && c.rules.ignore_commit_types) || ['chore', 'refactor', 'test', 'style', 'ci', 'build']);
+    setIgnoreTypes((c.rules && c.rules.ignore_commit_types) || DEFAULT_IGNORE_TYPES);
     setIgnoreDeps(c.rules ? c.rules.ignore_dependency_updates !== false : true);
     setDocumentOnly((c.rules && c.rules.document_only) || []);
-    setAutoDoc((c.thresholds && c.thresholds.auto_document) || 80);
-    setDiscard((c.thresholds && c.thresholds.discard_below) || 40);
+    setAutoDoc(numOr(c.thresholds && c.thresholds.auto_document, 80));
+    setDiscard(numOr(c.thresholds && c.thresholds.discard_below, 40));
     setAudience((c.product && c.product.audience) || '');
-    setExclude(((c.scan && c.scan.exclude) || []).join('\n'));
+    setInclude(((c.scan && c.scan.include) || []).join('\n'));
+    setExclude(((c.scan && c.scan.exclude) || DEFAULT_EXCLUDE).join('\n'));
     setInstructions(ruleSet ? ruleSet.instructions || '' : '');
   }, [open, ruleSet]);
 
   const toggleIn = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 
   async function saveRuleSet() {
+    const auto = numOr(autoDoc, NaN);
+    const disc = numOr(discard, NaN);
+    if (![auto, disc].every((n) => Number.isFinite(n) && n >= 0 && n <= 100)) {
+      return toast('error', 'Thresholds must be between 0 and 100', 'Impact scores are on a 0–100 scale.');
+    }
+    if (disc > auto) {
+      return toast('error', 'Discard threshold is above the auto-document threshold',
+        'Nothing could ever be documented. Lower "Discard below" under ' + auto + '.');
+    }
     setBusy(true);
+    const base = baseConfig.current || {};
+    // Every field is written explicitly — an omitted key means "inherit the
+    // default", so an emptied list would silently come back on the next load.
     const config = {
-      product: audience ? { audience } : {},
-      scan: exclude.trim() ? { exclude: exclude.split(/\n+/).map((s) => s.trim()).filter(Boolean) } : {},
+      ...base,
+      product: { ...(base.product || {}), audience: audience.trim() },
+      scan: { ...(base.scan || {}), include: globLines(include), exclude: globLines(exclude) },
       rules: {
+        ...(base.rules || {}),
         ignore_commit_types: ignoreTypes,
         ignore_dependency_updates: ignoreDeps,
-        ...(documentOnly.length ? { document_only: documentOnly } : {})
+        document_only: documentOnly.length ? documentOnly : null
       },
-      thresholds: { auto_document: Number(autoDoc), discard_below: Number(discard) }
+      thresholds: { ...(base.thresholds || {}), auto_document: auto, discard_below: disc }
     };
     try {
       if (editing) await api('/hub/rulesets/' + ruleSet.id, { method: 'PUT', body: { name, description, config, instructions } });
@@ -211,7 +301,7 @@ function RuleSetPanel({ open, ruleSet, onClose, onSaved }) {
       toast('success', editing ? 'Rule set updated' : 'Rule set created', name);
       onSaved();
       onClose();
-    } catch (e) { toast('error', 'Save failed', e.message); }
+    } catch (e) { toast('error', 'Save failed', humanError(e.message)); }
     finally { setBusy(false); }
   }
 
@@ -236,9 +326,7 @@ function RuleSetPanel({ open, ruleSet, onClose, onSaved }) {
         ))}
       </div>
 
-      <div className={'toggle mt5' + (ignoreDeps ? ' on' : '')} onClick={() => setIgnoreDeps(!ignoreDeps)} role="switch" aria-checked={ignoreDeps} tabIndex={0}>
-        <span className="track" /><span className="body01">Skip dependency-only updates (lockfiles, manifests)</span>
-      </div>
+      <Toggle className="mt5" on={ignoreDeps} onChange={setIgnoreDeps}>Skip dependency-only updates (lockfiles, manifests)</Toggle>
 
       <p className="label01 t2 mb3 mt5">DOCUMENT ONLY THESE SURFACES <span style={{ fontWeight: 400 }}>(empty = all customer-facing)</span></p>
       <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
@@ -263,10 +351,22 @@ function RuleSetPanel({ open, ruleSet, onClose, onSaved }) {
         <label htmlFor="rs-aud">Audience</label>
         <input id="rs-aud" className="input" value={audience} onChange={(e) => setAudience(e.target.value)} placeholder="developers integrating the API" />
       </div>
-      <div className="field">
-        <label htmlFor="rs-ex">Excluded paths (globs, one per line)</label>
-        <textarea id="rs-ex" className="textarea mono" rows={3} style={{ fontSize: 13 }} value={exclude}
-          onChange={(e) => setExclude(e.target.value)} placeholder={'internal/**\n**/*_test.*'} />
+      <div className="grid2">
+        <div className="field">
+          <label htmlFor="rs-in">Included paths (globs, one per line)</label>
+          <textarea id="rs-in" className="textarea mono" rows={3} style={{ fontSize: 13 }} value={include}
+            onChange={(e) => setInclude(e.target.value)} placeholder={'packages/api/**\nservices/billing/**'} />
+          <span className="helper">
+            Leave empty to scan the whole repository. With patterns here, only matching files are read,
+            and a change that touches nothing inside them is filtered out — the monorepo control.
+          </span>
+        </div>
+        <div className="field">
+          <label htmlFor="rs-ex">Excluded paths (globs, one per line)</label>
+          <textarea id="rs-ex" className="textarea mono" rows={3} style={{ fontSize: 13 }} value={exclude}
+            onChange={(e) => setExclude(e.target.value)} placeholder={'internal/**\n**/*_test.*'} />
+          <span className="helper">Exclusions win: a path matching both lists is left out.</span>
+        </div>
       </div>
       <div className="field" style={{ marginBottom: 0 }}>
         <label htmlFor="rs-ins">AI instructions (judgment layer — like a CLAUDE.md for your docs)</label>
@@ -290,6 +390,7 @@ function RuleSetPanel({ open, ruleSet, onClose, onSaved }) {
 // consume the resulting unified catalogue and never show connection UI.
 const ORG_NOUN = { github: 'organisation', gitlab: 'group', bitbucket: 'workspace' };
 const PROVIDER_NAME = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
+const TABS = [['conn', 'Connections'], ['repos', 'Managed repositories'], ['rules', 'Rule sets']];
 
 function ConnectionsTab({ returnTo }) {
   const [conns, setConns] = useState(null);
@@ -297,10 +398,16 @@ function ConnectionsTab({ returnTo }) {
   const [orgs, setOrgs] = useState([]);
   const [draft, setDraft] = useState({}); // provider -> org name being typed
   const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
 
   const load = useCallback(() => {
-    api('/connections').then((d) => setConns(d.connections)).catch(() => setConns({}));
-    api('/hub/orgs').then((d) => setOrgs(d.orgs)).catch(() => {});
+    setError('');
+    // Failing silently here would paint every provider as "No account
+    // connected" — the one state a user must never be shown by mistake.
+    api('/connections')
+      .then((d) => setConns(d.connections))
+      .catch((e) => { setConns({}); setError(humanError(e.message)); });
+    api('/hub/orgs').then((d) => setOrgs(d.orgs)).catch((e) => setError(humanError(e.message)));
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api('/auth/providers').then(setOauthAvail).catch(() => {}); }, []);
@@ -320,7 +427,7 @@ function ConnectionsTab({ returnTo }) {
       await api('/sources/' + p, { method: 'DELETE' });
       toast('info', PROVIDER_NAME[p] + ' account disconnected', 'Organisation connections and hub repositories are kept.');
       load();
-    } catch (e) { toast('error', 'Could not disconnect', e.message); }
+    } catch (e) { toast('error', 'Could not disconnect', humanError(e.message)); }
     finally { setBusy(''); }
   };
 
@@ -333,31 +440,39 @@ function ConnectionsTab({ returnTo }) {
       toast('success', org + ' connected', d.repos + ' repositor' + (d.repos === 1 ? 'y' : 'ies') + ' now available in every workflow.');
       setDraft((x) => ({ ...x, [p]: '' }));
       load();
-    } catch (e) { toast('error', 'Could not connect ' + org, e.message); }
+    } catch (e) { toast('error', 'Could not connect ' + org, humanError(e.message)); }
     finally { setBusy(''); }
   };
 
   const syncOrg = async (o) => {
     setBusy(o.id);
     try { await api('/hub/orgs/' + o.id + '/sync', { method: 'POST' }); load(); }
-    catch (e) { toast('error', 'Sync failed', e.message); }
+    catch (e) { toast('error', 'Sync failed', humanError(e.message)); }
     finally { setBusy(''); }
   };
 
   const removeOrg = async (o) => {
+    if (!window.confirm('Disconnect ' + o.org + '? Its repositories leave your catalogue — repositories added individually are kept.')) return;
     setBusy(o.id);
     try {
       await api('/hub/orgs/' + o.id, { method: 'DELETE' });
       toast('info', o.org + ' disconnected', 'Its repositories no longer appear in the catalogue.');
       load();
-    } catch (e) { toast('error', 'Remove failed', e.message); }
+    } catch (e) { toast('error', 'Remove failed', humanError(e.message)); }
     finally { setBusy(''); }
   };
 
-  if (!conns) return <p className="body01 t2 mt6">Loading connections…</p>;
+  if (!conns) return <p className="body01 t2 mt6" role="status">Loading connections…</p>;
 
   return (
     <div className="conngrid mt6">
+      {error && (
+        <div className="conncard" style={{ borderLeft: '3px solid var(--support-error)' }}>
+          <p className="body01"><b>Could not load your connections</b></p>
+          <p className="helper mt2">{error}</p>
+          <button className="btn btn--tertiary btn--sm btn--center mt3" onClick={load}>Retry</button>
+        </div>
+      )}
       {['github', 'gitlab', 'bitbucket'].map((p) => {
         const c = conns[p] || {};
         const myOrgs = orgs.filter((o) => o.provider === p);
@@ -391,7 +506,7 @@ function ConnectionsTab({ returnTo }) {
                   <li key={o.id} className="orgrow">
                     <span className="orgrow-name"><b>{o.org}</b></span>
                     <span className="reporow-meta">
-                      {o.status === 'error' ? '⚠ ' + (o.statusMsg || 'unreachable') : o.repoCount + ' repositories'}
+                      {o.status === 'error' ? '⚠ ' + (humanError(o.statusMsg) || 'unreachable') : o.repoCount + ' repositories'}
                       {o.lastSync ? ' · synced ' + fmtDate(o.lastSync) : ''}
                     </span>
                     <span className="row" style={{ gap: 10, marginLeft: 'auto' }}>
@@ -432,6 +547,21 @@ export default function Repos() {
   const returnTo = new URLSearchParams(loc.search).get('return') || '';
   // Workflow visitors come here to CONNECT something — land them on that tab.
   const [tab, setTab] = useState(returnTo ? 'conn' : 'repos');
+  // Roving tabindex: one stop in the tab order, arrow keys move between tabs.
+  const tabRefs = useRef({});
+  const onTabKey = (e) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? TABS.length - 1
+      : e.key === 'Home' ? 'first' : e.key === 'End' ? 'last' : null;
+    if (step === null) return;
+    e.preventDefault();
+    const i = TABS.findIndex(([id]) => id === tab);
+    const next = step === 'first' ? TABS[0][0]
+      : step === 'last' ? TABS[TABS.length - 1][0]
+      : TABS[(i + step) % TABS.length][0];
+    setTab(next);
+    const el = tabRefs.current[next];
+    if (el) el.focus();
+  };
 
   // Stash newly connected repos so the originating workflow can auto-select them.
   const stashNew = (repos) => {
@@ -443,6 +573,7 @@ export default function Repos() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
+  const [qTerm, setQTerm] = useState(''); // debounced — one request per pause, not per keystroke
   const [provider, setProvider] = useState('');
   const [status, setStatus] = useState('');
   const [org, setOrg] = useState('');
@@ -454,28 +585,46 @@ export default function Repos() {
 
   // rule sets state
   const [ruleSets, setRuleSets] = useState([]);
+  const [rsError, setRsError] = useState('');
+  const [rsLoaded, setRsLoaded] = useState(false);
+  const [rsBusy, setRsBusy] = useState('');
   const [rsPanel, setRsPanel] = useState(null); // null | {} (new) | ruleSet (edit)
 
+  // Filters change faster than the network answers; only the newest request is
+  // allowed to paint, so a slow early response can't overwrite a fresh one.
+  const reqSeq = useRef(0);
   const loadRepos = useCallback(() => {
     setError('');
+    const seq = ++reqSeq.current;
     const params = new URLSearchParams();
-    if (q) params.set('q', q);
+    if (qTerm) params.set('q', qTerm);
     if (provider) params.set('provider', provider);
     if (status) params.set('status', status);
     if (org) params.set('org', org);
     params.set('page', String(page));
     params.set('per', '25');
     api('/hub/repositories?' + params.toString())
-      .then(setData)
-      .catch((e) => { setError(e.message); setData({ repositories: [], total: 0, page: 1, per: 25, orgs: [] }); });
-  }, [q, provider, status, org, page]);
+      .then((d) => { if (seq === reqSeq.current) setData(d); })
+      .catch((e) => {
+        if (seq !== reqSeq.current) return;
+        setError(humanError(e.message));
+        setData({ repositories: [], total: 0, page: 1, per: 25, orgs: [] });
+      });
+  }, [qTerm, provider, status, org, page]);
 
   const loadRuleSets = useCallback(() => {
-    api('/hub/rulesets').then((d) => setRuleSets(d.ruleSets)).catch(() => {});
+    setRsError('');
+    api('/hub/rulesets')
+      .then((d) => { setRuleSets(d.ruleSets); setRsLoaded(true); })
+      .catch((e) => { setRsError(humanError(e.message)); setRsLoaded(true); });
   }, []);
 
   useEffect(() => { loadRepos(); }, [loadRepos]);
   useEffect(() => { loadRuleSets(); }, [loadRuleSets]);
+  useEffect(() => {
+    const t = setTimeout(() => { setQTerm(q); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   const rows = (data && data.repositories) || [];
   const total = (data && data.total) || 0;
@@ -490,16 +639,18 @@ export default function Repos() {
       setSelected({});
       loadRepos();
       loadRuleSets(); // usage counts change with assignments
-    } catch (e) { toast('error', 'Bulk action failed', e.message); }
+    } catch (e) { toast('error', 'Bulk action failed', humanError(e.message)); }
   };
 
   const removeSel = async () => {
+    if (!window.confirm('Remove ' + selIds.length + ' repositor' + (selIds.length === 1 ? 'y' : 'ies')
+      + ' from your catalogue? Nothing in the repositor' + (selIds.length === 1 ? 'y' : 'ies') + ' itself changes.')) return;
     try {
       await api('/hub/repositories', { method: 'DELETE', body: { ids: selIds } });
       toast('info', 'Removed', selIds.length + ' repositor' + (selIds.length === 1 ? 'y' : 'ies') + ' disconnected');
       setSelected({});
       loadRepos();
-    } catch (e) { toast('error', 'Remove failed', e.message); }
+    } catch (e) { toast('error', 'Remove failed', humanError(e.message)); }
   };
 
   const checkOne = async (r) => {
@@ -507,7 +658,7 @@ export default function Repos() {
     try {
       await api('/hub/repositories/' + r.id + '/check', { method: 'POST' });
       loadRepos();
-    } catch (e) { toast('error', 'Check failed', e.message); }
+    } catch (e) { toast('error', 'Check failed', humanError(e.message)); }
     finally { setBusyRow(''); }
   };
 
@@ -516,7 +667,7 @@ export default function Repos() {
       await api('/hub/repositories', { method: 'PATCH', body: { ids: [r.id], ruleSetId } });
       loadRepos();
       loadRuleSets(); // usage counts change with assignments
-    } catch (e) { toast('error', 'Assignment failed', e.message); }
+    } catch (e) { toast('error', 'Assignment failed', humanError(e.message)); }
   };
 
   const summary = useMemo(() => {
@@ -548,26 +699,31 @@ export default function Repos() {
         </button>
       </div>
 
-      <div className="tabs mt6" role="tablist">
-        <button className={tab === 'conn' ? 'on' : ''} role="tab" aria-selected={tab === 'conn'} onClick={() => setTab('conn')}>
-          Connections
-        </button>
-        <button className={tab === 'repos' ? 'on' : ''} role="tab" aria-selected={tab === 'repos'} onClick={() => setTab('repos')}>
-          Managed repositories{total ? ' (' + total + ')' : ''}
-        </button>
-        <button className={tab === 'rules' ? 'on' : ''} role="tab" aria-selected={tab === 'rules'} onClick={() => setTab('rules')}>
-          Rule sets{ruleSets.length ? ' (' + ruleSets.length + ')' : ''}
-        </button>
+      <div className="tabs mt6" role="tablist" aria-label="Repository hub sections" onKeyDown={onTabKey}>
+        {TABS.map(([id, label]) => (
+          <button key={id} id={'hubtab-' + id} className={tab === id ? 'on' : ''}
+            role="tab" aria-selected={tab === id} aria-controls={'hubpanel-' + id}
+            tabIndex={tab === id ? 0 : -1} ref={(el) => { tabRefs.current[id] = el; }}
+            onClick={() => setTab(id)}>
+            {label}
+            {id === 'repos' && total ? ' (' + total + ')' : ''}
+            {id === 'rules' && ruleSets.length ? ' (' + ruleSets.length + ')' : ''}
+          </button>
+        ))}
       </div>
 
-      {tab === 'conn' && <ConnectionsTab returnTo={returnTo} />}
+      {tab === 'conn' && (
+        <div id="hubpanel-conn" role="tabpanel" aria-labelledby="hubtab-conn">
+          <ConnectionsTab returnTo={returnTo} />
+        </div>
+      )}
 
       {tab === 'repos' && (
-        <>
+        <div id="hubpanel-repos" role="tabpanel" aria-labelledby="hubtab-repos">
           {/* Toolbar: search + filters + bulk actions */}
           <div className="hubbar mt5">
             <input className="input hubsearch" placeholder="Search repositories…" value={q}
-              onChange={(e) => { setQ(e.target.value); setPage(1); }} aria-label="Search repositories" />
+              onChange={(e) => setQ(e.target.value)} aria-label="Search repositories" />
             <select className="select" value={provider} onChange={(e) => { setProvider(e.target.value); setPage(1); }} aria-label="Filter by provider">
               <option value="">All providers</option>
               <option value="github">GitHub</option>
@@ -591,8 +747,11 @@ export default function Repos() {
               <span className="body01"><b>{summary}</b></span>
               <button className="btn btn--tertiary btn--sm btn--center" onClick={() => bulk({ enabled: true }, 'Enabled')}>Enable</button>
               <button className="btn btn--tertiary btn--sm btn--center" onClick={() => bulk({ enabled: false }, 'Disabled')}>Disable</button>
-              <select className="select" style={{ maxWidth: 240 }} defaultValue="" aria-label="Assign rule set to selection"
-                onChange={(e) => { if (e.target.value !== '__') bulk({ ruleSetId: e.target.value }, 'Rule set assigned'); e.target.value = '__'; }}>
+              {/* Controlled on the placeholder: uncontrolled, it displayed
+                  "Default rule set" as if that were the current assignment and
+                  picking it fired no change at all. */}
+              <select className="select" style={{ maxWidth: 240 }} value="__" aria-label="Assign rule set to selection"
+                onChange={(e) => { if (e.target.value !== '__') bulk({ ruleSetId: e.target.value }, 'Rule set assigned'); }}>
                 <option value="__" disabled>Assign rule set…</option>
                 <option value="">Default rule set</option>
                 {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
@@ -602,7 +761,7 @@ export default function Repos() {
           )}
 
           {/* The table */}
-          {!data && !error && <p className="body01 t2 mt6">Loading repositories…</p>}
+          {!data && !error && <p className="body01 t2 mt6" role="status">Loading repositories…</p>}
           {error && (
             <div className="sync-empty mt6">
               <p className="h03">Could not load repositories</p>
@@ -665,7 +824,12 @@ export default function Repos() {
                           {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
                         </select>
                       </td>
-                      <td><StatusDot status={r.status} /></td>
+                      <td>
+                        <StatusDot status={r.status} msg={r.statusMsg} />
+                        {r.status === 'error' && r.statusMsg
+                          ? <span className="helper" style={{ display: 'block', maxWidth: 220 }}>{humanError(r.statusMsg)}</span>
+                          : null}
+                      </td>
                       <td className="t2">{r.lastCheck ? fmtDate(r.lastCheck) : '—'}</td>
                       <td>
                         <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
@@ -690,11 +854,11 @@ export default function Repos() {
               </div>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {tab === 'rules' && (
-        <>
+        <div id="hubpanel-rules" role="tabpanel" aria-labelledby="hubtab-rules">
           <div className="row row--between mt5" style={{ flexWrap: 'wrap', gap: 12 }}>
             <p className="body01 t2" style={{ maxWidth: 640 }}>
               A rule set defines what gets documented and what gets filtered — assign it to one repository,
@@ -702,7 +866,24 @@ export default function Repos() {
             </p>
             <button className="btn btn--tertiary btn--field" onClick={() => setRsPanel({})}>New rule set<span className="ico">+</span></button>
           </div>
-          {ruleSets.length === 0 && <p className="body01 t2 mt6">Loading rule sets…</p>}
+          {!rsLoaded && <p className="body01 t2 mt6" role="status">Loading rule sets…</p>}
+          {rsError && (
+            <div className="sync-empty mt6">
+              <p className="h03">Could not load rule sets</p>
+              <p className="body01 t2 mt3">{rsError}</p>
+              <button className="btn btn--tertiary btn--sm btn--center mt5" onClick={loadRuleSets}>Retry</button>
+            </div>
+          )}
+          {rsLoaded && !rsError && ruleSets.length === 0 && (
+            <div className="sync-empty mt6">
+              <p className="h03">No rule sets yet</p>
+              <p className="body01 t2 mt3" style={{ maxWidth: 520, margin: '8px auto 0' }}>
+                Without one, repositories run on the built-in defaults. Create a rule set to scope which
+                paths are read and which changes are worth documenting.
+              </p>
+              <button className="btn btn--primary btn--center mt5" onClick={() => setRsPanel({})}>New rule set</button>
+            </div>
+          )}
           <div className="stack mt4">
             {ruleSets.map((rs) => (
               <div key={rs.id} className="ruleset-row">
@@ -715,20 +896,29 @@ export default function Repos() {
                 </div>
                 <div className="row" style={{ gap: 8, flexShrink: 0 }}>
                   {!rs.isDefault && (
-                    <button className="linkbtn" onClick={async () => {
+                    <button className="linkbtn" disabled={rsBusy === rs.id} onClick={async () => {
+                      setRsBusy(rs.id);
                       try { await api('/hub/rulesets/' + rs.id, { method: 'PUT', body: { isDefault: true } }); loadRuleSets(); }
-                      catch (e) { toast('error', 'Failed', e.message); }
+                      catch (e) { toast('error', 'Failed', humanError(e.message)); }
+                      finally { setRsBusy(''); }
                     }}>Make default</button>
                   )}
-                  <button className="linkbtn" onClick={async () => {
+                  <button className="linkbtn" disabled={rsBusy === rs.id} onClick={async () => {
+                    setRsBusy(rs.id);
                     try { await api('/hub/rulesets/' + rs.id + '/duplicate', { method: 'POST' }); loadRuleSets(); toast('success', 'Duplicated', rs.name + ' (copy)'); }
-                    catch (e) { toast('error', 'Failed', e.message); }
+                    catch (e) { toast('error', 'Failed', humanError(e.message)); }
+                    finally { setRsBusy(''); }
                   }}>Duplicate</button>
                   <button className="btn btn--tertiary btn--sm btn--center" onClick={() => setRsPanel(rs)}>Edit</button>
                   {!rs.isDefault && (
-                    <button className="linkbtn" style={{ color: 'var(--support-error)' }} onClick={async () => {
+                    <button className="linkbtn" style={{ color: 'var(--support-error)' }} disabled={rsBusy === rs.id} onClick={async () => {
+                      if (!window.confirm('Delete "' + rs.name + '"? '
+                        + (rs.reposUsing ? rs.reposUsing + ' repositor' + (rs.reposUsing === 1 ? 'y falls' : 'ies fall') + ' back to your default rule set.'
+                          : 'No repository uses it.'))) return;
+                      setRsBusy(rs.id);
                       try { await api('/hub/rulesets/' + rs.id, { method: 'DELETE' }); loadRuleSets(); loadRepos(); toast('info', 'Rule set deleted', rs.name); }
-                      catch (e) { toast('error', 'Delete failed', e.message); }
+                      catch (e) { toast('error', 'Delete failed', humanError(e.message)); }
+                      finally { setRsBusy(''); }
                     }}>Delete</button>
                   )}
                 </div>
@@ -739,7 +929,7 @@ export default function Repos() {
             Where these apply: normal generation scopes repository files and injects instructions;
             automation pipelines gate every merge; Doc sync filters every commit. One definition, everywhere.
           </p>
-        </>
+        </div>
       )}
 
       <AddReposPanel open={addOpen} onClose={() => setAddOpen(false)} ruleSets={ruleSets} onAdded={() => { loadRepos(); }} stashNew={returnTo ? stashNew : null} />

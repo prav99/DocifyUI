@@ -24,11 +24,21 @@ const PORT = Number(process.env.PORT || 4000);
 process.on('uncaughtException', (e) => console.error('uncaughtException', e));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 
-if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+const IS_PROD = process.env.NODE_ENV === 'production';
+// Rate limits key on req.ip, so behind a load balancer every request looks
+// like one client until the proxy hop is trusted — one visitor could then
+// throttle everyone. Hosted platforms always front the app, so default to
+// trusting them; local development keeps req.ip = the socket address.
+// Trust exactly ONE hop, never `true`: with `true` any client can prepend its
+// own X-Forwarded-For and choose which rate-limit bucket it lands in.
+const BEHIND_PLATFORM_PROXY = Boolean(IS_PROD || process.env.RAILWAY_ENVIRONMENT || process.env.RENDER || process.env.DYNO || process.env.FLY_APP_NAME);
+const TRUST_HOPS = process.env.TRUST_PROXY != null && process.env.TRUST_PROXY !== ''
+  ? Math.max(0, Number(process.env.TRUST_PROXY) || 0)
+  : (BEHIND_PLATFORM_PROXY ? 1 : 0);
+if (TRUST_HOPS > 0) app.set('trust proxy', TRUST_HOPS);
 app.disable('x-powered-by');
 
 /* ---------------- Security headers ---------------- */
-const IS_PROD = process.env.NODE_ENV === 'production';
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -39,8 +49,12 @@ app.use((req, res, next) => {
   // HSTS: browsers refuse plain-http for a year once seen. Production only —
   // it would break local http development.
   if (IS_PROD) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  // Never let a browser or intermediary cache an authenticated API response.
-  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
+  // Never let a browser or intermediary cache an authenticated API response,
+  // and never let another site embed one as a subresource.
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  }
   next();
 });
 
@@ -132,14 +146,58 @@ if (fs.existsSync(dist)) {
   });
 }
 
+// Unmatched API routes must answer JSON: Express's default 404 is an HTML
+// page, which a fetch() caller reports as a parse failure rather than a 404.
+app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+
+/* ---------------- Final error handler ----------------
+   Client mistakes (malformed JSON, an oversized body) carry a 4xx status from
+   body-parser; answering them with 500 blames the server and hides the fix.
+   Only messages authored here are returned — err.message can carry file
+   paths, driver internals, or a slice of the offending payload. */
+const CLIENT_ERROR_BY_TYPE = {
+  'entity.parse.failed': 'Malformed JSON in request body.',
+  'entity.too.large': 'Request body is too large.',
+  'entity.verify.failed': 'Request body could not be verified.',
+  'encoding.unsupported': 'Unsupported content encoding.',
+  'parameters.too.many': 'Too many parameters in request body.',
+  'request.aborted': 'Request aborted before it completed.',
+  'request.size.invalid': 'Request body size did not match Content-Length.'
+};
+const CLIENT_ERROR_BY_STATUS = {
+  400: 'Bad request.', 401: 'Authentication required.', 403: 'Not permitted.',
+  404: 'Not found.', 405: 'Method not allowed.', 408: 'Request timed out.',
+  409: 'Conflict.', 413: 'Request body is too large.', 415: 'Unsupported media type.',
+  422: 'Request could not be processed.', 429: 'Too many requests — please retry in a moment.'
+};
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: 'Internal server error' });
+  const raw = Number(err && (err.status || err.statusCode));
+  const status = raw >= 400 && raw <= 599 ? raw : 500;
+  const isClient = status < 500;
+  if (isClient) console.warn('[http ' + status + '] ' + req.method + ' ' + req.path + ' — ' + (err.type || err.message));
+  else console.error(err);
+  // Headers already flushed (a streamed download, say): only the socket can be
+  // closed now; Express's default handler does that correctly.
+  if (res.headersSent) return next(err);
+  res.status(status).json({
+    error: isClient
+      ? (CLIENT_ERROR_BY_TYPE[err.type] || CLIENT_ERROR_BY_STATUS[status] || 'Bad request.')
+      : 'Internal server error'
+  });
 });
 
 const server = app.listen(PORT, () => {
   console.log('Docify API listening on http://localhost:' + PORT +
-    (fs.existsSync(dist) ? ' (serving built client)' : '') + ' · pid ' + process.pid);
+    (fs.existsSync(dist) ? ' (serving built client)' : '') + ' · pid ' + process.pid +
+    (TRUST_HOPS ? ' · trusting ' + TRUST_HOPS + ' proxy hop' + (TRUST_HOPS > 1 ? 's' : '') : ''));
+});
+
+// A listen failure (port taken, permission denied) would otherwise reach the
+// uncaughtException handler above and be logged while the process lingers
+// forever without a listener. Exit so the supervisor can restart or report it.
+server.on('error', (e) => {
+  console.error('server error: cannot listen on port ' + PORT, e);
+  process.exit(1);
 });
 
 /* ---------------- Connection hygiene under load ---------------- */
@@ -148,9 +206,17 @@ server.headersTimeout = 66000;
 server.requestTimeout = 30000;     // no request may hold a socket forever
 
 /* ---------------- Graceful shutdown: finish in-flight work, then exit ------ */
+let draining = false;
 function shutdown() {
+  // A second SIGTERM (or SIGINT after SIGTERM) must not restart the timer or
+  // re-close the server — the platform sends both during a redeploy.
+  if (draining) return;
+  draining = true;
   console.log('pid ' + process.pid + ': draining connections…');
   server.close(() => process.exit(0));
+  // keepAliveTimeout is 65s, so idle sockets alone would hold the server open
+  // past the hard deadline; drop them now and let in-flight requests finish.
+  server.closeIdleConnections?.();
   setTimeout(() => process.exit(0), 8000).unref();
 }
 process.on('SIGTERM', shutdown);

@@ -96,7 +96,7 @@ const AUTO_SCENES = [
   },
   {
     label: 'Merge → update', dur: 6500, sfx: 'click',
-    vo: 'A pull request merges. Docify updates the right section of your existing docs — never a duplicate.',
+    vo: 'A pull request merges. Docify updates the right section of the document it holds — never a duplicate, and never a write to your repository.',
     cues: [{ at: 600, sfx: 'notify' }, { at: 1700, sfx: 'process' }, { at: 3200, sfx: 'pop' }],
     render: (beat) => (
       <div>
@@ -113,7 +113,7 @@ const AUTO_SCENES = [
               <p className="h01">payments-developer-guide.md → § Authentication</p>
               {beat >= 12 && <span className="tag tag--green demo-yline">93% match</span>}
             </div>
-            {beat >= 14 && <p className="helper mt2 demo-yline">Placed into the best-matching section of the existing document. The other 41 pages untouched. Version v7 created.</p>}
+            {beat >= 14 && <p className="helper mt2 demo-yline">Placed into the best-matching section of the existing document. The other 41 pages untouched. Version v7 created. Docify updates the document it holds — it never writes to your repository.</p>}
           </div>
         )}
       </div>
@@ -165,10 +165,13 @@ export function AutomationDemo() {
 /* =========================================================================
    FILM 03 — AI Readiness (~30s)
    ========================================================================= */
+/* The dimensions Docify actually scores (QUALITY_CONFIG in adapters/llm.js).
+   Readiness is derived from these — nothing queries an AI platform — so the
+   film may only show dimensions the product really computes. */
 const DIMS = [
-  ['Metadata & descriptions', 42, 90],
-  ['Question–answer coverage', 51, 92],
-  ['Entity coverage', 66, 88]
+  ['LLM readiness — titles, descriptions, metadata', 42, 90],
+  ['Readability', 51, 92],
+  ['Completeness', 66, 88]
 ];
 
 const AICOMPAT_SCENES = [
@@ -177,28 +180,33 @@ const AICOMPAT_SCENES = [
     vo: 'Your next reader may be an AI assistant. Is your documentation ready for it?',
     render: () => (
       <TitleSlate kicker="AI READINESS"
-        title="Readable by people. Discoverable by AI."
-        sub="Analyse any document for AI search readiness, see exactly what holds it back, and fix it before you publish." />
+        title="Readable by people. Structured for AI."
+        sub="Score any document for AI search readiness — a modeled signal, not a ranking promise — see what holds it back, and fix it before you publish." />
     )
   },
   {
     label: 'Analyse', dur: 6000, sfx: 'click',
-    vo: 'Docify analyses your documentation the way ChatGPT, Gemini, Claude, and Copilot actually read it.',
+    // Docify reads the document, not the assistants. Naming ChatGPT/Gemini/
+    // Claude/Copilot as things it inspects would be a claim the code cannot make.
+    vo: 'Docify scores your documentation for AI search readiness — a modeled signal, computed from the document itself.',
     cues: [{ at: 300, sfx: 'process' }, { at: 2100, sfx: 'pop' }, { at: 3700, sfx: 'pop' }],
     render: () => (
-      <Pipe gap={1.6} steps={['Reading structure, sections & metadata', 'Simulating AI retrieval across platforms', 'Scoring readiness · compiling exact fixes']} />
+      <div>
+        <Pipe gap={1.6} steps={['Reading structure, sections & metadata', 'Modelling retrieval readiness from the document', 'Scoring readiness · listing the recommended fixes']} />
+        <p className="helper mt5 demo-late">Nothing is sent to any AI platform. Readiness is modeled from the document’s own quality dimensions — never a guarantee of how a platform will rank or cite it.</p>
+      </div>
     )
   },
   {
     label: 'Score & findings', dur: 7000, sfx: 'click',
-    vo: 'The AI readiness score shows exactly what holds you back — metadata, entities, and answer coverage.',
+    vo: 'The AI readiness score shows what holds a document back — its titles, descriptions, metadata, readability, and completeness.',
     cues: [{ at: 600, sfx: 'pop' }, { at: 3400, sfx: 'pop' }, { at: 5100, sfx: 'pop' }],
     render: (beat) => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div className="score score--warn" style={{ minWidth: 180 }}>
           <span className="label01 t2">AI Search Readiness</span>
           <span className="num"><CountTo from={0} to={62} delay={500} dur={2200} /></span>
-          <span className="helper">needs work before AI platforms cite it</span>
+          <span className="helper">below the 85 target · modeled signal</span>
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
           {beat >= 8 && DIMS.map(([n, v], i) => (
@@ -211,23 +219,24 @@ const AICOMPAT_SCENES = [
             </div>
           ))}
         </div>
-        <Callout x={62} y={22} at={5000} tone="amber">largest gap: metadata 42 → target 90</Callout>
+        <Callout x={62} y={22} at={5000} tone="amber">sample document — largest gap: titles &amp; metadata</Callout>
       </div>
     )
   },
   {
     label: 'Fix & climb', dur: 6500, sfx: 'success',
-    vo: 'Apply the recommendations — and watch it climb from sixty-two to ninety-one.',
+    vo: 'Apply the recommendations — and in this sample document the modeled score climbs from sixty-two to ninety-one.',
     cues: [{ at: 3000, sfx: 'pop' }, { at: 5200, sfx: 'chime' }],
     render: (beat) => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div className="score score--good" style={{ minWidth: 180 }}>
           <span className="label01 t2">AI Search Readiness</span>
           <span className="num">{beat >= 7 ? <CountTo from={62} to={91} delay={200} dur={2400} /> : 62}</span>
-          {beat >= 10 && <span className="helper demo-yline">▲ +29 after applied fixes</span>}
+          {beat >= 10 && <span className="helper demo-yline">▲ +29 in this sample document</span>}
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
-          {[['Add 160-character section descriptions', '+11'], ['Add question-form headings', '+9'], ['Complete metadata & entities', '+7']].map(([f, g], i) => (
+          {/* the fixes the readiness checks really emit (adapters/llm.js judge) */}
+          {[['Add a short description under the title', '+11'], ['Rewrite the title around real queries', '+9'], ['Add metadata keywords', '+7']].map(([f, g], i) => (
             <div key={f} className="demo-issue" style={{ animationDelay: (0.4 + i * 1.2) + 's' }}>
               <div className="row row--between" style={{ flexWrap: 'wrap' }}>
                 <p className="h01">{f}</p>
@@ -235,6 +244,7 @@ const AICOMPAT_SCENES = [
               </div>
             </div>
           ))}
+          <p className="helper mt3 demo-late">Illustrative example. The gains are the modeled score recomputed after each fix — not a measured change in any AI platform’s behaviour.</p>
         </div>
         <Cursor steps={[{ x: 52, y: 16, at: 300 }, { x: 87, y: 22, at: 1000, click: true }, { x: 87, y: 50, at: 2400, click: true }, { x: 16, y: 38, at: 4300 }]} />
       </div>
@@ -242,12 +252,12 @@ const AICOMPAT_SCENES = [
   },
   {
     label: 'Up next', dur: 6000, sfx: 'chime',
-    vo: 'Documentation people can understand — and AI can discover. Next — documents, versions, and approvals.',
+    vo: 'Documentation people can understand — and structured for AI to find. Next — documents, versions, and approvals.',
     cues: [{ at: 400, sfx: 'pop' }, { at: 3600, sfx: 'whoosh' }],
     render: (beat) => (
       <div>
         <div style={{ padding: '4px 0 10px' }}>
-          <span className="jd-verdict">Documentation people understand — and AI can discover.</span>
+          <span className="jd-verdict">Documentation people understand — and structured for AI to find.</span>
         </div>
         {beat >= 9 && (
           <NextPointer target="film-docs" kicker="DOCUMENTS & VERSIONS"
@@ -260,7 +270,7 @@ const AICOMPAT_SCENES = [
 
 export function AICompatDemo() {
   return <DemoShell name="AI readiness" crumb="docgen / quality / ai-readiness" scenes={AICOMPAT_SCENES}
-    posterMeta={{ kicker: 'AI READINESS', title: 'Readable by people. Discoverable by AI.', sub: 'The AI Search Readiness Score, the exact fixes, and one document climbing from 62 to 91 — in 30 seconds.', mins: '30 sec' }} />;
+    posterMeta={{ kicker: 'AI READINESS', title: 'Readable by people. Structured for AI.', sub: 'The AI Search Readiness Score — a modeled signal — the recommended fixes, and a sample document climbing from 62 to 91. In 30 seconds.', mins: '30 sec' }} />;
 }
 
 /* =========================================================================
@@ -269,11 +279,11 @@ export function AICompatDemo() {
 const GEN_SCENES = [
   {
     label: 'Hook', dur: 4500, sfx: 'whoosh',
-    vo: 'Weeks of writing — or one workflow. Watch complex source content become professional documentation, in minutes.',
+    vo: 'One workflow, start to finish. Watch complex source content become professional documentation, in minutes.',
     render: () => (
       <TitleSlate kicker="GENERATE ON DEMAND"
         title="Complex source content → professional documentation, in minutes."
-        sub="Pick a source, a document, a format — Docify writes it from the truth, then proves its quality." />
+        sub="Pick a source, a document, a format — Docify writes it from the source you chose, then scores it against six quality dimensions." />
     )
   },
   {
@@ -319,7 +329,7 @@ const GEN_SCENES = [
   },
   {
     label: 'Generate & verify', dur: 7000, sfx: 'success',
-    vo: 'Docify writes every section from the real source, previews it, and proves its quality — ninety-four.',
+    vo: 'Docify writes every section from the real source, previews it, and scores its quality — ninety-four in this example.',
     cues: [{ at: 400, sfx: 'process' }, { at: 1900, sfx: 'type' }, { at: 2600, sfx: 'type' }, { at: 4800, sfx: 'pop' }],
     render: () => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
@@ -356,5 +366,5 @@ const GEN_SCENES = [
 
 export function GenerateDemo() {
   return <DemoShell name="standard generation" crumb="docgen / generate / new-project" scenes={GEN_SCENES}
-    posterMeta={{ kicker: 'GENERATE ON DEMAND', title: 'Complex source content → professional documentation, in minutes.', sub: 'Source, document type, format, audience — then generation, verification, and export. In 30 seconds.', mins: '30 sec' }} />;
+    posterMeta={{ kicker: 'GENERATE ON DEMAND', title: 'Complex source content → professional documentation, in minutes.', sub: 'Source, document type, format, audience — then generation, scoring, and export. In 30 seconds.', mins: '30 sec' }} />;
 }

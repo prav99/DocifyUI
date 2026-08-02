@@ -30,11 +30,54 @@ const SKILL_TEMPLATE = [
   ''
 ].join('\n');
 
+// Reference files are held as { name, text }. Sessions started before their
+// contents were read may still hold bare filenames in sessionStorage.
+const refFiles = (f) => (f.files || [])
+  .map((x) => (typeof x === 'string' ? { name: x, text: '' } : x))
+  .filter((x) => x && x.name);
+
+// Reference text travels to the generator inside the instructions, which the
+// server compiles into the writing policy with a 4,000-character budget
+// (adapters/styleguide.js). Reading more than that would promise more than the
+// model ever sees.
+const REF_MAX_CHARS = 4000;
+const REF_TEXT_RE = /\.(md|markdown|txt|text|rst|adoc|asciidoc|json|ya?ml|csv|tsv|html?|xml|toml|ini|ts|tsx|js|jsx|py|go|rb|java|sql)$/i;
+
+function readAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve({ name: file.name, text: String(r.result || '') });
+    r.onerror = () => reject(new Error(file.name));
+    r.readAsText(file);
+  });
+}
+
 export default function DocType() {
   const { flow, setFlow } = useFlow();
   const [catalog, setCatalog] = useState(null);
+  const [catErr, setCatErr] = useState('');
+  const [reload, setReload] = useState(0);
+  const [reading, setReading] = useState(false);
   const [fwOpen, setFwOpen] = useState(null); // doc type id with expanded framework
-  useEffect(() => { getCatalog().then(setCatalog); }, []);
+  useEffect(() => {
+    let alive = true;
+    setCatErr('');
+    getCatalog()
+      .then((c) => { if (alive) setCatalog(c); })
+      .catch((e) => { if (alive) setCatErr(e.message || 'Could not load the document catalogue'); });
+    return () => { alive = false; };
+  }, [reload]);
+  if (catErr) {
+    return (
+      <div className="page">
+        <div className="genfail">
+          <b>Could not load document types.</b> <span>{catErr}</span>
+          <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
+            onClick={() => setReload((n) => n + 1)}>Try again</button>
+        </div>
+      </div>
+    );
+  }
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
   const types = catalog.doctypes[flow.track] || [];
@@ -49,10 +92,53 @@ export default function DocType() {
       genId: null
     }));
   }
-  function addFiles(input) {
-    const names = Array.from(input.files).map((f) => f.name);
-    setFlow((f) => ({ files: [...f.files, ...names] }));
+  async function addFiles(input) {
+    const picked = Array.from(input.files || []);
     input.value = '';
+    if (!picked.length) return;
+    // Read in the browser, so only text formats work here — a PDF or .docx
+    // would arrive as mojibake, which is worse than refusing it.
+    const isText = (f) => REF_TEXT_RE.test(f.name) || String(f.type || '').startsWith('text/');
+    const rejected = picked.filter((f) => !isText(f));
+    const usable = picked.filter(isText);
+    if (rejected.length) {
+      toast('error', 'Text files only',
+        rejected.map((f) => f.name).join(', ') + ' — reference files are read in your browser, so PDF and Word are not supported here.');
+    }
+    if (!usable.length) return;
+    setReading(true);
+    let read;
+    try {
+      read = await Promise.all(usable.map(readAsText));
+    } catch (e) {
+      setReading(false);
+      return toast('error', 'Could not read file', e.message + ' — try a plain .md or .txt file');
+    }
+    setReading(false);
+    const existing = refFiles(flow);
+    let used = existing.reduce((n, x) => n + x.text.length, 0);
+    const added = [];
+    let trimmed = false;
+    for (const r of read) {
+      const room = REF_MAX_CHARS - used;
+      if (room <= 0) { trimmed = true; break; }
+      const text = r.text.slice(0, room);
+      if (text.length < r.text.length) trimmed = true;
+      added.push({ name: r.name, text });
+      used += text.length;
+    }
+    if (!added.length) {
+      return toast('info', 'Reference limit reached',
+        'Reference text and your typed instructions share ' + REF_MAX_CHARS.toLocaleString() + ' characters. Remove a file to add another.');
+    }
+    setFlow({ files: [...existing, ...added], genId: null });
+    if (trimmed) {
+      toast('info', 'Reference text trimmed',
+        'Only the first ' + REF_MAX_CHARS.toLocaleString() + ' characters in total are attached — the rest was left out.');
+    } else {
+      toast('success', added.length + (added.length > 1 ? ' reference files added' : ' reference file added'),
+        'Their text is sent with your instructions for every document in this run.');
+    }
   }
 
   function readSkill(input) {
@@ -82,6 +168,7 @@ export default function DocType() {
   }
 
   const count = flow.docTypes.length;
+  const refs = refFiles(flow);
 
   return (
     <>
@@ -173,13 +260,15 @@ export default function DocType() {
             </div>
             <p className="helper mt2">
               Optional — one place for everything. Write instructions, attach a SKILL.md to control
-              sections, tone and terminology, or add reference files. Applies to every document in this run.
+              sections, tone and terminology, or add reference files: their text is read here and sent with your typed
+              instructions, which share about {REF_MAX_CHARS.toLocaleString()} characters per run. Applies to every
+              document in this run.
             </p>
             <textarea className="composer-ta" rows={4} placeholder={PLACEHOLDER}
               defaultValue={flow.instructions} onInput={(e) => setFlow({ instructions: e.target.value })} />
           </div>
 
-          {(flow.skillName || flow.files.length > 0) && (
+          {(flow.skillName || refs.length > 0) && (
             <div className="composer-chips">
               {flow.skillName && (
                 <span className="filechip filechip--skill">
@@ -188,11 +277,11 @@ export default function DocType() {
                   <button aria-label="Remove skill" onClick={() => setFlow({ skillName: '', skillContent: '', genId: null })}>✕</button>
                 </span>
               )}
-              {flow.files.map((f, i) => (
-                <span key={f + i} className="filechip">
-                  {f}
+              {refs.map((f, i) => (
+                <span key={f.name + i} className="filechip">
+                  {f.name}{f.text ? ' · ' + f.text.length.toLocaleString() + ' chars' : ''}
                   <button aria-label="Remove"
-                    onClick={() => setFlow((fl) => ({ files: fl.files.filter((_, k) => k !== i) }))}>✕</button>
+                    onClick={() => setFlow((fl) => ({ files: refFiles(fl).filter((_, k) => k !== i), genId: null }))}>✕</button>
                 </span>
               ))}
             </div>
@@ -204,14 +293,15 @@ export default function DocType() {
               {flow.skillName ? 'Replace SKILL.md' : 'Attach SKILL.md'}
               <input type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} onChange={(e) => readSkill(e.target)} />
             </label>
-            <label className="attachbtn" title="Style guides, existing docs, or templates · max 5 MB each">
+            <label className="attachbtn" title={'Style guides, existing docs, or templates — text files, read here and sent with your instructions (' + REF_MAX_CHARS.toLocaleString() + ' characters in total)'}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M10.6 2.6a2.5 2.5 0 0 1 3.5 3.5l-7 7a4 4 0 0 1-5.7-5.6L7.8 1l.9.9-6.4 6.5a2.7 2.7 0 0 0 3.9 3.8l7-7a1.2 1.2 0 0 0-1.7-1.7L5.3 9.7a.3.3 0 0 0 .4.4L11 4.8l.9.9-5.3 5.3a1.6 1.6 0 0 1-2.2-2.2l6.2-6.2z"/></svg>
-              Add reference files
-              <input type="file" multiple style={{ display: 'none' }} onChange={(e) => addFiles(e.target)} />
+              {reading ? 'Reading…' : 'Add reference files'}
+              <input type="file" multiple accept=".md,.markdown,.txt,.text,.rst,.adoc,.asciidoc,.json,.yaml,.yml,.csv,.tsv,.html,.htm,.xml,.toml,.ini,text/*"
+                style={{ display: 'none' }} disabled={reading} onChange={(e) => addFiles(e.target)} />
             </label>
             <button className="linkbtn" style={{ fontSize: 13, padding: '0 8px' }} onClick={downloadSkillTemplate}>SKILL.md template</button>
             <span style={{ flex: 1 }} />
-            <span className="helper">.md · .pdf · .docx · .txt</span>
+            <span className="helper">Text files · .md · .txt · .yaml · .json</span>
           </div>
         </div>
       </div>

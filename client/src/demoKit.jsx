@@ -68,6 +68,10 @@ export function sfx(kind) {
     const t = ctx.currentTime;
     const out = ctx.createGain();
     out.connect(ctx.destination);
+    // Every cue builds a fresh node graph. Without this the per-cue gain stays
+    // wired to the destination for the life of the page, and a 2½-minute film
+    // fires dozens of cues — so release it once the longest tail has decayed.
+    let tail = 0;
     const tone = (freq, at, dur, vol, type = 'sine') => {
       const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
       const g = ctx.createGain();
@@ -76,6 +80,7 @@ export function sfx(kind) {
       g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
       o.connect(g); g.connect(out);
       o.start(t + at); o.stop(t + at + dur + 0.05);
+      tail = Math.max(tail, at + dur + 0.1);
     };
     if (kind === 'click') {
       tone(1600, 0, 0.06, 0.045, 'triangle'); tone(2400, 0.005, 0.04, 0.02, 'sine');
@@ -97,6 +102,7 @@ export function sfx(kind) {
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.028, t + 0.1);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
       src.connect(f); f.connect(g); g.connect(out); src.start(t);
+      tail = Math.max(tail, 0.6);
     } else if (kind === 'whoosh') {
       const len = Math.floor(ctx.sampleRate * 0.45);
       const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -110,24 +116,37 @@ export function sfx(kind) {
       g.gain.linearRampToValueAtTime(0.05, t + 0.08);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
       src.connect(f); f.connect(g); g.connect(out); src.start(t);
+      tail = Math.max(tail, 0.55);
     } else if (kind === 'chime') {
       tone(880, 0, 0.5, 0.05); tone(1318.5, 0.12, 0.6, 0.04);
     } else if (kind === 'success') {
       tone(523.25, 0, 0.4, 0.045); tone(659.25, 0.1, 0.4, 0.04); tone(783.99, 0.2, 0.6, 0.045);
     }
+    setTimeout(() => { try { out.disconnect(); } catch { /* already gone */ } }, Math.round(tail * 1000) + 250);
   } catch { /* audio unavailable */ }
+}
+
+// The AudioContext is a page-lifetime singleton shared by every film, so it is
+// suspended rather than closed — an idle running context keeps an audio thread
+// and its clock alive long after the last film has been unmounted.
+function musicIdle() {
+  try { if (!musicNodes && musicCtx && musicCtx.state === 'running') musicCtx.suspend(); } catch { /* ignore */ }
 }
 
 export function musicStop() {
   try {
-    if (!musicNodes || !musicCtx) return;
+    if (!musicCtx) return;
+    if (!musicNodes) { musicIdle(); return; }
     clearInterval(musicNodes.iv);
     const t = musicCtx.currentTime;
     musicNodes.master.gain.cancelScheduledValues(t);
     musicNodes.master.gain.setTargetAtTime(0.0001, t, 0.4);
     const n = musicNodes;
     musicNodes = null;
-    setTimeout(() => { try { n.oscs.forEach((o) => o.stop()); n.lfo.stop(); n.master.disconnect(); } catch { /* ignore */ } }, 1600);
+    setTimeout(() => {
+      try { n.oscs.forEach((o) => o.stop()); n.lfo.stop(); n.master.disconnect(); } catch { /* ignore */ }
+      musicIdle();
+    }, 1600);
   } catch { /* ignore */ }
 }
 
@@ -226,7 +245,7 @@ export function TitleSlate({ kicker, title, sub }) {
       <p className="slate-kicker">{kicker}</p>
       <h3 className="slate-title">{title}</h3>
       <p className="slate-sub">{sub}</p>
-      <p className="slate-note">Sound recommended — turn on the voiceover</p>
+      <p className="slate-note">Scripted demonstration · sample data · sound recommended</p>
     </div>
   );
 }
@@ -263,6 +282,7 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
   const [playing, setPlaying] = useState(false);
   const [started, setStarted] = useState(false);
   const [sound, setSound] = useState(true);
+  const [captions, setCaptions] = useState(true);
   const [runId, setRunId] = useState(0);
   const [fs, setFs] = useState(false);
   const windowRef = useRef(null);
@@ -278,11 +298,12 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
     let advanced = false;
     let speechDone = !sound;
     let minDone = false;
+    let tNext = 0;
     setBeat(0);
     const tryAdvance = () => {
       if (!alive || advanced || !speechDone || !minDone) return;
       advanced = true;
-      setTimeout(() => { if (alive) setScene((s) => (s + 1) % scenes.length); }, 350);
+      tNext = setTimeout(() => { if (alive) setScene((s) => (s + 1) % scenes.length); }, 350);
     };
     const tMin = setTimeout(() => { minDone = true; tryAdvance(); }, scenes[scene].dur);
     if (sound && scenes[scene].sfx) sfx(scenes[scene].sfx);
@@ -299,7 +320,12 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
     const cueTs = (sound && scenes[scene].cues ? scenes[scene].cues : [])
       .map((c) => setTimeout(() => { if (alive) sfx(c.sfx); }, c.at));
     const tGuard = setTimeout(() => { speechDone = true; minDone = true; tryAdvance(); }, scenes[scene].dur + 20000);
-    return () => { alive = false; clearTimeout(tMin); clearTimeout(tGuard); if (tickIv) clearInterval(tickIv); cueTs.forEach(clearTimeout); };
+    return () => {
+      alive = false;
+      clearTimeout(tMin); clearTimeout(tGuard); if (tNext) clearTimeout(tNext);
+      if (tickIv) clearInterval(tickIv);
+      cueTs.forEach(clearTimeout);
+    };
   }, [scene, playing, sound, runId]); // eslint-disable-line
 
   useEffect(() => () => { stopAllAudio(); if (activeFilmPause === pauseRef) activeFilmPause = null; }, []);
@@ -368,11 +394,13 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
     const el = windowRef.current;
     if (!el) return;
     const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fsEl === el) {
-      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    } else {
-      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
-    }
+    // Not every browser exposes either API — calling through an undefined
+    // reference would throw and take the whole control bar's handler with it.
+    const fn = fsEl === el
+      ? (document.exitFullscreen || document.webkitExitFullscreen)
+      : (el.requestFullscreen || el.webkitRequestFullscreen);
+    if (!fn) return;
+    try { const r = fn.call(fsEl === el ? document : el); if (r && r.catch) r.catch(() => {}); } catch { /* denied */ }
   };
   useEffect(() => {
     const on = () => setFs((document.fullscreenElement || document.webkitFullscreenElement) === windowRef.current);
@@ -389,21 +417,32 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
     });
   };
 
+  // Every frame of every film is scripted with invented companies, people, and
+  // numbers. The badge rides in the window chrome so it is on screen at the
+  // same moment the figures are — a disclosure further down the page is not
+  // seen by anyone actually watching the stage.
+  const sampleBadge = (
+    <span className="mono" style={{
+      marginLeft: 'auto', flex: 'none', fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
+      color: '#f4f4f4', border: '1px solid #6f6f6f', borderRadius: 2, padding: '2px 8px', whiteSpace: 'nowrap'
+    }}>Demo · sample data</span>
+  );
+
   // Resting state: a designed light poster card — no black void while scrolling.
   if (!started && posterMeta) {
     return (
-      <div className="demo-window" ref={windowRef}>
+      <div className="demo-window" ref={windowRef} role="group" aria-label={name + ' demo — scripted demonstration with sample data'}>
         <div className="demo-chrome">
           <span className="demo-shellname">Docify</span>
           <span className="crumb">{crumb}</span>
-          <span className="spacer" style={{ flex: 1 }} />
+          {sampleBadge}
         </div>
-        <button className="vid-poster2" onClick={play} aria-label={'Play ' + name + ' demo with sound'}>
+        <button className="vid-poster2" onClick={play} aria-label={'Play the ' + name + ' demo with voiceover. Scripted demonstration using sample data.'}>
           <span className="vp2-text">
             <span className="vp2-kicker mono">{posterMeta.kicker}</span>
             <span className="vp2-title">{posterMeta.title}</span>
             <span className="vp2-sub">{posterMeta.sub}</span>
-            <span className="vp2-meta">▶ Play with voiceover · {posterMeta.mins} · captions included</span>
+            <span className="vp2-meta">▶ Play with voiceover · {posterMeta.mins} · captions included · scripted demo, sample data</span>
           </span>
           <span className="vid-playbtn" aria-hidden="true">▶</span>
         </button>
@@ -412,9 +451,9 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
   }
 
   return (
-    <div className="demo-window" ref={windowRef}>
+    <div className="demo-window" ref={windowRef} role="group" aria-label={name + ' demo — scripted demonstration with sample data'}>
       {!started && (
-        <button className="vid-poster" onClick={play} aria-label={'Play ' + name + ' demo with sound'}>
+        <button className="vid-poster" onClick={play} aria-label={'Play the ' + name + ' demo with voiceover. Scripted demonstration using sample data.'}>
           <span className="vid-playbtn">▶</span>
           <span className="vid-postertxt">{poster}</span>
         </button>
@@ -422,34 +461,46 @@ export function DemoShell({ name, crumb, scenes, posterMeta = null, poster = 'Pl
       <div className="demo-chrome">
         <span className="demo-shellname">Docify</span>
         <span className="crumb">{crumb}</span>
-        <span className="spacer" style={{ flex: 1 }} />
+        {sampleBadge}
       </div>
       <div className="demo-body">
         <aside className="demo-rail">
           {scenes.map((s, i) => (
-            <button key={s.label} className={'demo-step' + (i === scene ? ' on' : i < scene ? ' done' : '')} onClick={() => jump(i)}>
-              <span className="mono">{'0' + (i + 1)}</span> {s.label}
+            <button key={s.label} className={'demo-step' + (i === scene ? ' on' : i < scene ? ' done' : '')} onClick={() => jump(i)}
+              aria-current={i === scene ? 'true' : undefined}
+              aria-label={'Scene ' + (i + 1) + ' of ' + scenes.length + ': ' + s.label}>
+              <span className="mono" aria-hidden="true">{'0' + (i + 1)}</span> {s.label}
             </button>
           ))}
         </aside>
-        <div className={'demo-stage demo-stage--drift' + (scene % 2 ? 'B' : 'A') + (scene === 0 ? ' demo-stage--slate' : '')} key={scene + '-' + runId}>
+        <div className={'demo-stage demo-stage--drift' + (scene % 2 ? 'B' : 'A') + (scene === 0 ? ' demo-stage--slate' : '')} key={scene + '-' + runId}
+          role="group" aria-label={'Scene ' + (scene + 1) + ': ' + scenes[scene].label + '. Illustrative interface with sample data.'}>
           {scenes[scene].render(beat)}
         </div>
       </div>
-      {/* caption track: the narration line, always visible for muted viewers */}
-      {started && scene > 0 && (
-        <div className="jd-cap"><span className="jd-capline" key={scene}>{scenes[scene].vo}</span></div>
+      {/* caption track: the narration line, for muted viewers and screen readers */}
+      {started && scene > 0 && captions && (
+        <div className="jd-cap" aria-live="polite"><span className="jd-capline" key={scene}>{scenes[scene].vo}</span></div>
       )}
       <div className="demo-bar">
         <button className="demo-ctl" onClick={() => (playing ? pause() : play())} aria-label={playing ? 'Pause' : 'Play'}>
-          {playing ? '❚❚' : '▶'}
+          <span aria-hidden="true">{playing ? '❚❚' : '▶'}</span>
         </button>
-        <button className="demo-ctl" onClick={() => { pause(); setScene(0); setStarted(false); }} aria-label="Stop">■</button>
-        <button className="demo-ctl demo-ctl--wide" onClick={toggleSound}>{sound ? 'Sound on' : 'Muted'}</button>
-        <button className="demo-ctl" onClick={toggleFull} aria-label={fs ? 'Exit full screen' : 'Expand to full screen'} title={fs ? 'Exit full screen' : 'Full screen'}>{fs ? '⤡' : '⤢'}</button>
+        <button className="demo-ctl" onClick={() => { pause(); setScene(0); setStarted(false); }} aria-label="Stop and return to the start">
+          <span aria-hidden="true">■</span>
+        </button>
+        <button className="demo-ctl demo-ctl--wide" onClick={toggleSound}
+          aria-pressed={sound} aria-label={'Voiceover and music: ' + (sound ? 'on' : 'muted')}>{sound ? 'Sound on' : 'Muted'}</button>
+        <button className="demo-ctl demo-ctl--wide" onClick={() => setCaptions((v) => !v)}
+          aria-pressed={captions} aria-label={'Captions: ' + (captions ? 'on' : 'off')}>{captions ? 'Captions on' : 'Captions off'}</button>
+        <button className="demo-ctl" onClick={toggleFull} aria-label={fs ? 'Exit full screen' : 'Expand to full screen'} title={fs ? 'Exit full screen' : 'Full screen'}>
+          <span aria-hidden="true">{fs ? '⤡' : '⤢'}</span>
+        </button>
         <div className="demo-track">
           {scenes.map((s, i) => (
-            <button key={s.label} className="demo-seg" onClick={() => jump(i)} aria-label={s.label}>
+            <button key={s.label} className="demo-seg" onClick={() => jump(i)}
+              aria-current={i === scene ? 'true' : undefined}
+              aria-label={'Jump to scene ' + (i + 1) + ': ' + s.label}>
               {i === scene && started
                 ? <span className="demo-segfill" style={{ animationDuration: Math.round(scenes[i].dur * 1.4) + 'ms', animationPlayState: playing ? 'running' : 'paused' }} />
                 : i < scene ? <span className="demo-segdone" /> : null}

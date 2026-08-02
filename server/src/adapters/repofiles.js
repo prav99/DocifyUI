@@ -17,9 +17,23 @@ function rank(path) {
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
+// What went wrong, in words a customer can act on. The token never appears in
+// a URL (it travels in the Authorization header), so echoing the endpoint is
+// safe — but the message is what surfaces in logs and run notes, so it says
+// what to DO, not just which number came back.
+function httpMessage(status, url) {
+  const where = ' (' + String(url).replace(/\?.*$/, '') + ')';
+  if (status === 401) return 'HTTP 401 — the connected account is no longer authorized; reconnect the source' + where;
+  if (status === 403) return 'HTTP 403 — access denied or rate limit exhausted; connect the source to raise the limit, or check the account can read this repository' + where;
+  if (status === 404) return 'HTTP 404 — repository, branch, or path not found' + where;
+  if (status === 429) return 'HTTP 429 — the provider is rate limiting Docify; retry shortly' + where;
+  if (status >= 500) return 'HTTP ' + status + ' — the provider is failing; this is not a problem with your repository' + where;
+  return 'HTTP ' + status + where;
+}
+
 // Rate-limit-aware fetch. Unauthenticated code-host APIs throttle hard
 // (GitHub: 60 req/h per IP), and several pipelines can fire on one merge —
-// so 403/429/5xx are retried with backoff (honoring Retry-After /
+// so throttling and 5xx are retried with backoff (honoring Retry-After /
 // X-RateLimit-Reset when short) instead of instantly degrading the whole
 // generation to template content.
 async function jfetch(url, token, attempt = 0) {
@@ -28,7 +42,12 @@ async function jfetch(url, token, attempt = 0) {
   if (token) headers.Authorization = 'Bearer ' + token;
   const r = await fetch(url, { headers });
   if (r.ok) return r;
-  const retryable = r.status === 403 || r.status === 429 || r.status >= 500;
+  // GitHub answers BOTH "rate limited" and "your token cannot see this repo"
+  // with 403. Only the first is worth retrying: sleeping three times over a
+  // permissions failure just delays the error the customer needs to see.
+  const throttled = r.status === 429 ||
+    (r.status === 403 && (r.headers.get('retry-after') != null || r.headers.get('x-ratelimit-remaining') === '0'));
+  const retryable = throttled || r.status >= 500;
   if (retryable && attempt < MAX_RETRIES) {
     const after = Number(r.headers.get('retry-after'));
     const reset = Number(r.headers.get('x-ratelimit-reset'));
@@ -39,7 +58,9 @@ async function jfetch(url, token, attempt = 0) {
     await sleep(wait);
     return jfetch(url, token, attempt + 1);
   }
-  throw new Error('HTTP ' + r.status + ' for ' + url);
+  const err = new Error(httpMessage(r.status, url));
+  err.status = r.status;
+  throw err;
 }
 
 // The repository's own default branch, straight from the provider. A caller
@@ -97,7 +118,7 @@ async function listPaths(provider, repo, branch, token) {
   return (d.tree || []).filter((n) => n.type === 'blob').map((n) => n.path);
 }
 
-async function readFile(provider, repo, branch, path, token) {
+async function readFileRaw(provider, repo, branch, path, token) {
   let url;
   if (provider === 'gitlab') {
     url = 'https://gitlab.com/api/v4/projects/' + encodeURIComponent(repo) + '/repository/files/' + encodeURIComponent(path) + '/raw?ref=' + encodeURIComponent(branch);
@@ -106,8 +127,11 @@ async function readFile(provider, repo, branch, path, token) {
   } else {
     url = 'https://raw.githubusercontent.com/' + repo + '/' + encodeURIComponent(branch) + '/' + path.split('/').map(encodeURIComponent).join('/');
   }
-  const text = await (await jfetch(url, token)).text();
-  return text.slice(0, MAX_BYTES_PER_FILE);
+  return (await (await jfetch(url, token)).text());
+}
+
+async function readFile(provider, repo, branch, path, token) {
+  return (await readFileRaw(provider, repo, branch, path, token)).slice(0, MAX_BYTES_PER_FILE);
 }
 
 // Fetch ONE raw text file from a repository (used for docify.yaml,
@@ -116,27 +140,75 @@ export async function fetchRepoFile(provider, repo, branch = 'main', path = '', 
   try {
     if (!repo || !repo.includes('/') || !path) return null;
     return await readFile(provider, repo, branch, path, token);
-  } catch {
+  } catch (e) {
+    // 404 is the normal answer for "this repository has no docify.yaml".
+    // Anything else means we were refused or throttled, and treating that as
+    // "no configuration" would silently ignore the customer's rules.
+    if (e.status && e.status !== 404) console.warn('[repofiles] ' + repo + ' ' + path + ': ' + e.message);
     return null;
   }
 }
 
+/* What the caps left behind.
+   The selection reads at most MAX_FILES files and at most MAX_BYTES_PER_FILE
+   of each. On a repository of any size that silently discards most of the
+   source, and the document is then written as if the whole repository had been
+   read. Callers get the counts so they can say so: "read 12 of 168 source
+   files" is honest; showing nothing is not. The caps themselves are a cost and
+   prompt-size decision and are unchanged. */
+export function coverageNote(cov) {
+  if (!cov || !cov.read) return '';
+  const bits = ['Read ' + cov.read + ' of ' + cov.eligible + ' eligible source file' + (cov.eligible === 1 ? '' : 's')];
+  if (cov.omittedFiles > 0) bits.push(cov.omittedFiles + ' not read (limit ' + cov.maxFiles + ' files per run)');
+  if (cov.truncatedFiles > 0) bits.push(cov.truncatedFiles + ' truncated at ' + cov.maxBytesPerFile.toLocaleString('en-US') + ' characters');
+  if (cov.unreadableFiles > 0) bits.push(cov.unreadableFiles + ' could not be downloaded');
+  return bits.join(' · ') + '.';
+}
+
+function emptyCoverage(extra = {}) {
+  return {
+    listed: 0, eligible: 0, read: 0, omittedFiles: 0, truncatedFiles: 0, unreadableFiles: 0,
+    maxFiles: MAX_FILES, maxBytesPerFile: MAX_BYTES_PER_FILE, ...extra
+  };
+}
+
 async function listAndRead(provider, repo, branch, token) {
   const all = await listPaths(provider, repo, branch, token);
-  const paths = all
-    .filter((p) => CODE_EXT.test(p) && !SKIP.test(p))
+  const eligible = all.filter((p) => CODE_EXT.test(p) && !SKIP.test(p));
+  const paths = eligible
+    .slice()
     .sort((a, b) => rank(a) - rank(b) || a.length - b.length)
     .slice(0, MAX_FILES);
   const files = [];
+  let truncatedFiles = 0;
+  let unreadableFiles = 0;
   for (const p of paths) {
-    try { files.push({ path: p, content: await readFile(provider, repo, branch, p, token) }); }
-    catch { /* skip unreadable file */ }
+    try {
+      const full = await readFileRaw(provider, repo, branch, p, token);
+      const content = full.slice(0, MAX_BYTES_PER_FILE);
+      if (full.length > content.length) truncatedFiles++;
+      files.push({ path: p, content });
+    } catch { unreadableFiles++; }
   }
-  return { files, listed: all.length };
+  const coverage = emptyCoverage({
+    listed: all.length,
+    eligible: eligible.length,
+    read: files.length,
+    omittedFiles: Math.max(0, eligible.length - files.length),
+    truncatedFiles,
+    unreadableFiles
+  });
+  if (coverage.omittedFiles || coverage.truncatedFiles || coverage.unreadableFiles) {
+    console.warn('[repofiles] ' + repo + '@' + branch + ': ' + coverageNote(coverage));
+  }
+  return { files, listed: all.length, coverage };
 }
 
-// Returns { files, branch, requestedBranch, usedFallback, listed } so callers
-// know WHICH branch actually produced content.
+// Returns { files, branch, requestedBranch, usedFallback, listed, coverage,
+// note, error } so callers know WHICH branch produced content, HOW MUCH of the
+// repository was actually read, and — when nothing came back — WHETHER that
+// was an empty repository or a provider failure. Those two are the same shape
+// on the wire and must never read the same to a customer.
 //
 // A wrong branch is indistinguishable from an empty repository at the API
 // level: both return no files. Silently documenting nothing is the worst
@@ -145,22 +217,28 @@ async function listAndRead(provider, repo, branch, token) {
 // default branch and retry once before giving up.
 export async function fetchRepoFilesResolved(provider, repo, branch = 'main', token = '') {
   const requestedBranch = branch || 'main';
-  const empty = { files: [], branch: requestedBranch, requestedBranch, usedFallback: false, listed: 0 };
+  const empty = {
+    files: [], branch: requestedBranch, requestedBranch, usedFallback: false,
+    listed: 0, coverage: emptyCoverage(), note: '', error: ''
+  };
+  const failed = (e) => ({ ...empty, error: e.message || 'source could not be read' });
   try {
-    if (!repo || !repo.includes('/')) return empty;
+    if (!repo || !repo.includes('/')) return { ...empty, error: 'No repository selected.' };
     let listed = 0;
     try {
       const first = await listAndRead(provider, repo, requestedBranch, token);
-      if (first.files.length) return { ...first, branch: requestedBranch, requestedBranch, usedFallback: false };
+      if (first.files.length) {
+        return { ...first, branch: requestedBranch, requestedBranch, usedFallback: false, note: coverageNote(first.coverage), error: '' };
+      }
       listed = first.listed;
     } catch (e) {
       // Only a MISSING ref justifies trying another branch. A 403/429/5xx means
       // the repository is fine and we were throttled or refused — retrying on a
       // different branch would document the wrong code and add load to an
       // already-exhausted rate limit.
-      if (!/HTTP 404/.test(e.message || '')) {
+      if (e.status !== 404 && !/HTTP 404/.test(e.message || '')) {
         console.error('fetchRepoFiles(' + provider + ', ' + repo + '@' + requestedBranch + '):', e.message);
-        return empty;
+        return failed(e);
       }
       console.error('fetchRepoFiles(' + provider + ', ' + repo + '@' + requestedBranch + '): branch not found, resolving the default');
     }
@@ -170,16 +248,16 @@ export async function fetchRepoFilesResolved(provider, repo, branch = 'main', to
     try { retry = await listAndRead(provider, repo, fallback, token); }
     catch (e) {
       console.error('fetchRepoFiles(' + provider + ', ' + repo + '@' + fallback + '):', e.message);
-      return { ...empty, listed };
+      return { ...failed(e), listed };
     }
     // Only adopt the fallback if it actually produced source. Recording a
     // branch that read nothing would be a second, quieter lie.
     if (!retry.files.length) return { ...empty, listed: retry.listed || listed };
     console.warn('[branch] ' + repo + ': "' + requestedBranch + '" yielded no files; used default branch "' + fallback + '" (' + retry.files.length + ' files)');
-    return { ...retry, branch: fallback, requestedBranch, usedFallback: true };
+    return { ...retry, branch: fallback, requestedBranch, usedFallback: true, note: coverageNote(retry.coverage), error: '' };
   } catch (e) {
     console.error('fetchRepoFiles(' + provider + ', ' + repo + '):', e.message);
-    return empty;
+    return failed(e);
   }
 }
 

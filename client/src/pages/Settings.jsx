@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, getCatalog, setToken } from '../api.js';
 import { toast, useAuth } from '../store.jsx';
-import { NavBar, SrcMark, HelpLink } from '../ui.jsx';
+import { NavBar, SrcMark, HelpLink, Modal } from '../ui.jsx';
 import { GoogleG } from './Auth.jsx';
 
 export default function Settings() {
@@ -11,10 +11,21 @@ export default function Settings() {
   // /settings#account deep-links the security tab — where the Google linking
   // round-trip returns to.
   const [tab, setTab] = useState(() => (window.location.hash === '#account' ? 'account' : 'sources'));
-  const [sources, setSources] = useState([]);
-  const [members, setMembers] = useState([]);
+  // null = still loading; [] = loaded and genuinely empty. Collapsing the two
+  // would show "nothing connected" when the request actually failed.
+  const [sources, setSources] = useState(null);
+  const [srcErr, setSrcErr] = useState('');
+  const [members, setMembers] = useState(null);
+  const [teamErr, setTeamErr] = useState('');
   const [billing, setBilling] = useState(null);
+  const [billErr, setBillErr] = useState('');
+  // Plans, caps, and format names come from /catalog so this page can never
+  // advertise a limit the server does not enforce.
+  const [catalog, setCatalog] = useState(null);
   const [invEmail, setInvEmail] = useState('');
+  const [invBusy, setInvBusy] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [remBusy, setRemBusy] = useState(false);
   // Organization writing profile — merged into every generation's policy.
   const [wp, setWp] = useState(null);
   const [wpBusy, setWpBusy] = useState(false);
@@ -36,10 +47,24 @@ export default function Settings() {
     .then((d) => { setSec(d); setSecErr(''); })
     .catch((e) => setSecErr(e.message || 'Could not load your sign-in methods'));
 
+  const loadSources = () => api('/sources')
+    .then((d) => { setSources(d.sources || []); setSrcErr(''); })
+    .catch((e) => setSrcErr(e.message || 'Could not load your connected sources'));
+
+  const loadTeam = () => api('/team')
+    .then((d) => { setMembers(d.members || []); setTeamErr(''); })
+    .catch((e) => setTeamErr(e.message || 'Could not load your team'));
+
+  // Seat usage lives in /billing, so every membership change reloads it too.
+  const loadBilling = () => api('/billing')
+    .then((d) => { setBilling(d); setBillErr(''); })
+    .catch((e) => setBillErr(e.message || 'Could not load your plan'));
+
   useEffect(() => {
-    api('/sources').then((d) => setSources(d.sources)).catch(() => {});
-    api('/team').then((d) => setMembers(d.members)).catch(() => {});
-    api('/billing').then(setBilling).catch(() => {});
+    loadSources();
+    loadTeam();
+    loadBilling();
+    getCatalog().then(setCatalog).catch(() => {});
     loadSec();
     api('/style-profile').then((d) => setWp({
       guide: d.profile.guide || 'docify',
@@ -87,14 +112,19 @@ export default function Settings() {
 
   async function savePassword() {
     if (pwBusy) return;
+    if (sec && sec.hasPassword && !pwCurrent) return toast('error', 'Current password required', 'Enter the password you sign in with today');
     if (pwNew.length < 8) return toast('error', 'Password too short', 'Use at least 8 characters');
     if (pwNew !== pwConfirm) return toast('error', 'Passwords don’t match', 'Retype the confirmation');
     setPwBusy(true);
     try {
-      await api('/auth/set-password', {
+      // Changing a password revokes every session issued before it — including
+      // this tab's. The endpoint hands back a freshly signed token so the
+      // person who just proved they know the password is not the one logged out.
+      const res = await api('/auth/set-password', {
         method: 'POST',
         body: sec && sec.hasPassword ? { password: pwNew, currentPassword: pwCurrent } : { password: pwNew }
       });
+      if (res && res.token) setToken(res.token);
       toast('success', sec && sec.hasPassword ? 'Password changed' : 'Password set',
         'You can now also log in with your email and this password');
       setPwCurrent(''); setPwNew(''); setPwConfirm('');
@@ -122,14 +152,75 @@ export default function Settings() {
   }
 
   async function invite() {
-    if (!invEmail.includes('@')) return toast('error', 'Enter a valid email', 'An address is required to send an invite');
+    if (invBusy) return;
+    const email = invEmail.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return toast('error', 'Enter a valid email', 'An address is required to send an invite');
+    }
+    // A duplicate invite would silently consume a second seat.
+    if ((members || []).some((m) => (m.email || '').toLowerCase() === email.toLowerCase())) {
+      return toast('error', 'Already on the team', email + ' already holds a seat on this account');
+    }
+    setInvBusy(true);
     try {
-      const d = await api('/team/invite', { method: 'POST', body: { email: invEmail } });
-      setMembers((m) => [...m, d.member]);
-      toast('success', 'Invite sent', invEmail + ' will receive an email shortly');
+      const d = await api('/team/invite', { method: 'POST', body: { email } });
+      if (d.member) setMembers((m) => [...(m || []), d.member]); else await loadTeam();
+      // Whether an email actually left the server depends on its mail
+      // configuration, so report what the server says. With nothing to go on,
+      // claim only the part this client can see: the seat is taken.
+      const emailed = d.emailed !== undefined ? d.emailed : d.emailSent;
+      toast(emailed === false ? 'info' : 'success', 'Seat reserved for ' + email,
+        d.message || (emailed === true
+          ? 'An invitation email is on its way.'
+          : emailed === false
+            ? 'No invitation email was sent — this server has no mail configured, so tell them yourself.'
+            : 'They now hold a seat on this account.'));
       setInvEmail('');
+      loadBilling();
     } catch (e) { toast('error', 'Invite failed', e.message); }
+    finally { setInvBusy(false); }
   }
+
+  // DELETE /api/team/:id removes the membership row and frees the seat. The
+  // owner's own row is never offered — losing it would leave the account with
+  // no owner and no way to restore one.
+  async function removeMember() {
+    if (remBusy || !removeTarget) return;
+    const m = removeTarget;
+    setRemBusy(true);
+    try {
+      await api('/team/' + m.id, { method: 'DELETE' });
+      setRemoveTarget(null);
+      // Re-read rather than splice: the seat counter has to come from the
+      // server or the two disagree after a concurrent change.
+      await loadTeam();
+      loadBilling();
+      toast('success', 'Removed from the team',
+        (m.email || 'That member') + ' no longer holds a seat on this account.');
+    } catch (e) { toast('error', 'Could not remove', e.message); }
+    finally { setRemBusy(false); }
+  }
+
+  // Plan display comes from the catalog (names, prices, format ids) and the
+  // caps come from /billing's usage block, which the server resolved against
+  // PLAN_LIMITS — nothing about entitlements is written down twice here.
+  const planId = (billing && billing.plan) || (user && user.plan) || 'free';
+  const planDef = ((catalog && catalog.plans) || {})[planId] || null;
+  const planName = planDef ? planDef.name : planId.charAt(0).toUpperCase() + planId.slice(1);
+  const planCaps = ((catalog && catalog.planLimits) || {})[planId] || null;
+  const usage = (billing && billing.usage) || {};
+  // null = unlimited, undefined = this build of the API did not say, in which
+  // case the row is omitted rather than guessed at.
+  const docCap = usage.documents ? usage.documents.limit : (planCaps ? planCaps.docsPerMonth : undefined);
+  const pipeCap = usage.pipelines ? usage.pipelines.limit : (planCaps ? planCaps.pipelines : undefined);
+  const seatCap = usage.seats ? usage.seats.limit
+    : (planCaps && planCaps.seats !== 'purchased' ? planCaps.seats : undefined);
+  const formatNames = (ids) => {
+    const all = [].concat(...Object.values((catalog && catalog.formats) || {}));
+    return ids.map((id) => (all.find((f) => f.id === id) || {}).name || id);
+  };
+  const countLine = (n, one, many) => (n == null ? 'Unlimited ' + many : n + ' ' + (n === 1 ? one : many));
+  const usageLine = (u) => (!u ? '—' : u.limit == null ? u.used + ' used · unlimited' : u.used + ' of ' + u.limit);
 
   return (
     <>
@@ -194,19 +285,30 @@ export default function Settings() {
                 <button className="btn btn--primary btn--field" disabled={wpBusy} onClick={saveWp}>
                   {wpBusy ? 'Saving…' : 'Save writing profile'}
                 </button>
+                {/* This only refills the form — the saved profile is unchanged
+                    until Save runs, so the label must not imply otherwise. */}
                 <button className="btn btn--ghost btn--field" disabled={wpBusy}
                   onClick={() => setWp({ ...wp, guide: 'docify', voice: '', termsText: '', prohibitedText: '', notes: '' })}>
-                  Reset to default profile
+                  Reset fields to default
                 </button>
               </div>
+              <p className="helper">Resetting only clears these fields — save to apply it to future generations.</p>
             </div>
           )
         )}
 
         {tab === 'sources' && (
           <div className="stack" style={{ maxWidth: 720 }}>
-            {sources.length === 0 && <p className="body01 t2">No sources connected yet.</p>}
-            {sources.map((s) => (
+            {srcErr && (
+              <div className="stack">
+                <p className="body01">Could not load your connected sources — {srcErr}</p>
+                <button className="btn btn--tertiary btn--field" style={{ alignSelf: 'flex-start' }}
+                  onClick={() => { setSrcErr(''); loadSources(); }}>Try again</button>
+              </div>
+            )}
+            {!srcErr && sources === null && <p className="body01 t2">Loading connected sources…</p>}
+            {!srcErr && sources !== null && sources.length === 0 && <p className="body01 t2">No sources connected yet.</p>}
+            {(sources || []).map((s) => (
               <div key={s.id} className="tile tile--white row row--between" style={{ padding: '16px 24px' }}>
                 <div className="row">
                   <SrcMark id={s.provider} />
@@ -227,56 +329,143 @@ export default function Settings() {
         )}
 
         {tab === 'team' && (
-          <>
-            <table className="dtable" style={{ maxWidth: 720 }}>
-              <thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th></tr></thead>
-              <tbody>
-                {members.map((m) => (
-                  <tr key={m.id}>
-                    <td className={m.status === 'invited' ? 't2' : ''}>{m.status === 'invited' ? 'Pending' : m.name}</td>
-                    <td className="mono" style={{ fontSize: 13 }}>{m.email}</td>
-                    <td>
-                      <span className={'tag ' + (m.role === 'Owner' ? 'tag--purple' : m.status === 'invited' ? 'tag--amber' : 'tag--gray')}>
-                        {m.status === 'invited' ? 'Invited' : m.role}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="row mt6" style={{ maxWidth: 720, alignItems: 'flex-end' }}>
-              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                <label htmlFor="invEmail">Invite by email</label>
-                <input id="invEmail" className="input" type="email" placeholder="teammate@company.com"
-                  value={invEmail} onChange={(e) => setInvEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && invite()} />
-              </div>
-              <button className="btn btn--primary btn--field" onClick={invite}>Send invite</button>
+          teamErr ? (
+            <div className="stack" style={{ maxWidth: 720 }}>
+              <p className="body01">Could not load your team — {teamErr}</p>
+              <button className="btn btn--tertiary btn--field" style={{ alignSelf: 'flex-start' }}
+                onClick={() => { setTeamErr(''); loadTeam(); }}>Try again</button>
             </div>
-          </>
+          ) : members === null ? <p className="body01 t2">Loading team…</p> : (
+            <>
+              <table className="dtable" style={{ maxWidth: 720 }}>
+                <thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>ACTION</th></tr></thead>
+                <tbody>
+                  {members.map((m) => (
+                    <tr key={m.id}>
+                      <td className={m.status === 'invited' ? 't2' : ''}>{m.status === 'invited' ? 'Pending' : m.name}</td>
+                      <td className="mono" style={{ fontSize: 13 }}>{m.email}</td>
+                      <td>
+                        <span className={'tag ' + (m.role === 'Owner' ? 'tag--purple' : m.status === 'invited' ? 'tag--amber' : 'tag--gray')}>
+                          {m.status === 'invited' ? 'Invited' : m.role}
+                        </span>
+                      </td>
+                      <td>
+                        {m.role === 'Owner'
+                          ? <span className="helper">Account owner</span>
+                          : <button className="linkbtn" onClick={() => setRemoveTarget(m)}>Remove</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="helper mt5" style={{ maxWidth: 720 }}>
+                {usage.seats
+                  ? (usage.seats.limit == null
+                    ? usage.seats.used + ' seats in use on the ' + planName + ' plan, which has no seat limit. '
+                    : usage.seats.used + ' of ' + usage.seats.limit + ' seats in use on the ' + planName + ' plan. ')
+                  : ''}
+                Removing someone frees their seat immediately.
+              </p>
+              <div className="row mt5" style={{ maxWidth: 720, alignItems: 'flex-end' }}>
+                <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label htmlFor="invEmail">Invite by email</label>
+                  <input id="invEmail" className="input" type="email" placeholder="teammate@company.com"
+                    value={invEmail} onChange={(e) => setInvEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && invite()} />
+                </div>
+                <button className="btn btn--primary btn--field" disabled={invBusy} onClick={invite}>
+                  {invBusy ? 'Sending…' : 'Send invite'}
+                </button>
+              </div>
+            </>
+          )
         )}
 
-        {tab === 'billing' && billing && (
-          <div className="tile tile--white" style={{ padding: 24, maxWidth: 560 }}>
-            <div className="row row--between">
-              <h2 className="h02">Current plan</h2>
-              <span className={'tag ' + (billing.plan === 'team' ? 'tag--blue' : 'tag--gray')}>
-                {billing.plan.charAt(0).toUpperCase() + billing.plan.slice(1)}
-              </span>
+        {tab === 'billing' && (
+          billErr ? (
+            <div className="stack" style={{ maxWidth: 560 }}>
+              <p className="body01">Could not load your plan — {billErr}</p>
+              <button className="btn btn--tertiary btn--field" style={{ alignSelf: 'flex-start' }}
+                onClick={() => { setBillErr(''); loadBilling(); }}>Try again</button>
             </div>
-            {billing.plan === 'team' ? (
-              <>
-                <p className="body01 mt5">{billing.seats} seats · billed {billing.cycle === 'annual' ? 'annually' : 'monthly'}</p>
-                <div className="row row--between mt3"><span className="body01 t2">Next invoice</span><span className="mono">{billing.nextInvoice}</span></div>
-                <div className="row row--between mt3"><span className="body01 t2">Amount</span><span className="mono">${billing.amount.toLocaleString()}</span></div>
-              </>
-            ) : (
-              <>
-                <p className="body01 mt5 t2">5 watermarked generations per month, 1 source, PDF and Word only.</p>
-                <button className="btn btn--primary mt5" onClick={() => nav('/pricing')}>Upgrade to Team<span className="ico">→</span></button>
-              </>
-            )}
-          </div>
+          ) : !billing ? <p className="body01 t2">Loading plan…</p> : (
+            <div className="tile tile--white" style={{ padding: 24, maxWidth: 560 }}>
+              <div className="row row--between">
+                <h2 className="h02">Current plan</h2>
+                <span className={'tag ' + (planId === 'free' ? 'tag--gray' : 'tag--blue')}>{planName}</span>
+              </div>
+              {planDef && planDef.monthly != null && (
+                <p className="body01 mt5">
+                  {planDef.monthly === 0
+                    ? 'No charge.'
+                    : '$' + (billing.cycle === 'annual' ? planDef.annual : planDef.monthly) + ' per month'
+                      + (billing.cycle === 'annual' ? ', billed annually' : '')}
+                </p>
+              )}
+              {planId === 'enterprise' && <p className="body01 mt5">Custom pricing.</p>}
+
+              {(docCap !== undefined || planCaps) && (
+                <>
+                  <p className="label01 t2 mt6">WHAT THIS PLAN INCLUDES</p>
+                  <ul className="body01 mt3" style={{ paddingLeft: 18 }}>
+                    {docCap !== undefined && <li>{countLine(docCap, 'document', 'documents')} per month</li>}
+                    {seatCap !== undefined && <li>{countLine(seatCap, 'seat', 'seats')}</li>}
+                    {pipeCap !== undefined && (
+                      <li>{pipeCap === 0 ? 'No automation pipelines' : countLine(pipeCap, 'automation pipeline', 'automation pipelines')}</li>
+                    )}
+                    {planCaps && (
+                      <li>{planCaps.formats == null
+                        ? 'Every export format, including DITA'
+                        : formatNames(planCaps.formats).join(', ') + ' exports'}</li>
+                    )}
+                    {planCaps && planCaps.sources != null && <li>{countLine(planCaps.sources, 'connected source', 'connected sources')}</li>}
+                    {planCaps && planCaps.watermark && <li>Documents carry a Docify watermark</li>}
+                  </ul>
+                </>
+              )}
+
+              {usage.documents && (
+                <>
+                  <p className="label01 t2 mt6">THIS MONTH</p>
+                  <div className="row row--between mt3"><span className="body01 t2">Documents</span><span className="mono">{usageLine(usage.documents)}</span></div>
+                  <div className="row row--between mt3"><span className="body01 t2">Automation pipelines</span><span className="mono">{usageLine(usage.pipelines)}</span></div>
+                  <div className="row row--between mt3"><span className="body01 t2">Seats</span><span className="mono">{usageLine(usage.seats)}</span></div>
+                  {usage.resetsOn && (
+                    <div className="row row--between mt3"><span className="body01 t2">Document count resets</span><span className="mono">{usage.resetsOn}</span></div>
+                  )}
+                </>
+              )}
+
+              {/* Invoice figures are only meaningful for a plan the server
+                  actually bills for; anything else would be an invented $0. */}
+              {billing.nextInvoice && (
+                <>
+                  <p className="label01 t2 mt6">BILLING</p>
+                  <div className="row row--between mt3"><span className="body01 t2">Cycle</span><span className="mono">{billing.cycle === 'annual' ? 'Annual' : 'Monthly'}</span></div>
+                  <div className="row row--between mt3"><span className="body01 t2">Next invoice</span><span className="mono">{billing.nextInvoice}</span></div>
+                  {typeof billing.amount === 'number' && (
+                    <div className="row row--between mt3"><span className="body01 t2">Amount</span><span className="mono">${billing.amount.toLocaleString()}</span></div>
+                  )}
+                </>
+              )}
+
+              {planId === 'enterprise' ? (
+                <button className="btn btn--tertiary mt5" onClick={() => nav('/contact')}>Talk to us about your plan<span className="ico">→</span></button>
+              ) : (
+                <>
+                  <button className="btn btn--primary mt5" onClick={() => nav('/pricing')}>
+                    {planId === 'free' ? 'See paid plans' : 'Compare plans'}<span className="ico">→</span>
+                  </button>
+                  {/* Seat count is part of the plan record, and there is no
+                      self-service control that changes it. */}
+                  <p className="helper mt3">
+                    Need more seats or a different plan?{' '}
+                    <button className="linkbtn" style={{ fontSize: 12 }} onClick={() => nav('/contact')}>Get in touch</button>.
+                  </p>
+                </>
+              )}
+            </div>
+          )
         )}
 
         {/* The sign-in methods and the delete control are independent: a
@@ -390,8 +579,11 @@ export default function Settings() {
                     onKeyDown={(e) => e.key === 'Enter' && deleteAccount()} />
                 </div>
                 <div className="row" style={{ gap: 12 }}>
+                  {/* The server rejects a mismatch anyway; keeping the button
+                      inert until the address matches avoids a confusing 400. */}
                   <button className="btn btn--field" style={{ background: '#da1e28', color: '#fff' }}
-                    disabled={delBusy} onClick={deleteAccount}>
+                    disabled={delBusy || !!(user && delConfirm.trim().toLowerCase() !== (user.email || '').toLowerCase())}
+                    onClick={deleteAccount}>
                     {delBusy ? 'Deleting…' : 'Permanently delete'}
                   </button>
                   <button className="btn btn--ghost btn--field" disabled={delBusy}
@@ -403,6 +595,28 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      <Modal open={!!removeTarget} onClose={() => { if (!remBusy) setRemoveTarget(null); }}>
+        <div className="mhead">
+          <h3 className="h02">Remove {removeTarget ? removeTarget.email : 'member'}?</h3>
+          <button className="mclose" aria-label="Close" disabled={remBusy} onClick={() => setRemoveTarget(null)}>✕</button>
+        </div>
+        <div className="mbody">
+          <p className="body01 t2">
+            {removeTarget && removeTarget.status === 'invited'
+              ? 'Their pending invitation is cancelled and the seat becomes available again. You can invite them back at any time.'
+              : 'They lose their seat on this account, which becomes available again. Documents they created stay in this account.'}
+          </p>
+        </div>
+        <div className="mfoot">
+          <button className="btn btn--ghost btn--center" disabled={remBusy} onClick={() => setRemoveTarget(null)}>Cancel</button>
+          <button className="btn btn--primary btn--center" style={{ background: 'var(--button-danger)' }}
+            disabled={remBusy} onClick={removeMember}>
+            {remBusy ? 'Removing…' : 'Remove member'}
+          </button>
+        </div>
+      </Modal>
+
       <NavBar back="/automation" />
     </>
   );

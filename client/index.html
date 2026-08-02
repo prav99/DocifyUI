@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="Docify turns code commits into standards-grade documentation, scores every page with an LLM judge, and predicts how ChatGPT, Claude, and Gemini will rank it — before you publish." />
+    <!-- Fallback tags only. The server rewrites the title and description per
+         route from server/src/seo-meta.js, so these must stay in step with the
+         default entry there: dev, and any route the prerender misses, serve
+         this file verbatim. Keep both on one line — the rewrite is a regex. -->
+    <meta name="description" content="Manual documentation drains engineering hours every release and delays shipping. Docify connects GitHub, GitLab, or Bitbucket read-only, updates the affected docs on merge, gates quality before publish, keeps a human approving every change, and exports to Markdown, PDF, Word, HTML, and DITA." />
     <meta name="theme-color" content="#0f62fe" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
@@ -12,7 +16,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta property="og:image" content="https://docifydocai.com/og-image.png" />
     <meta name="twitter:image" content="https://docifydocai.com/og-image.png" />
-    <title>Docify — AI Documentation Generator with Built-In Quality &amp; AI Ranking Scores</title>
+    <title>Docify — Automated Technical Documentation from GitHub, GitLab &amp; Bitbucket</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
 

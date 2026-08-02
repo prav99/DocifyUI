@@ -22,8 +22,8 @@ const Chips = ({ items, on, delayBase = 0.1 }) => (
    the card is named, so each score mounts exactly as the VO says it. */
 const REPORT_SCORES = [
   ['Overall quality', 92, 7, 'gate ≥ 85 cleared'],
-  ['AI readiness', 88, 9, 'discoverable by AI search'],
-  ['LLM readiness', 90, 12, 'cited accurately by assistants']
+  ['AI readiness', 88, 9, 'modeled signal — not a ranking promise'],
+  ['LLM readiness', 90, 12, 'modeled — no citation is guaranteed']
 ];
 
 const REPORTING_SCENES = [
@@ -61,7 +61,7 @@ const REPORTING_SCENES = [
   },
   {
     label: 'Headline scores', dur: 6500, sfx: 'click',
-    vo: 'The headline scores managers ask for — overall ninety-two, AI readiness eighty-eight, LLM readiness ninety — counted from real checks.',
+    vo: 'The headline scores managers ask for — overall ninety-two, AI readiness eighty-eight, LLM readiness ninety — quality counted from the run’s own checks, readiness modeled from them.',
     cues: [{ at: 2650, sfx: 'pop' }, { at: 3450, sfx: 'pop' }, { at: 4550, sfx: 'pop' }],
     render: (beat) => (
       <div className="row" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
@@ -72,7 +72,9 @@ const REPORTING_SCENES = [
             <span className="helper">{h}</span>
           </div>
         )))}
-        <Callout x={62} y={8} at={5100} tone="green">counted from run #87 — not estimates</Callout>
+        {/* Readiness figures are modeled estimates — the Terms say so, and the
+            report must not say otherwise. Only the check counts are counted. */}
+        <Callout x={62} y={8} at={5100} tone="green">from run #87 — readiness figures are modeled estimates</Callout>
       </div>
     )
   },
@@ -124,5 +126,5 @@ const REPORTING_SCENES = [
 
 export function ReportingDemo() {
   return <DemoShell name="management reporting" crumb="docify / reporting / quality-export" scenes={REPORTING_SCENES}
-    posterMeta={{ kicker: 'MANAGEMENT REPORTING', title: 'A management-ready quality report, in one click.', sub: 'Overall 92, findings, applied fixes, and a publish-readiness decision — exported as PDF, HTML, and PowerPoint. In 30 seconds.', mins: '30 sec' }} />;
+    posterMeta={{ kicker: 'MANAGEMENT REPORTING', title: 'A management-ready quality report, in one click.', sub: 'A sample run: overall 92, findings, applied fixes, and a publish-readiness decision — exported as PDF, HTML, and PowerPoint. In 30 seconds.', mins: '30 sec' }} />;
 }

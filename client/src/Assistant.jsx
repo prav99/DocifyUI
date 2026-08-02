@@ -3,11 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { SUPPORT_EMAIL, supportMailto } from './config.js';
 
 /* =========================================================================
-   Site assistant — floating chat, bottom right, on every page.
-   Answers from the site's own documentation: each reply deep-links to the
-   matching /docs or /help article. When a question falls outside the
-   knowledge base, it hands off to the support mailbox with the user's
-   question prefilled. Styled with the app's design tokens.
+   Docs assistant — floating documentation search, bottom right, every page.
+
+   This is a keyword match over the fixed knowledge base below; no model is
+   called and nothing is generated. It must never be labelled or animated as
+   if one were — no "AI assistant" wording, no simulated typing delay — or the
+   UI would be claiming a capability the code does not have. Each reply
+   deep-links to the matching /docs or /help article; anything the keyword
+   match misses is handed to the support mailbox with the question prefilled.
    ========================================================================= */
 
 /* ---------- Knowledge base: keywords → answer + destination ---------- */
@@ -24,7 +27,7 @@ const KB = [
   },
   {
     k: 'automation pipeline merge webhook regenerate auto automatic trigger ci push pull request pr branch',
-    a: 'Automation pipelines regenerate, re-judge, and re-publish documentation on every merge. Configure one in the six-step wizard: repository, branch, triggers, documents, quality gates, publishing.',
+    a: 'Automation pipelines regenerate documentation on every merge, re-score it against your quality gate, and publish the result to your Docify workspace and export centre — never back into your repository. Configure one in the six-step wizard: repository, branch, triggers, documents, quality gates, publishing.',
     link: '/automation', label: 'Set up automation'
   },
   {
@@ -38,23 +41,23 @@ const KB = [
     link: '/docs/content-quality-assessment', label: 'How quality scoring works'
   },
   {
-    k: 'ranking chatgpt claude gemini cite citation retrieval probability ai assistant rank seo discover',
-    a: 'Docify predicts how likely ChatGPT, Claude, and Gemini are to retrieve and cite your documentation — before you publish — and shows exactly what to fix to climb.',
-    link: '/docs/chatgpt-ranking-analysis', label: 'AI ranking analysis'
+    k: 'ranking chatgpt claude gemini cite citation retrieval probability ai assistant rank seo discover readiness',
+    a: 'Docify models AI-search readiness: how well assistants such as ChatGPT, Claude, and Gemini can find, parse, and cite a page, scored from the signals in the document itself. It is a modeled signal you can improve — not a ranking guarantee on any platform.',
+    link: '/docs/chatgpt-ranking-analysis', label: 'AI-search readiness'
   },
   {
     k: 'github gitlab bitbucket integration connect repository repo source oauth code host',
-    a: 'Docify connects to GitHub, GitLab, and Bitbucket with one read-only OAuth grant — repositories, READMEs, and commit history become source material. Your code is never stored.',
+    a: 'Docify connects to GitHub, GitLab, and Bitbucket over OAuth and only ever reads — it never writes to your repositories and never opens pull requests. Repositories, READMEs, and commit history become source material, and no copy of your source files is kept.',
     link: '/docs/github-integration', label: 'Integration details'
   },
   {
     k: 'format formats dita markdown html docbook epub pdf word docx export output download',
-    a: 'Documents export to DITA, Markdown, HTML, DocBook, ePub, PDF, and Word — every source works with every format, no partial support.',
+    a: 'Documents export to DITA, Markdown, HTML, DocBook, ePub, PDF, and Word. Which of them you can export depends on your plan — the pricing page lists the formats included with each.',
     link: '/docs/technical-doc-generation', label: 'Formats & outputs'
   },
   {
     k: 'security secure privacy private data stored store code safe compliance legal terms gdpr',
-    a: 'Access is read-only and your source code is never stored — Docify reads structure, comments, and commit history at generation time only.',
+    a: 'Docify only reads — it never writes to your repositories — and keeps no copy of your source files: structure, comments, and commit history are read at generation time only. The security page also lists what Docify does not have yet.',
     link: '/legal/security', label: 'Security policy'
   },
   {
@@ -64,17 +67,17 @@ const KB = [
   },
   {
     k: 'login sign in signup account password cannot access forgot email verify otp',
-    a: 'You can sign in with email or with your GitHub / GitLab / Bitbucket account — one authorization signs you in and connects your source in the same step.',
+    a: 'You can sign in with email or with Google, or with your GitHub / GitLab / Bitbucket account — those three also connect your source in the same authorization. Google signs you in only; you still connect a repository afterwards.',
     link: '/help/login', label: 'Login help'
   },
   {
     k: 'docs documentation help article guide learn read more knowledge',
-    a: 'The documentation hub covers everything: AI quality scoring, ranking analysis, integrations, automation, and governance.',
+    a: 'The documentation hub covers everything: quality scoring, AI-search readiness, integrations, automation, and governance.',
     link: '/docs', label: 'Browse documentation'
   },
   {
     k: 'contact support human email talk person reach message help me problem bug error broken issue not working fail',
-    a: 'You can reach a human any time — send a message through the contact page or email ' + SUPPORT_EMAIL + ' and we reply quickly.',
+    a: 'You can reach a human any time — send a message through the contact page or email ' + SUPPORT_EMAIL + ' and we’ll get back to you.',
     link: '/contact', label: 'Contact support'
   }
 ];
@@ -98,17 +101,16 @@ function answerFor(q) {
   return bestScore >= 3 ? best : null;
 }
 
-const IcAiBot = () => (
+/* A page under a magnifier, not a robot: the launcher searches documentation,
+   so the glyph must not read as a model you are talking to. */
+const IcDocsSearch = () => (
   <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-    <line x1="14" y1="5" x2="14" y2="9" stroke="#ffffff" strokeWidth="2" />
-    <circle cx="14" cy="4" r="2" fill="#ffffff" />
-    <rect x="5" y="9" width="18" height="13" rx="3" fill="#ffffff" />
-    <circle cx="10.5" cy="14.5" r="1.7" fill="#0f62fe" />
-    <circle cx="17.5" cy="14.5" r="1.7" fill="#0f62fe" />
-    <path d="M10.5 18.4c1 .9 2.2 1.3 3.5 1.3s2.5-.4 3.5-1.3" stroke="#0f62fe" strokeWidth="1.6" strokeLinecap="round" />
-    <path d="M9 22v3.4L12.4 22z" fill="#ffffff" />
-    <path d="M26 3.5l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z" fill="#ffffff" />
-    <path d="M27.5 13l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" fill="#ffffff" opacity="0.85" />
+    <path d="M7 3h11l6 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" fill="#ffffff" />
+    <path d="M18 3l6 6h-5a1 1 0 0 1-1-1V3z" fill="#0f62fe" opacity="0.35" />
+    <rect x="8.5" y="12" width="11" height="1.8" rx="0.9" fill="#0f62fe" />
+    <rect x="8.5" y="16" width="8" height="1.8" rx="0.9" fill="#0f62fe" />
+    <circle cx="21" cy="22" r="5" fill="#ffffff" stroke="#0f62fe" strokeWidth="2" />
+    <path d="M24.8 25.8L28 29" stroke="#ffffff" strokeWidth="2.6" strokeLinecap="round" />
   </svg>
 );
 
@@ -117,20 +119,19 @@ export default function Assistant() {
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState([]); // {who:'bot'|'user', text, link?, label?, email?}
   const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
   const listRef = useRef(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (open && msgs.length === 0) {
-      setMsgs([{ who: 'bot', text: 'Hi! I can point you to the right documentation — ask me anything about Docify. For anything specific I can’t answer, I’ll connect you to our team by email.' }]);
+      setMsgs([{ who: 'bot', text: 'Hi! Ask about Docify and I’ll match your question to the right documentation page. I’m a search over our docs, not a chatbot — anything I can’t match, I’ll hand to our team by email.' }]);
     }
     if (open) setTimeout(() => inputRef.current && inputRef.current.focus(), 100);
   }, [open]); // eslint-disable-line
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [msgs, typing]);
+  }, [msgs]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -142,37 +143,35 @@ export default function Assistant() {
   function ask(q) {
     const question = q.trim();
     if (!question) return;
-    setMsgs((m) => [...m, { who: 'user', text: question }]);
     setInput('');
-    setTyping(true);
-    setTimeout(() => {
-      const hit = answerFor(question);
-      setTyping(false);
-      if (hit) {
-        setMsgs((m) => [...m, { who: 'bot', text: hit.a, link: hit.link, label: hit.label, q: question }]);
-      } else {
-        setMsgs((m) => [...m, {
-          who: 'bot',
-          text: 'I don’t have a good answer for that one — but our team does. Send it to ' + SUPPORT_EMAIL + ' and we’ll get back to you quickly.',
-          email: true, q: question
-        }]);
-      }
-    }, 450);
+    // The lookup is synchronous and instant. Deliberately no delay or typing
+    // animation: there is no model to wait for, and pretending otherwise
+    // would misrepresent what this does.
+    const hit = answerFor(question);
+    setMsgs((m) => [...m, { who: 'user', text: question }, hit
+      ? { who: 'bot', text: hit.a, link: hit.link, label: hit.label, q: question }
+      : {
+        who: 'bot',
+        text: 'That doesn’t match anything in the documentation I cover, and I won’t guess. Our team can answer it — send it to ' + SUPPORT_EMAIL + ' and we’ll get back to you.',
+        email: true, q: question
+      }]);
   }
 
   return (
     <>
       {open && (
-        <div className="asst-panel" role="dialog" aria-label="Docify assistant">
+        <div className="asst-panel" role="dialog" aria-label="Docify documentation search">
           <div className="asst-head">
             <div>
-              <p className="asst-title">Assistant</p>
+              <p className="asst-title">Docs assistant</p>
               <p className="asst-sub">Answers from the documentation · humans one click away</p>
             </div>
-            <button className="asst-close" aria-label="Close assistant" onClick={() => setOpen(false)}>✕</button>
+            <button className="asst-close" aria-label="Close docs assistant" onClick={() => setOpen(false)}>✕</button>
           </div>
 
-          <div className="asst-msgs" ref={listRef}>
+          {/* Replies now land in the same tick as the question, so there is no
+              pending state to announce — the region carries the announcement. */}
+          <div className="asst-msgs" ref={listRef} aria-live="polite">
             {msgs.map((m, i) => (
               <div key={i} className={'asst-msg ' + (m.who === 'user' ? 'asst-msg--user' : 'asst-msg--bot')}>
                 <p>{m.text}</p>
@@ -188,8 +187,7 @@ export default function Assistant() {
                 )}
               </div>
             ))}
-            {typing && <div className="asst-msg asst-msg--bot"><span className="asst-typing"><i /><i /><i /></span></div>}
-            {msgs.length <= 1 && !typing && (
+            {msgs.length <= 1 && (
               <div className="asst-chips">
                 {SUGGESTIONS.map((s) => (
                   <button key={s} className="asst-chip" onClick={() => ask(s)}>{s}</button>
@@ -207,8 +205,8 @@ export default function Assistant() {
               className="asst-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about Docify…"
-              aria-label="Ask the assistant a question"
+              placeholder="Search the documentation…"
+              aria-label="Search the documentation"
               maxLength={300}
             />
             <button type="submit" className="asst-send" aria-label="Send" disabled={!input.trim()}>
@@ -220,11 +218,11 @@ export default function Assistant() {
 
       <button
         className={'asst-launcher' + (open ? ' open' : '')}
-        aria-label={open ? 'Close AI assistant' : 'Open AI assistant — ask about Docify'}
+        aria-label={open ? 'Close docs assistant' : 'Open docs assistant — search the documentation'}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        {open ? <span style={{ fontSize: 20, color: '#fff' }}>✕</span> : <IcAiBot />}
+        {open ? <span style={{ fontSize: 20, color: '#fff' }}>✕</span> : <IcDocsSearch />}
       </button>
     </>
   );

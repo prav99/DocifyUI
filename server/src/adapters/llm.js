@@ -468,6 +468,16 @@ export const FRAMEWORK = Object.fromEntries(Object.keys(BLUEPRINTS).map((id) => 
   ...BLUEPRINTS[id]
 }]));
 
+// The section plan handed to the model (and shown as "recommended structure").
+// It comes from the blueprint, never from the demo templates: those headings
+// name a fictional payments API, and putting them in front of the model invites
+// endpoints the customer's source does not contain.
+function outlineFor(docType) {
+  const bp = BLUEPRINTS[docType];
+  if (bp && bp.outline && bp.outline.length) return bp.outline.map((o) => o.name);
+  return ['Overview'];
+}
+
 // Validates a generated document against its blueprint. Returns entries in
 // the same shape as the style checks, so conformance shows up in the quality
 // report like every other check. A skill outline replaces the blueprint —
@@ -684,12 +694,147 @@ function mdToDocbook(md) {
   return out.join('\n      ');
 }
 
-function firstPlainLine(md) {
-  for (const raw of String(md).split('\n')) {
-    const line = raw.replace(/[`*_>#|[\]]/g, '').trim();
-    if (line && !/^-{3,}$/.test(line) && !/^\d+\.\s*$/.test(line)) return line.slice(0, 220);
+function inlineDita(t) {
+  return escX(t)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<codeph>$1</codeph>')
+    // The href has already been escaped for text; only the quote delimiter is
+    // left to neutralize.
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, href) =>
+      '<xref href="' + href.replace(/"/g, '&quot;') + '" scope="external">' + txt + '</xref>');
+}
+
+// Converts a section body (our Markdown subset) to DITA topic block content.
+function mdToDita(md) {
+  const out = [];
+  const lines = String(md).split('\n');
+  let i = 0;
+  const cells = (r) => r.split('|').slice(1, -1).map((c) => c.trim());
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('```')) {
+      const buf = []; i++;
+      while (i < lines.length && !lines[i].startsWith('```')) { buf.push(lines[i]); i++; }
+      i++;
+      out.push('<codeblock>' + escX(buf.join('\n')) + '</codeblock>');
+      continue;
+    }
+    if (/^\|/.test(l)) {
+      const rows = [];
+      while (i < lines.length && /^\|/.test(lines[i])) { rows.push(lines[i]); i++; }
+      const head = cells(rows[0]);
+      const body = rows.slice(2).map(cells);
+      // simpletable requires at least one row; a header with no data is prose.
+      if (!body.length) { out.push('<p>' + inlineDita(head.join(' · ')) + '</p>'); continue; }
+      const pad = (r) => (r.length >= head.length ? r.slice(0, head.length) : r.concat(Array(head.length - r.length).fill('')));
+      out.push('<simpletable><sthead>' +
+        head.map((h) => '<stentry>' + inlineDita(h) + '</stentry>').join('') + '</sthead>' +
+        body.map((r) => '<strow>' + pad(r).map((c) => '<stentry>' + inlineDita(c) + '</stentry>').join('') + '</strow>').join('') +
+        '</simpletable>');
+      continue;
+    }
+    if (/^[-*]\s+/.test(l)) {
+      const buf = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i])) { buf.push(lines[i].replace(/^[-*]\s+/, '')); i++; }
+      out.push('<ul>' + buf.map((x) => '<li>' + inlineDita(x) + '</li>').join('') + '</ul>');
+      continue;
+    }
+    if (/^\d+\.\s+/.test(l)) {
+      const buf = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) { buf.push(lines[i].replace(/^\d+\.\s+/, '')); i++; }
+      out.push('<ol>' + buf.map((x) => '<li>' + inlineDita(x) + '</li>').join('') + '</ol>');
+      continue;
+    }
+    if (/^>\s?/.test(l)) {
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, '')); i++; }
+      out.push('<note>' + inlineDita(buf.join(' ')) + '</note>');
+      continue;
+    }
+    // DITA sections cannot nest, so a sub-heading keeps its emphasis as a
+    // labelled paragraph rather than being dropped.
+    const hm = l.match(/^#{1,6}\s+(.*)$/);
+    if (hm) { out.push('<p><b>' + inlineDita(hm[1].trim()) + '</b></p>'); i++; continue; }
+    if (l.trim() === '') { i++; continue; }
+    const buf = [l]; i++;
+    while (i < lines.length && lines[i].trim() !== '' && !/^(#|\||>|[-*]\s|\d+\.\s|```)/.test(lines[i])) { buf.push(lines[i]); i++; }
+    out.push('<p>' + inlineDita(buf.join(' ')) + '</p>');
   }
-  return 'Drafted from source analysis.';
+  return out.join('\n      ');
+}
+
+// DITA ids must be XML names, so they cannot start with a digit and cannot be
+// empty; slug() alone satisfies neither for headings like "2. Install".
+function ditaId(s) {
+  const v = slug(s);
+  return /^[a-z]/.test(v) ? v : 'd_' + v;
+}
+
+// The first descriptive sentence the source itself provides, for <shortdesc>.
+// Returns null when there is none — an invented summary would be a product
+// claim the source never made.
+function firstDescriptiveLine(sections) {
+  for (const [, body] of sections) {
+    for (const raw of String(body).split('\n')) {
+      if (/^\s*```/.test(raw)) break;
+      const line = raw.replace(/^[-*>\s]+/, '').replace(/[`*_#]/g, '').trim();
+      if (!line || /^\|/.test(line) || /^-{3,}$/.test(line) || /^\d+\.\s*$/.test(line)) continue;
+      if (line.length < 25) continue;
+      const stop = line.indexOf('. ');
+      return (stop > 20 ? line.slice(0, stop + 1) : line).slice(0, 220);
+    }
+  }
+  return null;
+}
+
+// Structural labels that read as terms but are document furniture, not
+// vocabulary — they must never become glossary rows.
+const GLOSSARY_SKIP = new Set([
+  'symptom', 'cause', 'resolution', 'request', 'response', 'parameters', 'example', 'note',
+  'warning', 'tip', 'added', 'changed', 'fixed', 'security', 'removed', 'deprecated', 'new',
+  'improved', 'result', 'purpose', 'audience', 'tone', 'before', 'after', 'input', 'output',
+  'default', 'required', 'optional', 'summary', 'overview', 'steps', 'usage'
+]);
+
+// Glossary rows are only ever terms the source itself defines. A definition
+// Docify invented would be a product fact the customer never wrote — and the
+// customer may publish it.
+function collectGlossaryTerms(sections, skillMd) {
+  const found = new Map();
+  const clean = (s) => String(s).replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim();
+  const add = (term, def) => {
+    const t = clean(term);
+    const d = clean(def).replace(/[.;,]+$/, '');
+    if (!t || t.length > 60 || GLOSSARY_SKIP.has(t.toLowerCase())) return;
+    if (d.length < 12 || d.length > 240) return;
+    const k = t.toLowerCase();
+    if (!found.has(k)) found.set(k, [t, d.charAt(0).toUpperCase() + d.slice(1)]);
+  };
+  const scan = (text) => {
+    let inFence = false;
+    let inTermTable = false;
+    for (const raw of String(text).split('\n')) {
+      if (/^\s*```/.test(raw)) { inFence = !inFence; continue; }
+      if (inFence) continue;
+      const line = raw.trim();
+      if (/^\|/.test(line)) {
+        const cols = line.split('|').slice(1, -1).map((c) => clean(c));
+        if (!inTermTable) {
+          inTermTable = cols.length === 2 && /^(term|name)$/i.test(cols[0]) && /^(definition|meaning|description)$/i.test(cols[1]);
+          continue;
+        }
+        if (cols.length === 2 && !/^:?-{2,}:?$/.test(cols[0])) add(cols[0], cols[1]);
+        continue;
+      }
+      inTermTable = false;
+      const m = line.replace(/^[-*]\s+/, '')
+        .match(/^(?:\*\*([^*]+)\*\*|`([^`]+)`)\s*(?:—|–|--|:)\s*(.+)$/);
+      if (m) add(m[1] || m[2], m[3]);
+    }
+  };
+  for (const [, body] of sections) scan(body);
+  if (skillMd) scan(skillMd);
+  return [...found.values()].slice(0, 24);
 }
 
 /* ---------------- Output options ---------------- */
@@ -732,10 +877,17 @@ function stripExamples(body) {
 // list is used at every regeneration, so all formats and the preview stay in
 // sync with what the user has fixed. Fully configurable: add or change
 // transforms here and the whole product follows.
-function applyFixes({ title, sections, fx }) {
+function applyFixes({ title, sections, fx, grounded = false, product = '' }) {
   let t = title;
   if (fx.has('title') && !/—/.test(t)) {
-    t = t + ' — endpoints, authentication, and errors';
+    // On a grounded document the only search term Docify actually knows is the
+    // source project; the template subtitle would describe a document the
+    // customer did not generate.
+    if (grounded) {
+      if (product && !new RegExp('\\b' + product.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(t)) t = t + ' — ' + product;
+    } else {
+      t = t + ' — endpoints, authentication, and errors';
+    }
   }
   const rep = (b) => {
     let x = String(b);
@@ -913,15 +1065,19 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   const id = docTypes[0];
   let title = docTypeName(track, id);
   const sk = parseSkill(skill);
+  const tpl = TEMPLATES[id];
+  const oc = normOut(output);
+  // The only version Docify knows is the one the user typed. The template
+  // version below belongs to the fictional demo document and must never travel
+  // with content generated from a real repository.
+  const docVersion = (oc.version && oc.version.trim()) || '';
   const c = {
     product: aiDocs ? (String(repo).split('/').pop() || 'this project') : 'Payments API',
-    version: '2.4.0',
+    version: docVersion || (aiDocs ? '' : '2.4.0'),
     date: new Date().toISOString().slice(0, 10),
     repo,
     brief: brief || {}
   };
-  const tpl = TEMPLATES[id];
-  const oc = normOut(output);
   if (docTypes.length > 1 && !(oc.title && oc.title.trim())) {
     title = title + ' + ' + (docTypes.length - 1) + ' more (documentation set)';
   }
@@ -950,7 +1106,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   // ---- Apply the user's accepted fixes: real content repairs ----
   const fxSet = new Set(fixes || []);
   if (fxSet.size) {
-    const repaired = applyFixes({ title, sections, fx: fxSet });
+    const repaired = applyFixes({ title, sections, fx: fxSet, grounded: !!aiDocs, product: c.product });
     title = repaired.title;
     sections = repaired.sections;
   }
@@ -963,21 +1119,19 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
       (oc.classification !== 'none' ? ' Classification: **' + String(oc.classification).toUpperCase() + '**.' : '')], ...sections];
   }
   if (oc.revisionHistory) {
+    // This generation is the only revision Docify can attest to. Earlier
+    // releases of the customer's document are unknown, so none are listed.
     sections = [...sections, ['Revision history',
       table(['Version', 'Date', 'Author', 'Change'], [
-        [oc.version || c.version, fmtDate(oc), oc.author || 'Docify', 'Generated from `' + repo + '`'],
-        ['2.3.1', '2026-05-18', oc.author || 'Docify', 'Fix release'],
-        ['2.3.0', '2026-04-02', oc.author || 'Docify', 'Initial publication']
-      ])]];
+        [docVersion || '—', fmtDate(oc), oc.author || 'Docify', 'Generated from `' + repo + '`']
+      ]) +
+      '\n\nOnly this generation is recorded. Earlier revisions are not known to Docify — add them here if your process requires a full history.']];
   }
   if (oc.glossary) {
-    sections = [...sections, ['Glossary',
-      table(['Term', 'Definition'], [
-        ['API key', 'Secret credential that authenticates every request'],
-        ['Charge', 'A single attempt to collect payment from a source'],
-        ['Idempotency key', 'Client-supplied key that makes retries safe'],
-        ['Webhook', 'HTTPS callback the platform sends on events']
-      ])]];
+    const terms = collectGlossaryTerms(sections, skill);
+    sections = [...sections, ['Glossary', terms.length
+      ? table(['Term', 'Definition'], terms)
+      : '*No defined terms were found in the source material. Add the terms this document relies on before publishing.*']];
   }
   if (oc.numberedHeadings) sections = sections.map(([h, b], idx) => [(idx + 1) + '. ' + h, b]);
   const anchors = sections.map(([h]) => slug(h)); // matches the ids mdToHtml emits
@@ -1001,7 +1155,7 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
   const coverRows = [];
   if (org) coverRows.push(['Organization', org]);
   if (oc.author && oc.author.trim()) coverRows.push(['Author', oc.author.trim()]);
-  coverRows.push(['Version', (oc.version && oc.version.trim()) || c.version]);
+  if (c.version) coverRows.push(['Version', c.version]);
   if (oc.docId && oc.docId.trim()) coverRows.push(['Document ID', '`' + oc.docId.trim() + '`']);
   if (oc.classification !== 'none') coverRows.push(['Classification', '**' + String(oc.classification).toUpperCase() + '**']);
   if (oc.showDate) coverRows.push(['Date', fmtDate(oc)]);
@@ -1020,12 +1174,13 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
       ? '**Short description.** ' + title + ' for `' + repo + '`, generated from and grounded in the repository source files.'
       : '**Short description.** The ' + c.product + ' lets you create, capture, and refund charges programmatically. This reference covers authentication, all endpoints, and error handling.');
   }
-  if (fxSet.has('keywords')) {
-    const kwProduct = (String(repo || '').split('/').pop() || c.product || 'product').toLowerCase();
-    parts.push('', aiDocs
-      ? 'Keywords: ' + kwProduct + ', ' + [...new Set((docTypes || []).map((d) => String(d)))].join(', ') + ', documentation, reference.'
-      : 'Keywords: payments-api, REST authentication, refunds, webhook events.');
-  }
+  // One derived keyword list, shared by the Markdown head and the DITA prolog
+  // so the two can never disagree.
+  const kwProduct = (String(repo || '').split('/').pop() || c.product || 'product').toLowerCase();
+  const keywords = aiDocs
+    ? kwProduct + ', ' + [...new Set((docTypes || []).map((d) => String(d)))].join(', ') + ', documentation, reference'
+    : 'payments-api, REST authentication, refunds, webhook events';
+  if (fxSet.has('keywords')) parts.push('', 'Keywords: ' + keywords + '.');
   if (skillName) {
     parts.push('', '> Skill applied: ' + skillName +
       (sk.rules.length ? ' — ' + sk.rules.length + ' rule' + (sk.rules.length > 1 ? 's' : '') : '') +
@@ -1064,25 +1219,30 @@ export function generateDocument({ track, docTypes, format, repo, instructions, 
 
   let content = md;
   if (format === 'dita') {
+    // DITA carries the WHOLE document — it is an authoring interchange format,
+    // so a summarized body would lose the content the customer paid to keep.
+    // Every element below is derived from the document; nothing is templated in.
+    const shortdesc = firstDescriptiveLine(sections);
     const dita = [
       '<?xml version="1.0" encoding="UTF-8"?>',
-      '<topic id="' + slug(title) + '">',
-      '  <title>' + title + '</title>',
-      '  <shortdesc>Create, capture, and refund charges programmatically.</shortdesc>',
+      '<topic id="' + ditaId(title) + '">',
+      '  <title>' + escX(title) + '</title>',
+      ...(shortdesc ? ['  <shortdesc>' + escX(shortdesc) + '</shortdesc>'] : []),
       '  <prolog><metadata>' +
-        '<othermeta name="standard" content="' + (tpl ? tpl.standard : 'Docify default') + '"/>' +
-        '<othermeta name="version" content="' + escX((oc.version && oc.version.trim()) || c.version) + '"/>' +
-        (org ? '<othermeta name="organization" content="' + escX(org) + '"/>' : '') +
-        (oc.classification !== 'none' ? '<othermeta name="classification" content="' + escX(oc.classification) + '"/>' : '') +
-        (fxSet.has('keywords') ? '<othermeta name="keywords" content="payments-api, REST authentication, refunds, webhook events"/>' : '') +
+        '<othermeta name="standard" content="' + escA(tpl ? tpl.standard : 'Docify default') + '"/>' +
+        (c.version ? '<othermeta name="version" content="' + escA(c.version) + '"/>' : '') +
+        (org ? '<othermeta name="organization" content="' + escA(org) + '"/>' : '') +
+        (oc.classification !== 'none' ? '<othermeta name="classification" content="' + escA(oc.classification) + '"/>' : '') +
+        (fxSet.has('keywords') ? '<othermeta name="keywords" content="' + escA(keywords) + '"/>' : '') +
         '</metadata></prolog>',
       '  <body>'
     ];
     for (const [h, body] of sections) {
+      const blocks = mdToDita(body);
       dita.push(
-        '    <section id="' + slug(h) + '">',
-        '      <title>' + h + '</title>',
-        '      <p>' + firstPlainLine(body) + '</p>',
+        '    <section id="' + ditaId(h) + '">',
+        '      <title>' + escX(h) + '</title>',
+        ...(blocks ? ['      ' + blocks] : []),
         '    </section>'
       );
     }
@@ -1597,7 +1757,7 @@ async function anthropicRequest (key, body, attempt = 0) {
 
 async function aiSections({ docType, track, repo, files, brief, instructions, style, key }) {
   const tpl = TEMPLATES[docType];
-  const outline = tpl ? tpl.sections({ product: 'X', version: '', date: '', repo, brief: {} }).map(([h]) => h) : ['Overview'];
+  const outline = outlineFor(docType);
   const fileBlock = files.map((f) => '### FILE: ' + f.path + '\n```\n' + f.content + '\n```').join('\n\n');
   const b = brief || {};
   // The resolved writing policy rides in the SYSTEM prompt so voice, tone,
@@ -1621,6 +1781,7 @@ async function aiSections({ docType, track, repo, files, brief, instructions, st
     (tpl ? ' (standard: ' + tpl.standard + ')' : '') +
     '\nSuggested outline (adapt as the code warrants): ' + outline.join(' · ') +
     (b.audience ? '\nAudience: ' + b.audience : '') + (b.tone ? '\nTone: ' + b.tone : '') +
+    (b.emphasis ? '\nEmphasize above all (only if the source supports it): ' + String(b.emphasis).slice(0, 300) : '') +
     (instructions ? '\nInstructions: ' + String(instructions).slice(0, 500) : '') +
     '\nUse markdown: ## is NOT needed in bodies (headings come from the pairs); tables, fenced code blocks, and lists are encouraged.';
   await acquireSlot();
@@ -1675,11 +1836,7 @@ function parseSectionsArray(raw) {
 // The blueprint outline for a document type — used by the Governance
 // workspace to show "current structure vs recommended structure".
 export function blueprintOutline(track, docType) {
-  const tpl = TEMPLATES[docType];
-  if (!tpl) return ['Overview'];
-  try {
-    return tpl.sections({ product: 'X', version: '', date: '', repo: '', brief: {} }).map(([h]) => h);
-  } catch { return ['Overview']; }
+  return outlineFor(docType);
 }
 
 /* ---------------- Full-document standardization ----------------
@@ -1723,8 +1880,7 @@ export async function aiRestructureDocument({ title, content, docType = 'usergui
   // No AI engine configured → deterministic structural pass so Standardize
   // still produces a reviewable proposal (the inline editor stays reachable).
   if (!key) return { pairs: localRestructure({ content }), simulated: true, source: 'local' };
-  const tpl = TEMPLATES[docType];
-  const outline = tpl ? tpl.sections({ product: 'X', version: '', date: '', repo: '', brief: {} }).map(([h]) => h) : ['Overview'];
+  const outline = outlineFor(docType);
   const sys = 'You are a senior technical writer performing a full standardization pass on an EXISTING document. ' +
     'Preserve every fact, command, parameter, value, and warning — never invent content and never drop substance. ' +
     'Merge duplicated passages into the better version; resolve contradictions by keeping the more specific statement. ' +

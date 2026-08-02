@@ -48,7 +48,7 @@ const PILLARS = [
       ]},
       { slug: 'ai-citation-readiness', name: 'AI citation readiness', sum: 'Make every section quotable: short descriptions, anchors, and self-contained chunks.', body: [
         { p: 'AI assistants cite what they can extract cleanly. The generator writes every heading with a stable anchor id, keeps sections self-contained, and — once the metadata fixes are applied — adds a short description and keyword set that retrieval systems quote directly.' },
-        { ul: ['Annotated preview marks retrieval-ready chunks, consistent terms, and broken links inline', 'The AI quality report exports the full audit as PDF, HTML, or PowerPoint for reviews','Citation-hostile patterns (ambiguous pronouns, run-on sentences, duplicated passages) are flagged with one-click rewrites'] }
+        { ul: ['The quality report exports the full audit as PDF, HTML, or PowerPoint for reviews', 'Citation-hostile patterns (ambiguous pronouns, run-on sentences, duplicated passages) are flagged with one-click rewrites'] }
       ]},
       { slug: 'content-quality-assessment', name: 'Content quality assessment', sum: 'Six dimensions, transparent weights, and penalties you can tune.', body: [
         { p: 'Scoring is deliberately explainable: each dimension starts at 100 and loses a fixed penalty per open finding, broken link, or failed style check, with a floor of 40. The overall score is the weight-blended sum — no black box.' },
@@ -80,9 +80,10 @@ const PILLARS = [
         { p: 'With automation enabled, every merge to main triggers regeneration: the pipeline re-reads the changed sources, re-drafts affected sections, and re-runs the quality gate before anything publishes.' },
         { p: 'The included CI workflow uploads the quality report as a build artifact and fails the job if the score drops below your gate — documentation drift becomes a failed check, not a surprise.' }
       ]},
-      { slug: 'change-impact-analysis', name: 'Change impact analysis', sum: 'Know which documents a commit touches before you publish.', body: [
-        { p: 'Because every document records its sources and repository, Docify maps development activity to the documents built from it. A change to your authentication module flags the API reference, the quick start, and the troubleshooting guide that cite it.' },
-        { p: 'Combined with the quality gate, this gives a safe default: regenerate what changed, re-judge it, and hold anything that no longer clears the bar for human review.' }
+      { slug: 'change-impact-analysis', name: 'Change impact analysis', sum: 'Know which documents a merge will regenerate before it happens.', body: [
+        { p: 'Every document records the repository and sources it was built from, and every automation pipeline records the documents it maintains. A merge to a watched branch therefore has a known, inspectable blast radius: exactly the documents that pipeline produces, listed in the pipeline before you enable it.' },
+        { p: 'In Doc sync, a change is additionally scored against your document\'s outline to choose the section it belongs in — the reasoning panel shows the candidate sections and why one won, so a placement is reviewable before you accept it.' },
+        { p: 'Combined with the quality gate, this gives a safe default: regenerate what changed, re-score it, and hold anything that no longer clears the bar for human review.' }
       ]},
       { slug: 'technical-doc-generation', name: 'Technical documentation generation', sum: 'API references, guides, runbooks — in DITA, Markdown, HTML, DocBook, ePub, PDF, and Word.', body: [
         { p: 'Seven technical document types cover the reference-to-tutorial spectrum, and every one exports to seven formats including real binary .docx and .pdf with your page setup, headers, footers, page numbers, and watermark applied.' },
@@ -106,11 +107,11 @@ const PILLARS = [
       ]},
       { slug: 'content-quality-monitoring', name: 'Content quality monitoring', sum: 'Continuous scoring across the library, not one-off audits.', body: [
         { p: 'Every generation is scored at creation and re-scored after every fix and re-check. With CI automation on, every merge produces a fresh report — so quality is a monitored signal, not an annual project.' },
-        { ul: ['Dashboard lists every document with its live score and verdict', 'Re-check at any time — the rubric runs again over the current text of the document', 'Quality reports are exportable per document for review workflows'] }
+        { ul: ['The Documents tab lists every document with its live score and approval state', 'Re-check at any time — the rubric runs again over the current text of the document', 'Quality reports are exportable per document for review workflows'] }
       ]},
       { slug: 'ranking-trends', name: 'Ranking trends', sum: 'Watch probability move from draft to publish-ready.', body: [
-        { p: 'The MOAT panel animates each model\'s retrieval probability as fixes land, with a ghost bar marking the ceiling once all findings are resolved. A typical API reference moves from ~50% to the mid-90s across the three models after the full fix set.' },
-        { p: 'Deltas are computed from the same scoring model as everything else, so trend claims always reconcile with the report.' }
+        { p: 'The MOAT panel animates each model\'s retrieval probability as fixes land, with a ghost bar marking the ceiling once all findings are resolved. The movement you see is your own document\'s — we do not publish a typical or expected improvement, because we have not measured one.' },
+        { p: 'Deltas are computed from the same scoring model as everything else, so trend claims always reconcile with the report. The probabilities are modelled from your dimension scores; they are readiness indicators, not observed placements in any AI product.' }
       ]},
       { slug: 'optimization-recommendations', name: 'Optimization recommendations', sum: 'Every finding is an action with a projected gain.', body: [
         { p: 'Recommendations are never vague: each finding names the exact location, shows the suggested rewrite, and carries a projected overall gain ("+4 overall"). Apply fix executes the rewrite for real and shows the before/after diff.' },
@@ -118,10 +119,10 @@ const PILLARS = [
       ]},
       { slug: 'compliance-governance', name: 'Compliance & governance', sum: 'Classification, watermarks, legal blocks, and verified corporate identity.', body: [
         { p: 'Output options cover the governance surface: classification labels, DRAFT banners, watermarks on every page, disclaimer and copyright blocks, and a document identity table (version, date, author, ID) on every output.' },
-        { ul: ['Corporate email verification with domain allow-lists and free-email blocking', 'OAuth tokens held server-side; role-based access on team plans', 'Structure validation proves each document conforms to its declared standard'] }
+        { ul: ['Corporate email verification with domain allow-lists and free-email blocking', 'OAuth tokens held server-side, never returned to the browser; Owner and Writer roles on paid plans', 'Structure validation proves each document conforms to its declared standard'] }
       ]},
-      { slug: 'executive-reporting', name: 'Executive reporting dashboard', sum: 'The AI quality report: a complete, management-ready audit record in PDF, HTML, or PowerPoint.', body: [
-        { p: 'One download captures everything a stakeholder needs: overall score and verdict, all six dimension scores with weights, per-model readiness estimates, every finding with its status, and the exact before/after of each applied fix.' },
+      { slug: 'executive-reporting', name: 'Executive reporting dashboard', sum: 'The quality report: a complete, management-ready audit record in PDF, HTML, or PowerPoint.', body: [
+        { p: 'One download captures everything a stakeholder needs: overall score and verdict, all six dimension scores with weights, per-model readiness estimates, every finding with its status, and the exact before/after of each applied fix. Three presets choose the depth — Executive summary (cover, summary, scores, recommendation), Full audit report (everything), and Technical quality report (everything except the executive summary).' },
         { p: 'It ships as dependency-free HTML — attach it to a release review, an audit, or a customer security questionnaire as-is. A JSON variant serves CI and BI pipelines.' }
       ]}
     ]
@@ -264,8 +265,9 @@ const SUPPORTING = [
     ]}
   ]},
   { t: 'Account & security', items: [
-    { slug: 'roles-permissions', name: 'Roles and permissions', sum: 'Viewer, Operator, and Admin roles on team plans.', body: [
-      { p: 'Team members are either the account Owner or a Writer; the Owner manages sources, automation, billing, and invitations. Sign in with Google, a code host, or email and password. Finer-grained roles and SSO (SAML/OIDC) are available to Enterprise customers on request.' }
+    { slug: 'roles-permissions', name: 'Roles and permissions', sum: 'Owner and Writer — what exists today, and what does not.', body: [
+      { p: 'Team members are either the account Owner or a Writer; the Owner manages sources, automation, billing, and adding members. Sign in with Google, a code host, or email and password.' },
+      { p: 'Stated plainly, because it matters when you are evaluating us: finer-grained roles, SSO (SAML/OIDC), multi-factor authentication, customer-visible audit logs, member removal, and self-service password reset are not built today. Where the pricing page offers SSO or audit logs "on request", that means we will scope and build them with an Enterprise customer — not that they are waiting to be switched on.' }
     ]},
     { slug: 'oauth-connections', name: 'OAuth connections & tokens', sum: 'How Docify stores and renews source credentials.', body: [
       { p: 'OAuth tokens are stored server-side, never in the browser. Providers with expiring tokens (Bitbucket, GitLab) include refresh tokens, and Docify renews access silently. Revoking access at the provider immediately invalidates the stored credentials.' }
@@ -275,7 +277,7 @@ const SUPPORTING = [
     ]},
     { slug: 'status-page', name: 'System status & uptime', sum: 'Live component health at /status — with uptime numbers that cannot flatter us.', body: [
       { p: 'The public status page at /status (also linked in the site footer) shows live health for the API, database, AI generation engine, and webhook receiver, plus uptime for the last 24 hours, 7 days, and 30 days and a 90-day daily history strip.' },
-      { p: 'The numbers are honest by construction: the service records a health sample every five minutes, and if it is down it cannot record — so gaps count as downtime. Uptime is only ever measured against observed history; a young deployment shows dashes, never an invented 99.99%.' },
+      { p: 'The numbers are honest by construction: every figure is computed from health samples the service records itself, every five minutes. Uptime is only ever measured against observed history — a young deployment shows dashes, never an invented 99.99% — and days with no recorded samples are drawn as grey gaps rather than counted as operational. The page also refuses to render an uptime outside 0–100%, because such a figure could only be a bug.' },
       { p: 'External monitors can poll GET /api/health — it returns HTTP 200 while healthy and 503 during a disruption, with per-component detail in the body.' }
     ]}
   ]}
@@ -288,6 +290,14 @@ const ALL_TOPICS = [
 ];
 const BY_SLUG = Object.fromEntries(ALL_TOPICS.map((t) => [t.slug, t]));
 
+/* Searchable text per article, built once. Body text is included, and every
+   word of the query must appear somewhere in it — a title-substring match
+   alone loses "quality gate CI" and every other multi-word question. */
+const HAYSTACK = new Map(ALL_TOPICS.map((t) => [t.slug, [
+  t.name, t.sum, t.cat, t.slug.replace(/-/g, ' '),
+  ...(t.body || []).map((b) => b.h || b.p || (b.ul || []).join(' '))
+].join(' ').toLowerCase()]));
+
 /* ---------------- Docs home ---------------- */
 export function Docs() {
   usePageMeta({
@@ -297,10 +307,14 @@ export function Docs() {
   });
   const [q, setQ] = useState('');
   const results = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return null;
-    return ALL_TOPICS.filter((t) =>
-      t.name.toLowerCase().includes(s) || t.sum.toLowerCase().includes(s) || t.cat.toLowerCase().includes(s));
+    const terms = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return null;
+    const scored = ALL_TOPICS
+      .filter((t) => terms.every((w) => HAYSTACK.get(t.slug).includes(w)))
+      // A hit in the title is a better answer than a hit buried in the body.
+      .map((t) => ({ t, rank: terms.every((w) => t.name.toLowerCase().includes(w)) ? 0 : terms.every((w) => t.sum.toLowerCase().includes(w)) ? 1 : 2 }));
+    scored.sort((a, b) => a.rank - b.rank);
+    return scored.map((x) => x.t);
   }, [q]);
 
   return (
@@ -308,11 +322,13 @@ export function Docs() {
       <div className="page">
         <div className="docshero">
           <p className="eyebrow eyebrow--blue mb3">AI DOCUMENTATION INTELLIGENCE PLATFORM</p>
-          <h1 className="h05" style={{ maxWidth: 760 }}>Create documentation that AI understands, trusts, and ranks.</h1>
+          <h1 className="h05" style={{ maxWidth: 760 }}>Create documentation that AI systems can read, trust, and cite.</h1>
           <p className="body02 t2 mt5" style={{ maxWidth: 720 }}>
-            Docify helps organizations automatically generate documentation from code commits, evaluate
-            AI compatibility against a documentation-quality rubric, and predict content performance across
-            ChatGPT, Google Gemini, Claude, and other AI-powered platforms.
+            Docify helps organizations automatically generate documentation from code commits, score it
+            against a deterministic documentation-quality rubric, and estimate how ready it is to be
+            retrieved and cited by ChatGPT, Google Gemini, and Claude. Those estimates are modelled
+            signals computed from your own scores — they are not a guarantee of how any AI system will
+            rank your content.
           </p>
           <div className="field mt7" style={{ maxWidth: 480 }}>
             <label htmlFor="docSearch">Search the docs</label>
@@ -333,7 +349,12 @@ export function Docs() {
                 <span className="tag tag--outline">{t.cat}</span>
               </Link>
             ))}
-            {results.length === 0 && <p className="body01 t2">Nothing matched — try “ranking”, “commit”, or “report”.</p>}
+            {results.length === 0 && (
+              <p className="body01 t2">
+                Nothing matched every word of that search — try fewer words, or “ranking”, “commit”, or
+                “report”. Looking for help with a specific screen instead? <Link to="/help">Open the help centre</Link>.
+              </p>
+            )}
           </div>
         ) : (
           <>

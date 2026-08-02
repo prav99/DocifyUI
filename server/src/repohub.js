@@ -22,30 +22,55 @@ const PROVIDERS = ['github', 'gitlab', 'bitbucket'];
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
 /* ------------------------- Provider metadata check ------------------------ */
+// This message is stored on the repository row and shown to the customer, so
+// it has to say what to do next. "HTTP 404" on a private repository sends
+// people looking for a typo when the real answer is "connect the source".
+const PROVIDER_NAME = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
+function probeMessage(status, provider, hasToken) {
+  const name = PROVIDER_NAME[provider] || 'the provider';
+  if (status === 404) {
+    return hasToken
+      ? 'Not found on ' + name + ' — check the owner/name, or that the connected account can see this repository.'
+      : 'Not found on ' + name + '. If it is private, connect ' + name + ' under Sources so Docify can read it.';
+  }
+  if (status === 401) return name + ' rejected the connected account — reconnect it under Sources.';
+  if (status === 403) {
+    return hasToken
+      ? name + ' denied access — the connected account may lack permission for this repository, or the API rate limit is exhausted.'
+      : name + ' rate limit for unauthenticated requests is exhausted — connect ' + name + ' under Sources, or retry later.';
+  }
+  if (status === 429) return name + ' is rate limiting Docify — retry in a few minutes.';
+  if (status >= 500) return name + ' is having problems (HTTP ' + status + ') — this is not a problem with your repository.';
+  return name + ' returned HTTP ' + status + '.';
+}
+
 // Fetch repo metadata (existence, visibility, default branch). Never throws.
 async function probeRepo(provider, repo, token) {
   const H = { 'User-Agent': 'Docify' };
   if (token) H.Authorization = 'Bearer ' + token;
+  const fail = (status) => ({ ok: false, status, msg: probeMessage(status, provider, !!token) });
   try {
     let r, d;
     if (provider === 'gitlab') {
       r = await fetch('https://gitlab.com/api/v4/projects/' + encodeURIComponent(repo), { headers: H });
-      if (!r.ok) return { ok: false, msg: 'HTTP ' + r.status };
+      if (!r.ok) return fail(r.status);
       d = await r.json();
       return { ok: true, visibility: d.visibility === 'public' ? 'public' : 'private', branch: d.default_branch || 'main' };
     }
     if (provider === 'bitbucket') {
       r = await fetch('https://api.bitbucket.org/2.0/repositories/' + repo, { headers: H });
-      if (!r.ok) return { ok: false, msg: 'HTTP ' + r.status };
+      if (!r.ok) return fail(r.status);
       d = await r.json();
       return { ok: true, visibility: d.is_private ? 'private' : 'public', branch: (d.mainbranch && d.mainbranch.name) || 'main' };
     }
     r = await fetch('https://api.github.com/repos/' + repo, { headers: H });
-    if (!r.ok) return { ok: false, msg: 'HTTP ' + r.status };
+    if (!r.ok) return fail(r.status);
     d = await r.json();
     return { ok: true, visibility: d.private ? 'private' : 'public', branch: d.default_branch || 'main' };
   } catch (e) {
-    return { ok: false, msg: e.message };
+    // A network failure is OUR side of the call, not a verdict on the
+    // repository — never record it as "this repository does not exist".
+    return { ok: false, msg: 'Could not reach ' + (PROVIDER_NAME[provider] || 'the provider') + ' (' + e.message + ') — retry in a moment.' };
   }
 }
 
@@ -127,12 +152,14 @@ export async function resolveEffectiveConfig(userId, provider, repo, branch = 'm
   // keys it defines; instructions are concatenated).
   let repoSources = { yaml: false, ignoreFile: false, instructions: false };
   let errors = [];
+  let warnings = [];
   if (repo && REPO_RE.test(repo)) {
     try {
       const token = await userToken(userId, provider);
       const rc = await loadRepoConfig(provider, repo, branch, token);
       repoSources = rc.sources;
       errors = rc.errors;
+      warnings = rc.warnings || [];
       if (rc.sources.yaml || rc.sources.ignoreFile) {
         // Overlay repo-defined keys on top of the rule-set-merged config.
         const overlay = rc.config;
@@ -150,8 +177,16 @@ export async function resolveEffectiveConfig(userId, provider, repo, branch = 'm
     }
   }
 
-  const { config: finalConfig, errors: vErrors } = validateConfig(merged);
-  return { config: finalConfig, instructions, layers, sources: repoSources, errors: [...errors, ...vErrors], ruleSet: rs ? { id: rs.id, name: rs.name } : null };
+  const { config: finalConfig, errors: vErrors, warnings: vWarnings } = validateConfig(merged);
+  return {
+    config: finalConfig, instructions, layers, sources: repoSources,
+    errors: [...errors, ...vErrors],
+    // Non-blocking: settings that were accepted historically but do nothing.
+    // Surfaced rather than dropped in silence — a rule the engine ignores is a
+    // rule the customer believes is protecting them.
+    warnings: [...new Set([...warnings, ...vWarnings])],
+    ruleSet: rs ? { id: rs.id, name: rs.name } : null
+  };
 }
 
 /* ------------------------------ Serializers ------------------------------- */
@@ -297,7 +332,7 @@ hubRouter.get('/rulesets', async (req, res) => {
 hubRouter.post('/rulesets', async (req, res) => {
   const b = req.body || {};
   if (!String(b.name || '').trim()) return res.status(400).json({ error: 'A rule set needs a name' });
-  const { errors } = validateConfig(b.config || {});
+  const { errors, warnings } = validateConfig(b.config || {});
   if (errors.length) return res.status(400).json({ error: 'Configuration issues: ' + errors.join(' · ') });
   const row = await prisma.ruleSet.create({
     data: {
@@ -307,7 +342,7 @@ hubRouter.post('/rulesets', async (req, res) => {
       instructions: String(b.instructions || '').slice(0, 8000)
     }
   });
-  res.status(201).json({ ruleSet: serializeRuleSet(row) });
+  res.status(201).json({ ruleSet: serializeRuleSet(row), warnings });
 });
 
 hubRouter.put('/rulesets/:id', async (req, res) => {
@@ -318,9 +353,11 @@ hubRouter.put('/rulesets/:id', async (req, res) => {
   if (typeof b.name === 'string' && b.name.trim()) data.name = b.name.trim().slice(0, 80);
   if (typeof b.description === 'string') data.description = b.description.slice(0, 300);
   if (typeof b.instructions === 'string') data.instructions = b.instructions.slice(0, 8000);
+  let warnings = [];
   if (b.config && typeof b.config === 'object') {
-    const { errors } = validateConfig(b.config);
-    if (errors.length) return res.status(400).json({ error: 'Configuration issues: ' + errors.join(' · ') });
+    const v = validateConfig(b.config);
+    if (v.errors.length) return res.status(400).json({ error: 'Configuration issues: ' + v.errors.join(' · ') });
+    warnings = v.warnings;
     data.config = JSON.stringify(b.config);
   }
   if (typeof b.isDefault === 'boolean' && b.isDefault) {
@@ -328,7 +365,7 @@ hubRouter.put('/rulesets/:id', async (req, res) => {
     data.isDefault = true;
   }
   const updated = await prisma.ruleSet.update({ where: { id: row.id }, data });
-  res.json({ ruleSet: serializeRuleSet(updated) });
+  res.json({ ruleSet: serializeRuleSet(updated), warnings });
 });
 
 hubRouter.post('/rulesets/:id/duplicate', async (req, res) => {

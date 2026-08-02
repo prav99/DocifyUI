@@ -45,7 +45,20 @@ export function quotaError(plan, limit, used, wanted) {
 // which measurably produced 15 documents against a cap of 5. The reservation
 // is taken BEFORE the model runs, so a crash mid-run cannot hand back capacity
 // that has already been paid for.
+// Reservation id for work that has no Generation row of its own (Doc Sync,
+// Standardize, rewrite). Any string is fine as long as it is unique per
+// reservation and the caller keeps it — an empty one cannot be released.
+export function newReservationId(prefix = 'run') {
+  return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
 export async function reserveDocumentQuota(userId, plan, wanted, { generationId = '', trigger = 'manual' } = {}) {
+  // A reservation with no id can never be refunded: if the run then fails, the
+  // customer keeps paying for a document they never received. Loud, because
+  // it is a caller bug and it costs someone real quota.
+  if (!generationId) {
+    console.warn('[quota] reservation for ' + userId + ' (' + trigger + ') has no id — it cannot be released if the run fails; pass generationId (see newReservationId).');
+  }
   const limit = planLimits(plan).docsPerMonth;
   if (limit == null) { // enterprise: uncapped, but still metered for billing
     await prisma.usageEvent.create({ data: { userId, kind: 'document', count: wanted, generationId, trigger } });
@@ -75,9 +88,43 @@ export async function reserveDocumentQuota(userId, plan, wanted, { generationId 
   }
 }
 
-// Releases a reservation when the run is abandoned before any model spend.
-export async function releaseDocumentQuota(userId, generationId) {
-  if (!generationId) return;
-  await prisma.usageEvent.deleteMany({ where: { userId, generationId, kind: 'document' } })
-    .catch((e) => console.error('quota release failed:', e.message));
+/* Releases ONE reservation when the run it paid for delivered nothing.
+   Contract — all four points matter:
+
+   1. `reservationId` is the exact `generationId` that was passed to
+      reserveDocumentQuota. Callers that own a Generation row pass its id;
+      callers that do not (Doc Sync, Standardize, rewrite) mint one with
+      newReservationId and hold it for the length of the request.
+   2. Exactly ONE ledger row is removed — the most recent reservation carrying
+      that id. Automation re-reserves against the SAME generation id on every
+      merge, so deleting every matching row would refund documents the account
+      already received and hand back unlimited capacity to the one workflow
+      that repeats.
+   3. It is safe to call twice, and safe to call for a reservation that was
+      never taken: the second call finds nothing and returns 0. It is NOT safe
+      to call after the documents were delivered — that is the caller's
+      "did this run produce anything?" decision, not this function's.
+   4. It never throws and never blocks the response; it returns the number of
+      documents actually handed back so the caller can log or show it.
+*/
+export async function releaseDocumentQuota(userId, reservationId) {
+  if (!userId || !reservationId) {
+    console.error('[quota] release skipped — no reservation id' + (userId ? ' for ' + userId : '') +
+      '; the reserved document stays consumed.');
+    return 0;
+  }
+  try {
+    const row = await prisma.usageEvent.findFirst({
+      where: { userId, generationId: String(reservationId), kind: 'document' },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (!row) return 0; // nothing was reserved, or it was already released
+    // deleteMany, not delete: a concurrent release that won the race must not
+    // turn into an unhandled "record not found".
+    const gone = await prisma.usageEvent.deleteMany({ where: { id: row.id } });
+    return gone.count ? (row.count || 0) : 0;
+  } catch (e) {
+    console.error('quota release failed:', e.message);
+    return 0;
+  }
 }

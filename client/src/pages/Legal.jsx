@@ -31,8 +31,9 @@ export const LEGAL = {
         'Connection credentials — OAuth access/refresh tokens for code hosts (GitHub, GitLab, Bitbucket) and API tokens for Jira, Confluence, and Notion. Requested with read-only scopes wherever the provider supports them.',
         'Generated content — the documents Docify produces, their configuration (types, formats, output options, uploaded SKILL.md files), quality reports, and automation run history.',
         'Merge metadata — when you enable automation: branch names, commit identifiers, commit messages, and changed file paths delivered by your repository webhooks.',
-        'Billing data — plan, seats, billing cycle, and optional tax ID. Card details are processed by our payment provider and never touch our servers.',
-        'Operational logs — timestamps, IP addresses, and request metadata used for security, rate limiting, and abuse prevention.'
+        'Billing data — plan, seats, billing cycle, and optional tax ID. We do not collect card details at all: online payment is not enabled, no payment processor is connected, and the checkout page\'s card fields are disabled placeholders that cannot be filled in or submitted.',
+        'Operational logs — timestamps, IP addresses, and request metadata used for security, rate limiting, and abuse prevention.',
+        'Product analytics — page views and feature-usage events (which buttons and workflows are used, and when), collected through PostHog, Google Analytics, and, on our public marketing pages only, Microsoft Clarity. Autocapture and session recording are switched off, on-screen text and form inputs are masked, and identifiers such as email addresses, tokens, and verification codes are stripped from event properties and URLs before they are sent.'
       ] },
       { h: '3. What we deliberately do not collect', ul: [
         'We do not keep copies of your source files. At generation time Docify reads a limited selection of files (currently up to twelve, capped at roughly 6,000 characters each) plus any docify.yaml, .docifyignore, or .docify instructions in the repository. Those contents are never written to our database, to disk, or to our logs.',
@@ -47,7 +48,7 @@ export const LEGAL = {
         'To bill you and to communicate service changes. Product emails are transactional; marketing email, if any, is opt-in.'
       ] },
       { h: '5. AI processing', p: 'To generate a document, Docify sends the source material for that document to Anthropic\'s Claude API — our only AI subprocessor, and the only third party that receives your content. That material is whatever you selected for the run: the repository files described in section 3, and, where you connect them, the Jira issues, Confluence pages, Notion pages, and OpenAPI specifications you choose, along with any SKILL.md or specification you upload or paste. Automation runs additionally send commit messages and changed file paths so Docify can judge whether a change is worth documenting. Doc sync sends the text of the document you asked it to work on when you use Standardize or request a rewrite. Under Anthropic\'s commercial terms, API inputs and outputs are not used to train their models. Your credentials are never sent. Separately, the quality score and the AI-search-readiness estimate are computed by the Service itself from the finished document and send nothing to any external AI platform; they are modeled signals, not guarantees of how any AI system will rank your content.' },
-      { h: '6. Sharing and subprocessors', p: 'We share data only with subprocessors needed to run the Service: Anthropic (AI generation — receives the source material described in section 5), our hosting provider, the email delivery provider, and, when payments are enabled, the payment processor. Each is bound by data-protection terms. We disclose data if the law genuinely compels it, and we will tell you unless legally forbidden. A current subprocessor list is available on request at ' + CONTACT + '.' },
+      { h: '6. Sharing and subprocessors', p: 'We share data only with subprocessors needed to run the Service: Anthropic (AI generation — receives the source material described in section 5), our hosting provider, the email delivery provider, our analytics providers (PostHog, Google Analytics, and Microsoft Clarity on marketing pages — they receive the usage events described in section 2, not your documents or source material), and, when payments are enabled, the payment processor. Each is bound by data-protection terms. We disclose data if the law genuinely compels it, and we will tell you unless legally forbidden. A current subprocessor list is available on request at ' + CONTACT + '.' },
       { h: '7. Retention', ul: [
         'Account and generated content: for the life of your account.',
         'OAuth and API tokens: until you disconnect the source, rotate them, or delete your account — whichever comes first.',
@@ -57,7 +58,7 @@ export const LEGAL = {
       ] },
       { h: '8. Security', p: 'Passwords and verification codes are stored as bcrypt hashes. Webhooks are authenticated with per-pipeline HMAC secrets you can rotate at any time. Transport is TLS in production deployments. Access to production data is restricted and logged. No system is perfectly secure; report concerns to ' + SECURITY_CONTACT + ' (see the Security policy).' },
       { h: '9. Your rights', p: 'Depending on your jurisdiction (GDPR, UK GDPR, CCPA, and similar), you may have rights to access, correct, export, restrict, or delete your personal data, and to object to processing. Exercise them by emailing ' + CONTACT + '. We respond within 30 days and never discriminate against you for exercising a right. EU/UK users may also lodge a complaint with their supervisory authority.' },
-      { h: '10. Cookies and local storage', p: 'The Service uses no advertising cookies. We use browser local storage for one purpose: keeping you signed in (a session token) and, per browser tab, your in-progress generation settings. Clearing browser storage signs you out.' },
+      { h: '10. Cookies and local storage', p: 'We use no advertising cookies and run no ad networks. Browser local storage keeps you signed in (a session token) and holds your in-progress generation settings per tab; clearing it signs you out. Our analytics providers (section 2) set their own first-party cookies and storage to count a returning visitor — Google Analytics and, on marketing pages only, Microsoft Clarity and PostHog. They are configured not to capture on-screen text, form inputs, or session recordings, and identifiers are stripped from event data before it leaves your browser. Browser-level "do not track" and cookie-blocking settings are respected by these providers where they support them.' },
       { h: '11. International transfers', p: 'If data is transferred across borders, we rely on appropriate safeguards such as Standard Contractual Clauses with our subprocessors.' },
       { h: '12. Children', p: 'The Service is for business use and not directed to anyone under 16. We do not knowingly collect data from children.' },
       { h: '13. Changes', p: 'We will post any changes here and update the date above. Material changes are announced by email or in-product notice before they take effect.' }
@@ -69,7 +70,7 @@ export const LEGAL = {
     summary: 'The agreement between you and ' + COMPANY + ' when you use the Service.',
     sections: [
       { h: '1. The agreement', p: 'By creating an account or using the Service you agree to these Terms and the Privacy Policy. If you use the Service for an organization, you confirm you have authority to bind it, and "you" means that organization.' },
-      { h: '2. The Service', p: COMPANY + ' generates documentation from your connected sources, evaluates it with automated AI quality models, estimates its performance across third-party AI platforms, and can regenerate it automatically when your repositories change. Features may evolve; we will not materially reduce the core Service during a paid term.' },
+      { h: '2. The Service', p: COMPANY + ' generates documentation from your connected sources, scores it with an automated, deterministic quality rubric, estimates its readiness for retrieval by third-party AI platforms, and can regenerate it automatically when your repositories change. Features may evolve; we will not materially reduce the core Service during a paid term.' },
       { h: '3. Your account', ul: [
         'Provide accurate information and keep your credentials confidential.',
         'You are responsible for activity under your account and for your team members\' use.',
@@ -84,8 +85,9 @@ export const LEGAL = {
       ] },
       { h: '6. AI outputs and estimates', p: 'Generated documentation and quality scores are produced by automated systems and can be wrong. Ranking figures for ChatGPT, Claude, Gemini, and similar platforms are modeled estimates — deliberately capped below certainty — not guarantees of placement, retrieval, or citation. Review outputs before publishing; you are responsible for what you publish.' },
       { h: '7. Plans, billing, and cancellation', ul: [
-        'Free plan limits are described on the Pricing page and may change with notice.',
-        'Paid plans bill per seat, monthly or annually, and renew automatically until cancelled from Billing.',
+        'Online payment is not enabled today. No payment processor is connected, the checkout page cannot take a card, and paid plans are arranged with us directly by email. Until that changes, nothing in this section can result in a charge.',
+        'Free plan limits are described on the Pricing page and may change with notice. There is no free trial of a paid plan — the free plan is permanent instead.',
+        'When online payment is enabled, paid plans will bill per seat, monthly or annually, and renew automatically until cancelled.',
         'Fees are non-refundable except where the law requires otherwise; taxes are your responsibility.',
         'We may suspend the Service for non-payment after reasonable notice.'
       ] },

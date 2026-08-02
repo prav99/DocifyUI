@@ -9,6 +9,15 @@ import { parseOutline, semanticProfile, buildUpdate, COMMIT_FEED } from './docsy
 const prisma = new PrismaClient();
 
 async function main() {
+  // This account's password is published on the sign-in page, so in production
+  // it is a door anyone can walk through. It once ran on every deploy via
+  // railway.json; that call is gone, and this guard makes the mistake
+  // unrepeatable. Setting SEED_DEMO=true is a deliberate choice to publish a
+  // shared demo account, not something a start script can do by accident.
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_DEMO !== 'true') {
+    console.warn('Seed: refusing to create the shared demo account in production (set SEED_DEMO=true to override).');
+    return;
+  }
   const email = 'demo@acme.dev';
   let user = await prisma.user.findUnique({ where: { email } });
   if (user) {

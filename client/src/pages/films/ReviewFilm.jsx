@@ -81,10 +81,12 @@ const REVIEW_SCENES = [
           <div className="row row--between" style={{ flexWrap: 'wrap' }}>
             <p className="h01">§ Webhooks — retry schedule corrected</p>
             {beat >= 5 && <span className="tag tag--green demo-late" style={{ animationDelay: '0.05s' }}>
-              ✓ accepted · <CountTo from={0} to={96} delay={250} dur={900} />% match
+              ✓ accepted · placement <CountTo from={0} to={96} delay={250} dur={900} />%
             </span>}
           </div>
-          <p className="helper mt2">Verified against PR #221 — the docs now say what the code does.</p>
+          {/* the matcher scores where a change belongs, not whether it is
+              correct — only the reviewer decides that. */}
+          <p className="helper mt2">Drafted from PR #221 and read against it by the reviewer, who accepted it.</p>
         </div>
         <div className="demo-issue" style={{ animationDelay: '2.2s', borderLeftColor: 'var(--support-error)' }}>
           <div className="row row--between" style={{ flexWrap: 'wrap' }}>

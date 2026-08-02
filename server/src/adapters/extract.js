@@ -28,7 +28,18 @@ const MAX_PDF_MS = 30000;
 
 async function extractPdf(buf) {
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const pdf = await getDocument({ data: new Uint8Array(buf), useSystemFonts: true, isEvalSupported: false }).promise;
+  let pdf;
+  try {
+    pdf = await getDocument({ data: new Uint8Array(buf), useSystemFonts: true, isEvalSupported: false }).promise;
+  } catch (e) {
+    // pdf.js error names are the only reliable signal here, and its raw
+    // messages ("No password given", "Invalid PDF structure") tell a customer
+    // nothing about what to do next.
+    const name = String((e && e.name) || '');
+    if (/Password/i.test(name)) throw badContent('This PDF is password-protected. Remove the password (or export an unprotected copy) and upload again.');
+    if (/InvalidPDF/i.test(name)) throw badContent('This file is not a readable PDF — it may be truncated or corrupted. Re-export it and upload again.');
+    throw badContent('This PDF could not be opened: ' + ((e && e.message) || 'unknown error') + '. Re-export it, or upload the source document instead.');
+  }
   const deadline = Date.now() + MAX_PDF_MS;
   let items = 0;
   // Pass 1: reassemble lines, tracking each line's largest font size so we
@@ -36,8 +47,10 @@ async function extractPdf(buf) {
   // heading semantics, but the standardize pipeline needs #/## headings).
   const lines = [];
   const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  let pagesRead = 0;
   for (let i = 1; i <= pageCount; i++) {
     if (Date.now() > deadline || items > MAX_PDF_ITEMS) break;
+    pagesRead = i;
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     let cur = { text: '', size: 0 };
@@ -51,6 +64,7 @@ async function extractPdf(buf) {
     flush();
     lines.push({ text: '', size: 0 });
   }
+  const totalPages = pdf.numPages;
   try { if (pdf.destroy) await pdf.destroy(); } catch { /* ignore */ }
   // Body size = most common rounded font size among content lines.
   const freq = {};
@@ -63,7 +77,10 @@ async function extractPdf(buf) {
     if (body && l.size >= body * 1.18 && l.text.length <= 90) return '## ' + l.text;
     return l.text;
   });
-  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  // The work limits above stop extraction early on very large PDFs. The caller
+  // needs to know that, because a document parsed from the first 400 pages of
+  // an 800-page manual is not the document the customer uploaded.
+  return { text: out.join('\n').replace(/\n{3,}/g, '\n\n').trim(), pagesRead, totalPages };
 }
 
 const TEXT_EXT = new Set([
@@ -145,7 +162,10 @@ export function rtfToText(rtf) {
 
 const looksBinary = (t) => /\u0000/.test(String(t).slice(0, 4000));
 
-/* Main entry: (buffer, filename, mimetype) -> { text, format, kind } */
+/* Main entry: (buffer, filename, mimetype) -> { text, format, kind, note }
+   `note` is empty when the whole file was read, and otherwise states exactly
+   what was left out. Callers should surface it: silently keeping part of a
+   document and calling it the document is the failure mode that matters. */
 export async function extractDocument(buffer, filename, mimetype = '') {
   const e = ext(filename);
   const mt = String(mimetype || '').toLowerCase();
@@ -153,17 +173,33 @@ export async function extractDocument(buffer, filename, mimetype = '') {
   const title = String(filename || 'Document').replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'Document';
 
   if (e === 'pdf' || mt.includes('pdf')) {
-    const text = cleanup(await extractPdf(buf));
+    const { text: raw, pagesRead, totalPages } = await extractPdf(buf);
+    const text = cleanup(raw);
     if (!text.trim()) throw badContent('This PDF has no extractable text — it looks scanned. Add a text layer (OCR) or upload a text-based PDF.');
-    return { text: ensureHeadings(text, title), format: 'pdf', kind: 'pdf' };
+    const note = pagesRead < totalPages
+      ? 'Read the first ' + pagesRead + ' of ' + totalPages + ' pages — this document is larger than one upload can process. Split it and upload the parts to cover all of it.'
+      : '';
+    if (note) console.warn('[extract] ' + filename + ': ' + note);
+    return { text: ensureHeadings(text, title), format: 'pdf', kind: 'pdf', pagesRead, totalPages, note };
   }
 
   if (e === 'docx' || e === 'docm' || mt.includes('officedocument.wordprocessingml') || mt.includes('ms-word')) {
     let text = '';
-    try { const { value } = await mammoth.convertToHtml({ buffer: buf }); text = htmlToMarkdown(value); } catch { /* fall through */ }
-    if (!text.trim()) { try { const raw = await mammoth.extractRawText({ buffer: buf }); text = cleanup(raw.value || ''); } catch { /* ignore */ } }
-    if (!text.trim()) throw badContent('No readable text found in this Word document.');
-    return { text: ensureHeadings(text, title), format: 'docx', kind: 'docx' };
+    let failure = '';
+    try { const { value } = await mammoth.convertToHtml({ buffer: buf }); text = htmlToMarkdown(value); }
+    catch (err) { failure = (err && err.message) || ''; }
+    if (!text.trim()) {
+      try { const raw = await mammoth.extractRawText({ buffer: buf }); text = cleanup(raw.value || ''); }
+      catch (err) { failure = failure || (err && err.message) || ''; }
+    }
+    if (!text.trim()) {
+      // A .docx is a zip: "end of central directory" and friends mean the file
+      // is corrupt or protected, not that the document happens to be empty.
+      throw badContent(/zip|central directory|encrypt|password/i.test(failure)
+        ? 'This Word file could not be opened — it may be password-protected or corrupted. Re-save it as .docx (or export to PDF) and upload again.'
+        : 'No readable text found in this Word document. If the content is inside images or text boxes, export it to PDF and upload that instead.');
+    }
+    return { text: ensureHeadings(text, title), format: 'docx', kind: 'docx', note: '' };
   }
 
   if (e === 'doc' || mt === 'application/msword') {
@@ -176,13 +212,13 @@ export async function extractDocument(buffer, filename, mimetype = '') {
   if (e === 'html' || e === 'htm' || e === 'xhtml' || mt.includes('text/html')) {
     const text = htmlToMarkdown(buf.toString('utf8'));
     if (!text.trim()) throw badContent('No readable text found in this HTML file.');
-    return { text: ensureHeadings(text, title), format: 'html', kind: 'html' };
+    return { text: ensureHeadings(text, title), format: 'html', kind: 'html', note: '' };
   }
 
   if (e === 'rtf' || mt.includes('rtf')) {
     const text = rtfToText(buf.toString('utf8'));
     if (!text.trim()) throw badContent('No readable text found in this RTF file.');
-    return { text: ensureHeadings(text, title), format: 'rtf', kind: 'rtf' };
+    return { text: ensureHeadings(text, title), format: 'rtf', kind: 'rtf', note: '' };
   }
 
   // Plain-text / markup / source-code formats (and unknown-but-utf8 files)
@@ -190,11 +226,11 @@ export async function extractDocument(buffer, filename, mimetype = '') {
     const text = cleanup(buf.toString('utf8'));
     if (!text.trim()) throw badContent('The file appears to be empty.');
     if (looksBinary(text)) throw badContent('This looks like a binary file we can’t read. Supported: PDF, Word (.docx), HTML, RTF, Markdown, and text/code formats.');
-    return { text: ensureHeadings(text, title), format: e || 'txt', kind: 'text' };
+    return { text: ensureHeadings(text, title), format: e || 'txt', kind: 'text', note: '' };
   }
 
   // Last resort: if it decodes as clean utf8, accept it as text.
   const guess = buf.toString('utf8');
-  if (guess.trim() && !looksBinary(guess)) return { text: ensureHeadings(cleanup(guess), title), format: e || 'txt', kind: 'text' };
+  if (guess.trim() && !looksBinary(guess)) return { text: ensureHeadings(cleanup(guess), title), format: e || 'txt', kind: 'text', note: '' };
   throw badContent('Unsupported file type “.' + e + '”. Supported: PDF, Word (.docx), HTML, RTF, Markdown, and text/code formats.');
 }

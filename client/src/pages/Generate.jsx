@@ -114,16 +114,21 @@ export default function Generate() {
   const nav = useNavigate();
   const { flow } = useFlow();
   const [gen, setGen] = useState(null);
+  const [pollErr, setPollErr] = useState('');
+  const [resume, setResume] = useState(0);
   const doneToasted = useRef(false);
 
   useEffect(() => {
-    if (!flow.genId) { nav('/format'); return; }
+    if (!flow.genId) { nav('/format'); return undefined; }
     let alive = true;
     let timer = null;
+    let fails = 0;
+    setPollErr('');
     async function poll() {
       try {
         const d = await api('/generations/' + flow.genId);
         if (!alive) return;
+        fails = 0;
         setGen(d.generation);
         if (d.generation.status === 'complete') {
           if (!doneToasted.current) {
@@ -144,20 +149,39 @@ export default function Generate() {
           return;
         }
         timer = setTimeout(poll, 700);
-      } catch {
-        timer = setTimeout(poll, 1500);
+      } catch (e) {
+        // Bounded retry with backoff, and never after unmount: an endpoint that
+        // stays down used to leave a 1.5s loop hammering the API for the rest
+        // of the session, on a page the user had already navigated away from.
+        if (!alive) return;
+        fails += 1;
+        if (fails > 5) { setPollErr(e.message || 'Could not reach the server'); return; }
+        timer = setTimeout(poll, Math.min(8000, 1500 * Math.pow(2, fails - 1)));
       }
     }
     poll();
     return () => { alive = false; if (timer) clearTimeout(timer); };
-  }, [flow.genId, nav]);
+  }, [flow.genId, nav, resume]);
 
-  const gRunning = gen ? (gen.status === 'running' || gen.status === 'queued') : true;
+  const gRunning = gen ? (gen.status === 'running' || gen.status === 'queued') && !pollErr : !pollErr;
   const gDone = gen ? gen.status === 'complete' : false;
   const displayPct = useSmoothProgress(gen ? (gen.progress || 0) : 0, gRunning, gDone);
   const eta = useEta(gen ? (gen.progress || 0) : 0, gRunning, gDone);
 
-  if (!gen) return <div className="page"><p className="body01 t2">Loading…</p></div>;
+  if (!gen) {
+    return (
+      <div className="page">
+        {pollErr ? (
+          <div className="genfail">
+            <b>Could not load this generation.</b> <span>{pollErr}</span>
+            <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
+              onClick={() => setResume((n) => n + 1)}>Try again</button>
+            <button className="btn btn--tertiary btn--sm btn--center" onClick={() => nav('/format')}>← Back</button>
+          </div>
+        ) : <p className="body01 t2">Loading…</p>}
+      </div>
+    );
+  }
 
   const done = gen.status === 'complete';
   const failed = gen.status === 'failed';
@@ -187,6 +211,14 @@ export default function Generate() {
               </span>
             </div>
             <div className="genprog-track"><div className={'genprog-fill' + (done ? ' is-done' : '')} style={{ width: displayPct + '%' }} /></div>
+          </div>
+        )}
+        {pollErr && !failed && !done && (
+          <div className="genfail mt6">
+            <b>Progress updates stopped.</b>
+            <span>{pollErr} — the run may still be finishing on the server, but this page is no longer being updated.</span>
+            <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
+              onClick={() => setResume((n) => n + 1)}>Resume updates</button>
           </div>
         )}
         {failed && (
@@ -224,10 +256,10 @@ export default function Generate() {
                   <div>
                     <p className="h01">This document is current today. Keep it that way.</p>
                     <p className="body01 t2 mt2">
-                      <strong>Doc sync</strong> watches <span className="mono">{gen.repo}</span> and proposes a
-                      section-level rewrite for every merge — you see the exact diff with the AI&rsquo;s reasoning,
-                      and <strong>nothing publishes until you approve it</strong>. Every approval is versioned, so you
-                      can roll back any change.
+                      <strong>Doc sync</strong> turns a set of changes to <span className="mono">{gen.repo}</span> into a
+                      proposed section-level rewrite — you see the exact diff with the placement reasoning, and{' '}
+                      <strong>nothing publishes until you approve it</strong>. Every approval is versioned, so you can
+                      roll back any change.
                     </p>
                   </div>
                   <button className="btn btn--primary" onClick={() => nav('/sync')}>
@@ -239,7 +271,7 @@ export default function Generate() {
               <div className="tile tile--white genprev">
                 <div className="genprev-head">
                   <h2 className="h02" style={{ margin: 0 }}>Preview</h2>
-                  {!failed && <span className="genprev-live"><span className="genprev-dot" /> building live</span>}
+                  {!failed && !pollErr && <span className="genprev-live"><span className="genprev-dot" /> building live</span>}
                 </div>
                 {gen.preview ? (
                   <div className="genprev-frame"><PreviewFrame html={gen.preview} title="Live preview" /></div>
@@ -259,7 +291,7 @@ export default function Generate() {
         <div className="inner">
           <button className="btn btn--ghost btn--center" onClick={() => nav('/format')}>← Back</button>
           <div className="row">
-            <span className="navnote">{done ? 'Generation complete' : failed ? 'Generation failed' : 'Generating… ' + Math.round(displayPct) + '%'}</span>
+            <span className="navnote">{done ? 'Generation complete' : failed ? 'Generation failed' : pollErr ? 'Updates paused' : 'Generating… ' + Math.round(displayPct) + '%'}</span>
             <button className="btn btn--primary" disabled={!done} onClick={() => nav('/quality')}>
               View quality report<span className="ico">→</span>
             </button>

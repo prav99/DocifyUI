@@ -8,6 +8,32 @@ const HEADERS = (token) => ({
   'Content-Type': 'application/json'
 });
 
+// Notion rate-limits at ~3 requests/second and a page of any size costs many
+// calls, so a long document reliably trips 429 mid-read. One retry that honors
+// Retry-After turns that from "half the page is missing" into "the page took a
+// moment". Used by the content readers; the interactive verify/search calls
+// fail fast instead, because someone is waiting on them.
+async function nfetch(url, opts, attempt = 0) {
+  const r = await fetch(url, opts);
+  if (r.ok || attempt >= 2) return r;
+  if (r.status !== 429 && r.status < 500) return r;
+  const after = Number(r.headers.get('retry-after'));
+  const wait = Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 5000) : 600 * (attempt + 1);
+  await new Promise((res) => setTimeout(res, wait));
+  return nfetch(url, opts, attempt + 1);
+}
+
+// Reading blocks is where a provider failure most easily becomes a silent
+// blank: an empty result is indistinguishable from an empty page, and the
+// blank would be handed to the model as if it were the customer's content.
+function notionReadError(status, what) {
+  if (status === 401) return new Error('Notion rejected the token while reading ' + what + ' — reconnect the integration.');
+  if (status === 403) return new Error('The Notion integration is not allowed to read ' + what + ' — share it with the integration (Page → ⋯ → Connections).');
+  if (status === 404) return new Error('Notion could not find ' + what + ' — it may have been deleted, or is not shared with the integration.');
+  if (status === 429) return new Error('Notion is rate limiting Docify — retry in a moment.');
+  return new Error('Notion returned HTTP ' + status + ' while reading ' + what + '.');
+}
+
 export async function verifyNotion(token) {
   const t = String(token || '').trim();
   if (!t) throw new Error('Notion needs an internal integration token');
@@ -113,8 +139,8 @@ function blockToMd(b) {
 
 async function listChildren(token, blockId, cursor) {
   const url = 'https://api.notion.com/v1/blocks/' + blockId + '/children?page_size=100' + (cursor ? '&start_cursor=' + cursor : '');
-  const r = await fetch(url, { headers: HEADERS(token) });
-  if (!r.ok) return { results: [], has_more: false };
+  const r = await nfetch(url, { headers: HEADERS(token) });
+  if (!r.ok) throw notionReadError(r.status, 'this page');
   return r.json();
 }
 
@@ -143,10 +169,10 @@ async function pageBlocksMd(token, pageId, depth, budget, childPages) {
 
 // Database → its rows' titles + properties as a compact table.
 async function databaseMd(token, dbId, budget) {
-  const r = await fetch('https://api.notion.com/v1/databases/' + dbId + '/query', {
+  const r = await nfetch('https://api.notion.com/v1/databases/' + dbId + '/query', {
     method: 'POST', headers: HEADERS(token), body: JSON.stringify({ page_size: 50 })
   });
-  if (!r.ok) return [];
+  if (!r.ok) throw notionReadError(r.status, 'this database');
   const d = await r.json();
   const rows = [];
   for (const pg of d.results || []) {
@@ -174,6 +200,7 @@ export async function fetchNotionContent(token, items, { includeChildren = false
   const queue = items.slice(0, maxPages).map((i) => ({ ...i }));
   const seen = new Set();
   const budget = { blocks: 1200 };
+  const failures = [];
   while (queue.length && out.length < maxPages && budget.blocks > 0) {
     const item = queue.shift();
     if (seen.has(item.id)) continue;
@@ -189,8 +216,16 @@ export async function fetchNotionContent(token, items, { includeChildren = false
         md: '# ' + (item.title || 'Untitled') + (item.kind === 'database' ? ' (database)' : '') + '\n\n' + body.join('\n')
       });
       if (includeChildren) queue.push(...childPages.map((c) => ({ ...c, kind: 'page' })));
-    } catch { /* skip unreadable items; the rest still ground generation */ }
+    } catch (e) {
+      // Skip the item — never emit a titled page with an empty body, which
+      // would reach the model as "this page says nothing".
+      failures.push((item.title || item.id) + ': ' + e.message);
+      console.warn('[notion] skipped ' + (item.title || item.id) + ' — ' + e.message);
+    }
   }
+  // Nothing readable AND something went wrong: that is a provider failure, not
+  // an empty selection, and the caller must be able to tell them apart.
+  if (!out.length && failures.length) throw new Error('Notion content could not be read — ' + failures[0]);
   return out;
 }
 

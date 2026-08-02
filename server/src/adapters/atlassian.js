@@ -270,8 +270,14 @@ export async function fetchJiraIssuesContent(siteUrl, cred, keys, { maxIssues = 
         }
       } catch { /* comments are optional */ }
       out.push({ key: d.key, summary: f.summary || '', md: lines.filter((l) => l !== null && l !== undefined).join('\n') });
-    } catch { /* skip unreachable issues; the rest still ground generation */ }
+    } catch (e) {
+      // One unreadable issue must not sink the run — but it must not vanish
+      // either, or a permissions problem looks like an empty backlog.
+      failures.push(key + ': ' + e.message);
+      console.warn('[jira] skipped ' + key + ' — ' + e.message);
+    }
   }
+  if (!out.length && failures.length) throw new Error('Jira issues could not be read — ' + failures[0]);
   return out;
 }
 

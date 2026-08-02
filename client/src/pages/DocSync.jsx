@@ -1,15 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, getToken } from '../api.js';
 import { toast } from '../store.jsx';
 import { Modal, NavBar, Notif, RepoHubCta, HelpLink } from '../ui.jsx';
 import { usePageMeta } from '../seo.js';
 
 /* =========================================================================
-   Doc sync — AI-maintained existing documentation.
-   Upload a baseline document once; every repository change is documented,
-   semantically placed into the right section, reviewed as a side-by-side
-   diff with AI reasoning, and versioned on approval.
+   Doc sync — keep existing documentation current.
+   Upload a baseline document once; each change is written up, placed into a
+   section by the deterministic matcher, reviewed as a side-by-side diff, and
+   versioned on approval.
+
+   Labelling rule: parsing, placement and confidence are lexical engines, not
+   a model. The server sends the honest label/disclosure for each panel
+   (`profile.label`, `reasoning.label`, …) — render those rather than
+   hard-coding "AI", so a panel that later becomes model-backed relabels
+   itself.
    ========================================================================= */
 
 const fmtDate = (d) => new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -18,7 +23,8 @@ const fmtDate = (d) => new Date(d).toLocaleString(undefined, { dateStyle: 'mediu
 function ConfMeter({ n, wide }) {
   const cls = n >= 80 ? '' : n >= 60 ? ' warn' : ' bad';
   return (
-    <span className={'confmeter' + cls} style={wide ? { minWidth: 200 } : undefined} title={'Placement confidence ' + n + '%'}>
+    <span className={'confmeter' + cls} style={wide ? { minWidth: 200 } : undefined}
+      title={'Placement match score ' + n + '% — term and concept overlap, not a model probability'}>
       <span className="track"><span className="fill" style={{ width: n + '%' }} /></span>
       <span className="pct">{n}%</span>
     </span>
@@ -150,6 +156,13 @@ Runtime behaviour is tuned through environment variables documented in
 \`.env.example\`. Restart workers after changing them.
 `;
 
+/* Extensions the browser can read as text and post as JSON. Everything else
+   (PDF, Word, RTF, and anything unrecognised) goes to the server extractor,
+   which owns the authoritative format list — see adapters/extract.js. */
+const BROWSER_READABLE = ['md', 'markdown', 'mdx', 'txt', 'text', 'rst', 'adoc', 'asciidoc', 'html', 'htm', 'xhtml'];
+const MAX_TEXT_BYTES = 1.5 * 1024 * 1024;   // server caps stored text at 1,500,000 chars
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;  // multer limit on /sync/documents/upload
+
 /* HTML exports (Confluence/Notion) → text the outline parser understands. */
 function htmlToText(html) {
   let s = String(html);
@@ -192,8 +205,40 @@ function UploadPanel({ onUploaded }) {
     setBusy(true);
     try {
       const d = await api('/sync/documents', { method: 'POST', body: { name, format, content, repo, branch } });
-      toast('success', 'Document received', 'Parsing structure and building the semantic index…');
+      toast('success', 'Document received', 'Parsing structure and indexing the outline…');
       onUploaded(d.document);
+    } catch (e) {
+      toast('error', 'Upload failed', e.message);
+    } finally { setBusy(false); }
+  }, [repo, branch, onUploaded]);
+
+  // Binary and rich formats can't be read as text in the browser — post the raw
+  // bytes and let the server extractor decide (it returns a per-format message
+  // for scanned PDFs, legacy .doc, .odt and so on).
+  const sendFile = useCallback(async (file) => {
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/sync/documents/upload', {
+        method: 'POST',
+        headers: getToken() ? { Authorization: 'Bearer ' + getToken() } : {},
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Upload failed (' + res.status + ')');
+      let doc = data.document;
+      // The multipart route stores the extracted text only; carry the mapping
+      // the user typed across so extracted uploads behave like pasted ones.
+      if (doc && repo.trim()) {
+        try {
+          const m = await api('/sync/documents/' + doc.id, { method: 'PUT', body: { repo: repo.trim(), branch: branch.trim() || 'main' } });
+          doc = m.document;
+        } catch { /* the baseline is stored; the mapping can be set later */ }
+      }
+      const chars = data.extractedChars ? data.extractedChars.toLocaleString() + ' characters extracted — ' : '';
+      toast('success', file.name + ' received', chars + 'parsing structure and indexing the outline…');
+      onUploaded(doc);
     } catch (e) {
       toast('error', 'Upload failed', e.message);
     } finally { setBusy(false); }
@@ -203,25 +248,33 @@ function UploadPanel({ onUploaded }) {
     if (!file) return;
     const name = file.name || 'document';
     const ext = (name.split('.').pop() || '').toLowerCase();
-    if (['pdf', 'docx', 'doc'].includes(ext)) {
-      toast('warning', ext.toUpperCase() + ' extraction is coming next', 'For now export the document as Markdown, HTML, or plain text and upload that.');
+    if (!BROWSER_READABLE.includes(ext)) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast('error', 'File too large', 'Uploads are limited to 15 MB — split it or trim the export.');
+        return;
+      }
+      sendFile(file);
       return;
     }
-    if (file.size > 1.5 * 1024 * 1024) {
-      toast('error', 'File too large', 'Documents up to 1.5 MB of text are supported.');
+    if (file.size > MAX_TEXT_BYTES) {
+      toast('error', 'File too large', 'Text documents up to 1.5 MB are supported.');
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       const raw = String(reader.result || '');
-      const isHtml = ['html', 'htm'].includes(ext) || /^\s*</.test(raw.slice(0, 200));
+      const isHtml = ['html', 'htm', 'xhtml'].includes(ext) || /^\s*</.test(raw.slice(0, 200));
       const content = isHtml ? htmlToText(raw) : raw;
       const format = isHtml ? 'html' : ext === 'txt' ? 'text' : 'markdown';
+      if (!content.trim()) {
+        toast('error', 'Nothing to index', 'That file has no readable text.');
+        return;
+      }
       send(name, format, content);
     };
     reader.onerror = () => toast('error', 'Could not read file', 'Try again or use a different export.');
     reader.readAsText(file);
-  }, [send]);
+  }, [send, sendFile]);
 
   return (
     <div className="tile tile--white" style={{ padding: 24 }}>
@@ -236,8 +289,8 @@ function UploadPanel({ onUploaded }) {
       </div>
       <p className="body01 t2 mt3" style={{ maxWidth: 640 }}>
         {mode === 'upload'
-          ? 'Your document becomes the project baseline. The engine parses its headings, hierarchy, terminology and style — then places every future repository change into the right section automatically.'
-          : 'Docs in a separate repository from the code? Point Docify at the docs repo and file — the baseline imports directly, while commits are watched on your code repository. No copy-paste.'}
+          ? 'Your document becomes the project baseline. The engine parses its headings, hierarchy, terminology and style — then places each change you sync into the matching section for review.'
+          : 'Docs in a separate repository from the code? Point Docify at the docs repo and file — the baseline imports directly and stays mapped to your code repository. No copy-paste.'}
       </p>
       {mode === 'import' && (
         <div className="grid2 mt5">
@@ -265,7 +318,7 @@ function UploadPanel({ onUploaded }) {
       )}
       <div className="grid2 mt5">
         <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="sync-repo">{mode === 'import' ? 'Code repository to watch' : 'Mapped repository'}</label>
+          <label htmlFor="sync-repo">{mode === 'import' ? 'Code repository to map to' : 'Mapped repository'}</label>
           <input id="sync-repo" className="input" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repository" />
         </div>
         <div className="field" style={{ marginBottom: 0 }}>
@@ -285,16 +338,19 @@ function UploadPanel({ onUploaded }) {
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current && fileRef.current.click(); } }}
             aria-label="Upload a documentation file"
           >
-            <input ref={fileRef} type="file" accept=".md,.markdown,.mdx,.txt,.text,.html,.htm,.rst,.adoc" onChange={(e) => { handleFile(e.target.files && e.target.files[0]); e.target.value = ''; }} />
+            <input ref={fileRef} type="file"
+              accept=".pdf,.docx,.docm,.rtf,.md,.markdown,.mdx,.txt,.text,.html,.htm,.xhtml,.rst,.adoc"
+              onChange={(e) => { handleFile(e.target.files && e.target.files[0]); e.target.value = ''; }} />
             <p className="body01"><b>Drag a file here</b> or click to browse</p>
-            <p className="helper mt2">Markdown · plain text · HTML (Confluence / Notion export) — PDF &amp; Word extraction coming next</p>
+            <p className="helper mt2">PDF · Word (.docx) · RTF · Markdown · plain text · HTML (Confluence / Notion export) — up to 15 MB</p>
+            <p className="helper mt2">Scanned PDFs need a text layer, and legacy .doc / .odt must be re-saved as .docx or PDF first.</p>
           </div>
           <div className="row mt5" style={{ flexWrap: 'wrap' }}>
             <button className="btn btn--tertiary btn--field" disabled={busy}
               onClick={() => send('payments-developer-guide.md', 'markdown', SAMPLE_DOC)}>
               Try with a sample document
             </button>
-            <span className="helper">1,000+ page documents are supported — only the outline is indexed for placement.</span>
+            <span className="helper">Long documents are fine — only the outline is indexed for placement. Text is stored up to 1.5 MB.</span>
           </div>
         </>
       ) : (
@@ -328,7 +384,7 @@ function DocCard({ doc, onChanged, onSynced }) {
       const d = await api('/sync/documents/' + doc.id + '/sync', { method: 'POST', body: { batch: 2 } });
       const nSkip = (d.filtered || []).length;
       if (d.created > 0) {
-        toast('success', d.created + ' AI update' + (d.created > 1 ? 's' : '') + ' queued'
+        toast('success', d.created + ' update' + (d.created > 1 ? 's' : '') + ' queued'
           + (nSkip ? ' · ' + nSkip + ' filtered out' : ''),
         nSkip ? 'Internal-only changes were skipped — see the Filtered out tab for the reasons.'
           : 'Open the review queue to compare and approve.');
@@ -337,7 +393,8 @@ function DocCard({ doc, onChanged, onSynced }) {
         toast('info', nSkip + ' change' + (nSkip > 1 ? 's' : '') + ' filtered out', 'The relevance engine classified them as internal — see the Filtered out tab.');
         onSynced();
       } else {
-        toast('info', 'Up to date', d.message || 'No new commits on ' + (doc.repo || 'the repository') + '.');
+        toast('info', 'Nothing left to process',
+          d.sample ? 'The sample commit feed has no further commits.' : (d.message || 'No new commits to document.'));
       }
       onChanged();
     } catch (e) { toast('error', 'Sync failed', e.message); }
@@ -360,12 +417,12 @@ function DocCard({ doc, onChanged, onSynced }) {
           <p className="h01 mono" style={{ fontWeight: 600 }}>{doc.name}</p>
           <p className="helper mt2">
             {doc.docsRepo
-              ? <>docs: <span className="mono">{doc.docsRepo}/{doc.docsPath}</span> @ {doc.docsBranch} · watches code: {doc.repo} @ {doc.branch}</>
+              ? <>docs: <span className="mono">{doc.docsRepo}/{doc.docsPath}</span> @ {doc.docsBranch} · mapped to code: {doc.repo} @ {doc.branch}</>
               : <>{doc.repo ? doc.repo + ' · ' + doc.branch : 'No repository mapped'}</>} · added {fmtDate(doc.createdAt)}
           </p>
         </div>
         {doc.status === 'ready' && <span className="tag tag--green">Indexed</span>}
-        {busyParsing && <span className="tag tag--blue">{doc.status === 'parsing' ? 'Parsing structure…' : 'Building semantic index…'}</span>}
+        {busyParsing && <span className="tag tag--blue">{doc.status === 'parsing' ? 'Parsing structure…' : 'Indexing the outline…'}</span>}
         {doc.status === 'failed' && <span className="tag tag--red">Failed</span>}
       </div>
 
@@ -388,26 +445,32 @@ function DocCard({ doc, onChanged, onSynced }) {
           </div>
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
             <button className="btn btn--primary btn--sm btn--center" onClick={syncNow} disabled={busy}>
-              {busy ? 'Checking…' : 'Check for new commits'}
+              {busy ? 'Processing…' : 'Process next sample commits'}
             </button>
-            <button className="btn btn--tertiary btn--sm btn--center" onClick={() => setOutlineOpen(true)}>Structure &amp; understanding</button>
+            <button className="btn btn--tertiary btn--sm btn--center" onClick={() => setOutlineOpen(true)}>Parsed structure</button>
             <button className="btn btn--ghost btn--sm btn--center" onClick={() => setSimOpen(true)}>Simulate a commit</button>
             <button className="btn btn--ghost btn--sm btn--center" style={{ color: 'var(--support-error)' }} onClick={() => setDelOpen(true)}>Remove</button>
           </div>
+          <p className="helper">
+            Doc sync runs against Docify’s built-in sample commit history — no repository is polled and no webhook
+            feeds this queue yet. Use <b>Simulate a commit</b> to run a change of your own through the same pipeline.
+          </p>
         </>
       )}
 
-      {/* Outline + semantic understanding */}
+      {/* Outline + terminology. Labels come from the server so the panel can
+          never present a lexical pass as model output. */}
       <Modal open={outlineOpen} onClose={() => setOutlineOpen(false)}>
         <div className="mhead">
           <div>
-            <h3 className="h02">What the AI understood</h3>
+            <h3 className="h02">{p.label || 'Parsed structure'}</h3>
             <p className="helper mt2">{doc.name}</p>
           </div>
           <button className="mclose" aria-label="Close" onClick={() => setOutlineOpen(false)}>✕</button>
         </div>
         <div className="mbody">
-          <p className="label01 t2 mb3">DOCUMENT STRUCTURE ({doc.sections.length} SECTIONS)</p>
+          {p.disclosure && <Notif kind="info" title="How this is produced">{p.disclosure}</Notif>}
+          <p className="label01 t2 mb3 mt5">DOCUMENT STRUCTURE ({doc.sections.length} SECTIONS)</p>
           <div className="outline">
             {doc.sections.map((s, i) => (
               <div key={i} className="oline">
@@ -416,7 +479,7 @@ function DocCard({ doc, onChanged, onSynced }) {
               </div>
             ))}
           </div>
-          <p className="label01 t2 mb3 mt5">SEMANTIC PROFILE</p>
+          <p className="label01 t2 mb3 mt5">TERMINOLOGY &amp; STYLE</p>
           <p className="body01"><span className="t2">Writing style:</span> {p.tone || '—'} · {p.headingStyle}</p>
           {p.terms && p.terms.length > 0 && (
             <p className="body01 mt3"><span className="t2">Core terminology:</span>{' '}
@@ -425,7 +488,7 @@ function DocCard({ doc, onChanged, onSynced }) {
           {p.glossary && p.glossary.length > 0 && (
             <p className="body01 mt3"><span className="t2">Glossary candidates:</span> {p.glossary.join(', ')}</p>
           )}
-          <p className="helper mt5">Future updates match against these sections and vocabulary — insertions inherit the document’s own style.</p>
+          <p className="helper mt5">Updates are matched against these sections and vocabulary — insertions inherit the document’s own style.</p>
         </div>
       </Modal>
 
@@ -473,7 +536,7 @@ function SimulateModal({ open, onClose, doc, onCreated }) {
       <div className="mhead">
         <div>
           <h3 className="h02">Simulate a commit</h3>
-          <p className="helper mt2">Exercises the exact pipeline a GitHub webhook triggers.</p>
+          <p className="helper mt2">Runs a commit of your own through the relevance gate and the placement engine.</p>
         </div>
         <button className="mclose" aria-label="Close" onClick={onClose}>✕</button>
       </div>
@@ -495,6 +558,11 @@ function SimulateModal({ open, onClose, doc, onCreated }) {
   );
 }
 
+/* The relevance gate is the one part of this page that can be model-backed —
+   name which engine actually ruled on the change. */
+const RELEVANCE_ENGINE = { ai: 'Claude', heuristic: 'Docify’s scoring heuristics', rules: 'your repository rules' };
+const relevanceEngine = (e) => (Object.prototype.hasOwnProperty.call(RELEVANCE_ENGINE, e) ? RELEVANCE_ENGINE[e] : '');
+
 /* ---------- Review queue: master list + detail with reasoning and diff ---------- */
 function ReviewQueue({ pending, onDecided, refresh }) {
   const [selId, setSelId] = useState(pending[0] ? pending[0].id : null);
@@ -506,8 +574,8 @@ function ReviewQueue({ pending, onDecided, refresh }) {
     if (!pending.find((u) => u.id === selId)) setSelId(pending[0] ? pending[0].id : null);
   }, [pending, selId]);
   const sel = pending.find((u) => u.id === selId) || null;
-  // Seed the editor with the FULL post-update section body (not just the AI
-  // snippet) so editing never silently drops the section's existing prose.
+  // Seed the editor with the FULL post-update section body (not just the
+  // generated snippet) so editing never silently drops the section's prose.
   const editSeed = (u) => u.kind === 'update-existing'
     ? ((u.diff.after || []).slice(1).join('\n').replace(/^\n+/, ''))
     : u.snippet;
@@ -518,8 +586,8 @@ function ReviewQueue({ pending, onDecided, refresh }) {
       <div className="sync-empty">
         <p className="h03">Review queue is clear</p>
         <p className="body01 t2 mt3" style={{ maxWidth: 520, margin: '8px auto 0' }}>
-          When commits land on your mapped repository, the engine documents each change, finds the right
-          section of your document, and queues it here for approval.
+          Process the sample commits or simulate one of your own from the Documents tab — each change is
+          written up, matched to a section of your document, and queued here for approval.
         </p>
       </div>
     );
@@ -596,10 +664,15 @@ function ReviewQueue({ pending, onDecided, refresh }) {
           </div>
 
           <div className="reason">
-            <span className="rkick">AI REASONING</span>
+            <span className="rkick">{(r.label || 'Placement reasoning').toUpperCase()}</span>
+            {r.disclosure && <p className="helper" style={{ marginTop: -4 }}>{r.disclosure}</p>}
             <div className="rrow"><span className="rlabel">Target location</span>
               <span className="body01"><b>{sel.anchor.anchorPath || sel.anchor.title}</b>{sel.anchor.page ? <span className="t2"> · page {sel.anchor.page} · line {sel.anchor.line}</span> : null}</span></div>
-            <div className="rrow"><span className="rlabel">Confidence</span><ConfMeter n={sel.confidence} wide /></div>
+            <div className="rrow"><span className="rlabel">Match score</span>
+              <span>
+                <ConfMeter n={sel.confidence} wide />
+                {r.confidenceBasis && <span className="helper" style={{ display: 'block', marginTop: 4 }}>{r.confidenceBasis}</span>}
+              </span></div>
             <div className="rrow"><span className="rlabel">Why here</span><span className="body01">{r.why}</span></div>
             <div className="rrow"><span className="rlabel">How it matched</span><span className="body01 t2">{r.semantic}</span></div>
             {r.relevance && (
@@ -609,6 +682,9 @@ function ReviewQueue({ pending, onDecided, refresh }) {
                   {r.relevance.verdict === 'review' && <span className="tag tag--amber" style={{ marginLeft: 8 }}>Low confidence — review carefully</span>}
                   {r.relevance.verdict === 'override' && <span className="tag tag--blue" style={{ marginLeft: 8 }}>Reviewer override</span>}
                   <span className="t2" style={{ display: 'block', marginTop: 4 }}>{r.relevance.rationale}</span>
+                  {relevanceEngine(r.relevance.engine) && (
+                    <span className="helper" style={{ display: 'block', marginTop: 4 }}>Decided by {relevanceEngine(r.relevance.engine)}.</span>
+                  )}
                 </span></div>
             )}
             {r.candidates && r.candidates.length > 1 && (
@@ -666,13 +742,27 @@ function ReviewQueue({ pending, onDecided, refresh }) {
 /* ---------- Commit timeline ---------- */
 function Timeline({ onOpenQueue }) {
   const [tl, setTl] = useState(null);
-  useEffect(() => { api('/sync/timeline').then((d) => setTl(d.timeline)).catch(() => setTl([])); }, []);
-  if (!tl) return <p className="body01 t2">Loading…</p>;
+  const [error, setError] = useState('');
+  const load = useCallback(() => {
+    setError('');
+    api('/sync/timeline').then((d) => setTl(d.timeline)).catch((e) => { setError(e.message); setTl([]); });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!tl && !error) return <div className="sync-empty"><p className="body01 t2">Loading the commit timeline…</p></div>;
+  if (error) {
+    return (
+      <div className="sync-empty">
+        <p className="h03">Could not load the timeline</p>
+        <p className="body01 t2 mt3">{error}</p>
+        <button className="btn btn--tertiary btn--sm btn--center mt5" onClick={load}>Retry</button>
+      </div>
+    );
+  }
   if (!tl.length) {
     return (
       <div className="sync-empty">
-        <p className="h03">No synchronized commits yet</p>
-        <p className="body01 t2 mt3">Upload a document and check for new commits — every commit will appear here with the documentation it produced.</p>
+        <p className="h03">No processed commits yet</p>
+        <p className="body01 t2 mt3">Upload a document and process a commit from the Documents tab — each one appears here with the documentation it produced.</p>
       </div>
     );
   }
@@ -685,9 +775,10 @@ function Timeline({ onOpenQueue }) {
         <div className="demonote" role="note">
           <span className="demonote-badge">SAMPLE</span>
           <span>
-            <b>This is demo repository history.</b> Entries marked <span className="tag tag--sample">sample</span> come
+            <b>This is sample repository history.</b> Entries marked <span className="tag tag--sample">sample</span> come
             from Docify&rsquo;s built-in example feed — the commit authors are fictional characters, not real people.
-            Connect a webhook from the Automation page and your real commits take their place.
+            It exists to demonstrate the review-and-version workflow; Doc sync does not yet receive commits from a
+            connected repository, so nothing here reflects your code.
           </span>
         </div>
       )}
@@ -736,11 +827,13 @@ function Versions({ docs }) {
   const [data, setData] = useState(null);
   const [compare, setCompare] = useState(null); // {version, content}
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => { if (!docId && ready[0]) setDocId(ready[0].id); }, [docs]); // eslint-disable-line
   const load = useCallback(() => {
     if (!docId) return;
-    api('/sync/documents/' + docId).then(setData).catch(() => setData(null));
+    setError('');
+    api('/sync/documents/' + docId).then(setData).catch((e) => { setError(e.message); setData(null); });
   }, [docId]);
   useEffect(() => { setData(null); load(); }, [docId, load]);
 
@@ -772,7 +865,7 @@ function Versions({ docs }) {
 
   const versions = data ? data.versions : null;
   const latest = versions && versions.length ? versions[0].number : 0;
-  const srcTag = { upload: ['tag--blue', 'Baseline upload'], 'ai-update': ['tag--green', 'AI update'], restore: ['tag--amber', 'Restore'], edit: ['tag--gray', 'Manual edit'] };
+  const srcTag = { upload: ['tag--blue', 'Baseline upload'], 'ai-update': ['tag--green', 'Sync update'], restore: ['tag--amber', 'Restore'], edit: ['tag--gray', 'Manual edit'] };
 
   return (
     <div>
@@ -784,7 +877,13 @@ function Versions({ docs }) {
           </select>
         </div>
       )}
-      {!versions ? <p className="body01 t2">Loading…</p> : (
+      {error ? (
+        <div className="sync-empty">
+          <p className="h03">Could not load version history</p>
+          <p className="body01 t2 mt3">{error}</p>
+          <button className="btn btn--tertiary btn--sm btn--center mt5" onClick={load}>Retry</button>
+        </div>
+      ) : !versions ? <p className="body01 t2">Loading version history…</p> : (
         <table className="dtable">
           <thead><tr><th>VERSION</th><th>SOURCE</th><th>SUMMARY</th><th>COMMIT</th><th>CREATED</th><th></th></tr></thead>
           <tbody>
@@ -923,6 +1022,7 @@ function RelevanceRules({ docs }) {
 
   useEffect(() => {
     if (!open || cfg) return;
+    setError('');
     api('/sync/relevance/config' + (repo ? '?repo=' + encodeURIComponent(repo) : ''))
       .then(setCfg)
       .catch((e) => setError(e.message));
@@ -999,17 +1099,21 @@ function RelevanceRules({ docs }) {
 /* ================================ Page ================================ */
 export default function DocSync() {
   usePageMeta({
-    title: 'Doc sync — keep existing documentation current automatically',
-    description: 'Upload your existing documentation once. Every commit is documented, semantically placed into the right section, reviewed as a diff, and versioned.'
+    title: 'Doc sync — keep existing documentation current',
+    description: 'Upload your existing documentation once. Each change is written up, matched to the right section, reviewed as a side-by-side diff, and versioned on approval.'
   });
-  const nav = useNavigate();
   const [tab, setTab] = useState('documents');
   const [docs, setDocs] = useState(null);
   const [pending, setPending] = useState([]);
   const [overview, setOverview] = useState(null);
+  const [loadError, setLoadError] = useState('');
   const autoSynced = useRef(new Set());
 
-  const loadDocs = useCallback(() => api('/sync/documents').then((d) => setDocs(d.documents)).catch(() => setDocs([])), []);
+  const loadDocs = useCallback(() => api('/sync/documents')
+    .then((d) => { setLoadError(''); setDocs(d.documents); })
+    // Distinguish "you have no documents" from "we couldn't ask" — otherwise a
+    // failed request renders as a confident empty state.
+    .catch((e) => { setLoadError(e.message); setDocs([]); }), []);
   const loadPending = useCallback(() => api('/sync/updates?status=pending').then((d) => setPending(d.updates)).catch(() => setPending([])), []);
   const loadOverview = useCallback(() => api('/sync/overview').then(setOverview).catch(() => {}), []);
   const refreshAll = useCallback(() => { loadDocs(); loadPending(); loadOverview(); }, [loadDocs, loadPending, loadOverview]);
@@ -1020,20 +1124,28 @@ export default function DocSync() {
   // a fresh document becomes ready, so updates appear without extra clicks.
   useEffect(() => {
     if (!docs || !docs.some((d) => d.status === 'parsing' || d.status === 'indexing')) return undefined;
+    // A document wedged in "parsing" would otherwise poll for the life of the
+    // tab — give up after ~2 minutes and tell the user rather than loop silently.
+    let ticks = 0;
     const t = setInterval(async () => {
+      if (++ticks > 120) {
+        clearInterval(t);
+        toast('warning', 'Still parsing', 'This is taking longer than expected — reload the page to check again.');
+        return;
+      }
       try {
         const d = await api('/sync/documents');
         setDocs(d.documents);
         for (const doc of d.documents) {
           if (doc.status === 'ready' && doc.cursor === 0 && !autoSynced.current.has(doc.id)) {
             autoSynced.current.add(doc.id);
-            toast('success', 'Document indexed', doc.sections.length + ' sections mapped — checking the repository for recent commits…');
+            toast('success', 'Document indexed', doc.sections.length + ' sections mapped — processing the first sample commits…');
             try {
               const s = await api('/sync/documents/' + doc.id + '/sync', { method: 'POST', body: { batch: 2 } });
               if (s.created > 0) {
                 toast('info', s.created + ' updates queued for review'
                   + ((s.filtered || []).length ? ' · ' + s.filtered.length + ' filtered out' : ''),
-                'The AI placed each change — approve them in the review queue.');
+                'Each change was matched to a section — approve them in the review queue.');
               } else if ((s.filtered || []).length) {
                 toast('info', s.filtered.length + ' changes filtered out', 'Internal-only commits were skipped — see the Filtered out tab.');
               }
@@ -1046,7 +1158,19 @@ export default function DocSync() {
     return () => clearInterval(t);
   }, [docs, refreshAll]);
 
-  if (!docs) return <div className="page"><p className="body01 t2">Loading…</p></div>;
+  if (!docs) return <div className="page"><p className="body01 t2">Loading your documents…</p></div>;
+  if (loadError) {
+    return (
+      <div className="page">
+        <h1 className="h04">Doc sync</h1>
+        <div className="sync-empty">
+          <p className="h03">Could not load your documents</p>
+          <p className="body01 t2 mt3">{loadError}</p>
+          <button className="btn btn--tertiary btn--sm btn--center mt5" onClick={refreshAll}>Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   const o = overview || {};
   const tabs = [
@@ -1067,9 +1191,9 @@ export default function DocSync() {
               <HelpLink topic="sync" />
             </div>
             <p className="body01 t2 mt3" style={{ maxWidth: 660 }}>
-              Keep the documentation you already have continuously current. The AI understands your document,
-              understands each commit, and splices updates into exactly the right section — you stay in control
-              with review, confidence scores, and versioning.
+              Keep the documentation you already have current. Docify parses your document, matches each change
+              to the section it belongs in, and splices it there — you stay in control with review, match scores,
+              and versioning.
             </p>
           </div>
           {pending.length > 0 && (
@@ -1080,9 +1204,9 @@ export default function DocSync() {
         </div>
 
         <div className="statgrid mt7">
-          <div className="score score--info"><span className="label01 t2">Documents indexed</span><span className="num">{o.ready ?? docs.filter((d) => d.status === 'ready').length}</span><span className="helper">Baselines the AI maintains</span></div>
+          <div className="score score--info"><span className="label01 t2">Documents indexed</span><span className="num">{o.ready ?? docs.filter((d) => d.status === 'ready').length}</span><span className="helper">Baselines Docify maintains</span></div>
           <div className={'score ' + (pending.length ? 'score--warn' : 'score--good')}><span className="label01 t2">Pending updates</span><span className="num">{pending.length}</span><span className="helper">Awaiting your review</span></div>
-          <div className="score score--good"><span className="label01 t2">Avg placement confidence</span><span className="num">{o.avgConfidence ? o.avgConfidence + '%' : '—'}</span><span className="helper">Across all AI placements</span></div>
+          <div className="score score--good"><span className="label01 t2">Avg match score</span><span className="num">{o.avgConfidence ? o.avgConfidence + '%' : '—'}</span><span className="helper">Term overlap across all placements</span></div>
           <div className="score score--good"><span className="label01 t2">Placement acceptance</span><span className="num">{o.placementAccuracy != null ? o.placementAccuracy + '%' : '—'}</span><span className="helper">{o.lastSync ? 'Last sync ' + fmtDate(o.lastSync) : 'Approved ÷ reviewed'}</span></div>
         </div>
 
@@ -1099,8 +1223,8 @@ export default function DocSync() {
               <div className="sync-empty">
                 <p className="h03">No documentation uploaded yet</p>
                 <p className="body01 t2 mt3" style={{ maxWidth: 520, margin: '8px auto 0' }}>
-                  Teams with hundreds of existing pages don’t start over — upload what you have and the AI
-                  keeps it current from every commit onward. Try the sample document to see the full loop.
+                  Teams with hundreds of existing pages don’t start over — upload what you have and each change
+                  is placed into it for review. Try the sample document to see the full loop.
                 </p>
               </div>
             ) : docs.map((d) => (

@@ -1,7 +1,7 @@
 {
   "name": "Docify — documentation automation",
   "short_name": "Docify",
-  "description": "Generate and verify documentation from your codebase, judged by AI before it ships.",
+  "description": "Generate documentation from your codebase and hold it to a quality standard before it ships.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

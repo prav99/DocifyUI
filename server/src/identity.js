@@ -328,7 +328,7 @@ identityRouter.get('/' + IDP_PATTERN + '/callback', async (req, res) => {
     // Token travels in the URL FRAGMENT (never a query param): fragments are
     // not sent to the server, not logged, and analytics scrubbing relies on it.
     res.redirect(
-      CLIENT_ORIGIN + '/oauth/complete#token=' + encodeURIComponent(sign(user.id)) +
+      CLIENT_ORIGIN + '/oauth/complete#token=' + encodeURIComponent(sign(user)) +
       '&provider=' + p + '&kind=identity&new=' + (isNew ? '1' : '0') +
       (st.link ? '&linked=1' : '') + (passwordCleared ? '&pwreset=1' : '')
     );
@@ -370,9 +370,13 @@ identityRouter.post('/set-password', requireAuth, async (req, res) => {
   }
   const updated = await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash: await bcrypt.hash(String(password), 10) }
+    // Changing the password revokes every session signed before it — otherwise
+    // the token someone changed their password to invalidate keeps working for
+    // up to seven days. The caller gets a replacement below so the browser it
+    // was done from stays signed in.
+    data: { passwordHash: await bcrypt.hash(String(password), 10), tokenVersion: { increment: 1 } }
   });
-  res.json({ ok: true, user: publicUser(updated) });
+  res.json({ ok: true, user: publicUser(updated), token: sign(updated) });
 });
 
 // Unlink an identity — allowed only while another sign-in method remains,

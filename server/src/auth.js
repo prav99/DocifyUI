@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { Router } from 'express';
 import { prisma } from './db.js';
 import { sendMail, mailEnabled } from './adapters/mailer.js';
+import { rateLimiter } from './ratelimit.js';
 
 // Session signing key. In production a weak/absent secret would let anyone
 // forge a session for any account, so refuse to boot instead of running
@@ -20,6 +21,13 @@ if (IS_PROD && String(process.env.JWT_SECRET).length < 24) {
   console.warn('[security] JWT_SECRET is shorter than 24 characters — rotate it to a longer random value.');
 }
 const SECRET = process.env.JWT_SECRET || DEV_SECRET;
+
+if (IS_PROD && !mailEnabled()) {
+  // Without SMTP there is no verification mail and no reset link, so a customer
+  // who forgets their password has no self-service way back in. Say so loudly
+  // rather than papering over it by marking addresses verified.
+  console.warn('[security] SMTP is not configured — new accounts are recorded UNVERIFIED and password reset cannot send email. Set SMTP_HOST/SMTP_USER/SMTP_PASS.');
+}
 
 // Simulated OAuth ("log in as a provider with no authorization code") exists
 // so the product can be demoed without OAuth apps configured. It logs into a
@@ -313,7 +321,92 @@ async function issueOtp(user) {
     '<p>It expires in 10 minutes. You can also <a href="' + link + '">verify with one click</a>.</p>');
 }
 
+/* ---- Password reset ---- */
+// The emailed token is a 256-bit random value; only its SHA-256 hash is
+// stored. A plain hash (not bcrypt) is right here: the input has full entropy,
+// so there is nothing to brute-force, and the lookup must be exact.
+const resetHash = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+const RESET_TTL_MS = 60 * 60 * 1000;
+
+async function issuePasswordReset(user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  // Superseding the earlier links keeps exactly one live at a time, so a link
+  // sitting in an old mail thread dies the moment a new one is requested.
+  await prisma.passwordReset.updateMany({
+    where: { userId: user.id, usedAt: null },
+    data: { usedAt: new Date() }
+  });
+  await prisma.passwordReset.create({
+    data: { userId: user.id, tokenHash: resetHash(token), expiresAt: new Date(Date.now() + RESET_TTL_MS) }
+  });
+  // Fragment, never a query string: fragments are not sent to the server and
+  // never reach access logs or analytics.
+  const link = CLIENT_ORIGIN + '/reset#token=' + encodeURIComponent(token);
+  await sendMail(user.email, 'Reset your Docify password',
+    '<p>Someone asked to reset the password for your Docify account.</p>' +
+    '<p><a href="' + link + '">Choose a new password</a></p>' +
+    '<p>The link works once and expires in 60 minutes. If this was not you, ignore this email — nothing has changed.</p>');
+}
+
 export const authRouter = Router();
+
+// The same strict per-IP budget the other credential endpoints get in
+// index.js. It is attached to the routes themselves because /forgot mails any
+// address the caller names and /reset guesses at a token — neither may ever be
+// mounted without it.
+const credentialLimit = rateLimiter({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_AUTH || 30) });
+
+// POST /api/auth/forgot  { email }
+authRouter.post('/forgot', credentialLimit, async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+  // A passwordless account (Google or code-host sign-in) has nothing to reset;
+  // mailing it a link anyway would only confuse the owner.
+  if (user && user.passwordHash) {
+    try { await issuePasswordReset(user); } catch (e) { console.error('SMTP send failed:', e.message); }
+  }
+  res.json({ ok: true }); // same response either way — no account enumeration
+});
+
+// POST /api/auth/reset  { token, password }
+authRouter.post('/reset', credentialLimit, async (req, res) => {
+  const token = String((req.body || {}).token || '').trim();
+  const password = String((req.body || {}).password || '');
+  // One message for every "this link cannot be used" case: distinguishing
+  // unknown / expired / already-used would tell a holder of a stale link which
+  // account it belonged to.
+  const NO = 'This reset link is no longer valid — request a new one.';
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!/^[a-f0-9]{64}$/.test(token)) return res.status(400).json({ error: NO });
+  const row = await prisma.passwordReset.findUnique({ where: { tokenHash: resetHash(token) } });
+  if (!row || row.usedAt || new Date(row.expiresAt) < new Date()) return res.status(400).json({ error: NO });
+  const user = await prisma.user.findUnique({ where: { id: row.userId } });
+  if (!user) return res.status(400).json({ error: NO });
+  // Spend the link BEFORE writing the password: the conditional update is the
+  // single-use guarantee, so two submissions racing on the same link cannot
+  // both go through.
+  const spent = await prisma.passwordReset.updateMany({
+    where: { id: row.id, usedAt: null },
+    data: { usedAt: new Date() }
+  });
+  if (spent.count !== 1) return res.status(400).json({ error: NO });
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await bcrypt.hash(password, 10),
+      // A reset is the response to "someone else may have my account": every
+      // session issued under the old password has to die with it.
+      tokenVersion: { increment: 1 },
+      // Clicking a link sent to the address is real proof of mailbox access,
+      // which also makes any pending signup OTP moot.
+      emailVerified: true,
+      emailVerifiedAt: user.emailVerifiedAt || new Date(),
+      otpHash: '', otpExpires: null, otpAttempts: 0
+    }
+  });
+  await bootstrapUser(updated);
+  res.json({ token: sign(updated), user: publicUser(updated) });
+});
 
 // POST /api/auth/signup  { email, password? , provider? , name? }
 // provider = mock OAuth (github|gitlab|bitbucket); doubles as source authorization.
@@ -344,9 +437,13 @@ authRouter.post('/signup', async (req, res) => {
         email: finalEmail,
         name: name || '',
         oauthProvider: provider || null,
-        // OAuth identities are verified by the provider; email accounts are
-        // verified by link when SMTP is configured, auto-verified in dev mode.
-        emailVerified: provider ? true : !mailEnabled(),
+        // OAuth identities are verified by the provider. Email accounts are
+        // verified by link/OTP when SMTP is configured. Without SMTP a local
+        // developer would have no way to verify, so dev auto-verifies — but
+        // production must never record an unproven address as verified (see
+        // the boot warning above): there, the account stays unverified, and
+        // login still works because that gate is itself conditional on mail.
+        emailVerified: provider ? true : (!mailEnabled() && !IS_PROD),
         passwordHash: provider ? null : await bcrypt.hash(String(password), 10)
       }
     });
@@ -370,7 +467,7 @@ authRouter.post('/signup', async (req, res) => {
     }
     return res.json({ pendingVerification: true, email: finalEmail, method: 'otp' });
   }
-  res.json({ token: sign(user.id), user: publicUser(user) });
+  res.json({ token: sign(user), user: publicUser(user) });
 });
 
 // GET /api/auth/verify?token=...  — from the verification email.
@@ -421,7 +518,7 @@ authRouter.post('/verify-otp', async (req, res) => {
     data: { emailVerified: true, emailVerifiedAt: new Date(), otpHash: '', otpExpires: null, otpAttempts: 0 }
   });
   await bootstrapUser(updated);
-  res.json({ token: sign(updated.id), user: publicUser(updated) });
+  res.json({ token: sign(updated), user: publicUser(updated) });
 });
 
 // POST /api/auth/resend  { email }
@@ -450,7 +547,7 @@ authRouter.post('/login', async (req, res) => {
       user = await prisma.user.create({ data: { email: 'demo@docify.local', oauthProvider: provider } });
       await bootstrapUser(user);
     }
-    return res.json({ token: sign(user.id), user: publicUser(user) });
+    return res.json({ token: sign(user), user: publicUser(user) });
   }
   const finalEmail = String(email || '').trim().toLowerCase();
   const user = await prisma.user.findUnique({ where: { email: finalEmail } });
@@ -473,7 +570,7 @@ authRouter.post('/login', async (req, res) => {
     return res.status(403).json({ error: 'Verify your email first — check your inbox for the link', unverified: true });
   }
   await bootstrapUser(user);
-  res.json({ token: sign(user.id), user: publicUser(user) });
+  res.json({ token: sign(user), user: publicUser(user) });
 });
 
 // Which providers have REAL OAuth configured (vs the simulated flow).
@@ -482,7 +579,10 @@ authRouter.post('/login', async (req, res) => {
 authRouter.get('/providers', (req, res) => {
   res.json({
     github: realProv('github'), gitlab: realProv('gitlab'), bitbucket: realProv('bitbucket'),
-    google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+    google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    // Whether this deployment can actually send email. The login page uses it
+    // to avoid offering a password reset it knows will never arrive.
+    mail: mailEnabled()
   });
 });
 
@@ -527,7 +627,7 @@ authRouter.get('/:provider(github|gitlab|bitbucket)/callback', async (req, res) 
     const { invalidateCatalogue } = await import('./repohub.js');
     invalidateCatalogue(user.id);
     await bootstrapUser(user);
-    res.redirect(CLIENT_ORIGIN + '/oauth/complete#token=' + encodeURIComponent(sign(user.id)) + '&provider=' + provider);
+    res.redirect(CLIENT_ORIGIN + '/oauth/complete#token=' + encodeURIComponent(sign(user)) + '&provider=' + provider);
   } catch (e) {
     res.redirect(CLIENT_ORIGIN + '/oauth/complete#error=' + encodeURIComponent(e.message || 'OAuth failed'));
   }

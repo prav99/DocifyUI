@@ -133,6 +133,7 @@ const OVERVIEW_SCENES = [
           <span className="label01 t2">Engineering hours · this release</span>
           <span className="num">{beat >= 18 ? <CountTo from={0} to={11} delay={250} dur={1900} /> : '0'}</span>
           {beat >= 18 && <span className="helper demo-late" style={{ animationDelay: '1.9s' }}>spent being the documentation</span>}
+          <span className="helper demo-late" style={{ animationDelay: '9s' }}>Illustrative example — the landing estimator’s default of 11 hrs per release.</span>
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
           {COST_ROWS.map(([task, time, tone, gate]) => beat >= gate && (
@@ -215,12 +216,12 @@ const OVERVIEW_SCENES = [
     )
   },
   {
-    /* beats: Point1 … repo5 and6 generate7 eleven8 document9 types10 …
-       runbooks15 every16 section17 drafted18 … source21 scoring22 ninety-four23
+    /* beats: Point1 … repo5 and6 generate7 eleven8 document9 types10 … release15
+       notes16 every17 section18 drafted19 … source22 scoring23 ninety-four24
        Cursor rides the narration: arrives on the repo row and clicks as
        "repo … generate" is spoken, then drifts toward the draft and score. */
     label: 'Generate', dur: 12500, sfx: 'click',
-    vo: 'Point it at a repo and generate — eleven document types, from API references to runbooks — every section drafted from real source, scoring ninety-four.',
+    vo: 'Point it at a repo and generate — eleven document types, from API references to release notes — every section drafted from real source, scoring ninety-four here.',
     cues: [{ at: 5800, sfx: 'type' }, { at: 6400, sfx: 'type' }, { at: 8300, sfx: 'chime' }],
     render: (beat) => (
       <div>
@@ -238,18 +239,20 @@ const OVERVIEW_SCENES = [
         </div>
         {beat >= 8 && (
           <div className="mt3">
-            <Chips items={['API reference', 'User guide', 'Install & setup', 'Release notes', 'Architecture', 'Runbook', '+ 5 more']} on={0} delayBase={0.1} />
+            {/* the real catalogue (DOCTYPES in server/src/catalog.js) — 11 in
+                total, so only types Docify actually generates appear here */}
+            <Chips items={['API reference', 'User guide', 'Install & setup', 'Quick start', 'Troubleshooting & FAQ', 'Release notes', '+ 5 more']} on={0} delayBase={0.1} />
           </div>
         )}
         <div className="row mt5" style={{ alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
-          {beat >= 16 && (
+          {beat >= 17 && (
             <div className="demo-yaml mono" style={{ minWidth: 240 }}>
               {['# Payments API reference', '## Authentication — bearer tokens · 24 h expiry', '## Webhooks — retries: 1 min, 5 min, 30 min', '## Errors — code · message · retriable flag'].map((l, i) => (
                 <div key={l} className="demo-yline" style={{ animationDelay: (0.1 + i * 0.55) + 's' }}>{l}</div>
               ))}
             </div>
           )}
-          {beat >= 22 && (
+          {beat >= 23 && (
             <div className="score score--good demo-yline" style={{ minWidth: 160, animationDelay: '0.05s' }}>
               <span className="label01 t2">Quality score</span>
               <span className="num"><CountTo from={0} to={94} delay={250} dur={2000} /></span>
@@ -357,7 +360,7 @@ const OVERVIEW_SCENES = [
             ))}
           </div>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <p className="label01 t2 mb3">AFTER — with Docify</p>
+            <p className="label01 t2 mb3">AFTER — with Docify (illustrative)</p>
             {beat >= 13 && (
               <div className="demo-issue" style={{ animationDelay: '0.05s', borderLeftColor: 'var(--support-success)', padding: '10px 16px' }}>
                 <div className="row row--between" style={{ flexWrap: 'wrap' }}>
@@ -460,7 +463,7 @@ const OVERVIEW_SCENES = [
               <p className="h01">AI Search Readiness</p>
               <span className="tag tag--green mono">88</span>
             </div>
-            <p className="helper mt2 demo-late" style={{ animationDelay: '1.5s' }}>A modeled signal — simulated AI retrieval, not a guarantee of any platform's behavior. Scored, gated, and improvable on every publish.</p>
+            <p className="helper mt2 demo-late" style={{ animationDelay: '1.5s' }}>A modeled signal, computed from the document’s own quality dimensions — nothing is sent to an AI platform, and no ranking or citation is guaranteed. Scored and improvable on every publish.</p>
           </div>
         )}
       </div>
@@ -480,13 +483,14 @@ const OVERVIEW_SCENES = [
           {[
             ['Docs ship with the release', 1],
             ['Hours back every sprint', 6],
-            ['Always current', 10],
+            ['Updated on every merge', 10],
             ['Quality gate ≥ 85 on every publish', 11],
-            ['≈ 93% less effort', 13]
+            ['≈ 93% less effort — illustrative', 13]
           ].map(([c, gate]) => beat >= gate && (
             <span key={c} className="demo-chip demo-chipon" style={{ animationDelay: '0.05s' }}>{c}</span>
           ))}
         </div>
+        <p className="helper demo-late" style={{ animationDelay: '5.5s' }}>Scripted demonstration with sample data. The effort figures come from the illustrative example above ($95/hr, 11 hrs per release), not from measured customer results.</p>
         <div style={{ padding: '4px 0 12px' }}>
           {beat >= 13 && <span className="jd-verdict" style={{ animationDelay: '0.3s' }}>Documentation that stays in sync with your code.</span>}
         </div>

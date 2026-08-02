@@ -79,6 +79,9 @@ export function Signup() {
   const [otp, setOtp] = useState('');
   const [needOtp, setNeedOtp] = useState(false); // login path: account exists but is unverified
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [forgot, setForgot] = useState(false); // reset-request panel open
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
 
   // Entry points: TopBar "Login" arrives as /signup#login; the email
   // verification link arrives as #verified=1|0 (redirected from /login).
@@ -159,7 +162,9 @@ export function Signup() {
         return;
       }
       login(d.token, d.user);
-      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined });
+      // Analytics gets an opaque id and the plan only — never the customer's
+      // email or name.
+      posthog.identify(String(d.user.id || ''), { plan: d.user.plan || undefined });
       posthog.capture('signed_up', { method: 'email' });
       toast('success', 'Account created', 'Welcome to Docify');
       nav(dest || '/source');
@@ -184,7 +189,7 @@ export function Signup() {
     try {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email: sentTo, code: otp.trim() } });
       login(d.token, d.user);
-      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined });
+      posthog.identify(String(d.user.id || ''), { plan: d.user.plan || undefined });
       posthog.capture('signed_up', { method: 'email_otp' });
       toast('success', 'Account activated', 'Welcome to Docify');
       nav(dest || '/source');
@@ -198,7 +203,7 @@ export function Signup() {
     try {
       const d = await api('/auth/login', { method: 'POST', body: { email, password } });
       login(d.token, d.user);
-      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined, plan: d.user.plan || undefined });
+      posthog.identify(String(d.user.id || ''), { plan: d.user.plan || undefined });
       posthog.capture('logged_in', { method: 'email' });
       toast('success', 'Logged in', 'Welcome back');
       nav(dest || '/dashboard');
@@ -215,13 +220,24 @@ export function Signup() {
     finally { setBusy(false); }
   }
 
+  async function sendReset() {
+    const addr = forgotEmail.trim();
+    if (!/.+@.+\..+/.test(addr)) return toast('error', 'Enter your email', 'We need the address you signed up with');
+    setBusy(true);
+    try {
+      await api('/auth/forgot', { method: 'POST', body: { email: addr } });
+      setForgotSent(true);
+    } catch (e) { toast('error', 'Could not send the reset link', e.message); }
+    finally { setBusy(false); }
+  }
+
   async function loginVerifyOtp() {
     if (!/^\d{6}$/.test(otp.trim())) return toast('error', 'Enter the 6-digit code', 'Exactly six digits, from the email we sent');
     setBusy(true);
     try {
       const d = await api('/auth/verify-otp', { method: 'POST', body: { email, code: otp.trim() } });
       login(d.token, d.user);
-      posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined, plan: d.user.plan || undefined });
+      posthog.identify(String(d.user.id || ''), { plan: d.user.plan || undefined });
       posthog.capture('logged_in', { method: 'email_otp' });
       toast('success', 'Verified and logged in', 'Welcome to Docify');
       nav(dest || '/dashboard');
@@ -288,6 +304,55 @@ export function Signup() {
               <p className="helper mt3">
                 Signed up with Google? Use <b>Continue with Google</b> above — a Google account has no password here until you set one.
               </p>
+              {/* Offered only where the server can actually send the mail —
+                  otherwise the form would promise a link that never arrives. */}
+              {providers.ready && !providers.mail && (
+                <p className="helper mt3">
+                  Forgotten your password? This deployment cannot send email yet — contact{' '}
+                  <a href={supportMailto('Password reset')}>{SUPPORT_EMAIL}</a>.
+                </p>
+              )}
+              {providers.mail && (!forgot ? (
+                <p className="helper mt3">
+                  <button className="linkbtn" onClick={() => { setForgot(true); setForgotSent(false); setForgotEmail(email); }}>
+                    Forgot password?
+                  </button>
+                </p>
+              ) : (
+                <div className="tile mt5" style={{ padding: 16 }}>
+                  <p className="h01">Reset your password</p>
+                  {forgotSent ? (
+                    <>
+                      {/* The server answers identically whether or not the
+                          address has an account, so this cannot promise an
+                          email was actually sent. */}
+                      <p className="helper mt2">
+                        If {forgotEmail.trim()} has a Docify account with a password, a reset link is on its way.
+                        It works once and expires in 60 minutes — check the spam folder too.
+                      </p>
+                      <p className="helper mt3">
+                        <button className="linkbtn" onClick={() => { setForgot(false); setForgotSent(false); }}>Back to log in</button>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="helper mt2">We&apos;ll email you a link to choose a new one.</p>
+                      <div className="row mt3" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+                        <div className="field" style={{ marginBottom: 0, width: 240 }}>
+                          <label htmlFor="fpEmail">Email</label>
+                          <input id="fpEmail" className="input" type="email" placeholder="you@company.com"
+                            value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && sendReset()} />
+                        </div>
+                        <button className="btn btn--primary btn--field" disabled={busy} onClick={sendReset}>Send reset link</button>
+                      </div>
+                      <p className="helper mt3">
+                        <button className="linkbtn" onClick={() => setForgot(false)}>Cancel</button>
+                      </p>
+                    </>
+                  )}
+                </div>
+              ))}
               {needOtp && (
                 <div className="tile mt5" style={{ padding: 16 }}>
                   <p className="h01">Enter the verification code</p>
@@ -316,7 +381,11 @@ export function Signup() {
                   </button>
                 ))}
               </div>
-              <p className="helper mt5">Demo account: demo@acme.dev / demo1234 (seeded with history)</p>
+              {/* Development only. Shipped to the production bundle this is a
+                  publicly advertised working account on the live site. */}
+              {import.meta.env.DEV && (
+                <p className="helper mt5">Demo account: demo@acme.dev / demo1234 (seeded with history)</p>
+              )}
             </div>
             <div className="divider" style={{ margin: '32px 0 16px' }} />
             <p className="body01">
@@ -506,7 +575,7 @@ export function OAuthComplete() {
     api('/auth/me')
       .then((d) => {
         login(token, d.user);
-        posthog.identify(d.user.id || d.user.email, { email: d.user.email, name: d.user.name || undefined, plan: d.user.plan || undefined });
+        posthog.identify(String(d.user.id || ''), { plan: d.user.plan || undefined });
         const stashed = takeDest();
         if (isIdentity) {
           // Linking from Settings is neither a signup nor a login — the user
@@ -553,6 +622,81 @@ export function OAuthComplete() {
       ) : (
         <p className="body01 t2">Completing sign-in…</p>
       )}
+    </div>
+  );
+}
+
+// Landing pad for the emailed password-reset link (/reset#token=…). The token
+// travels in the fragment for the same reason the OAuth token does: fragments
+// never reach the server, so it stays out of access logs and analytics.
+export function ResetPassword() {
+  const nav = useNavigate();
+  const { login } = useAuth();
+  const [token, setTok] = useState('');
+  const [ready, setReady] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const h = new URLSearchParams(window.location.hash.slice(1));
+    setTok(h.get('token') || '');
+    setReady(true);
+    window.history.replaceState(null, '', '/reset'); // don't leave the token in history
+  }, []);
+
+  async function submit() {
+    if (password.length < 8) return toast('error', 'Password too short', 'Use at least 8 characters');
+    if (password !== confirm) return toast('error', 'Passwords don’t match', 'Retype the confirmation');
+    setBusy(true);
+    try {
+      const d = await api('/auth/reset', { method: 'POST', body: { token, password } });
+      login(d.token, d.user);
+      posthog.capture('password_reset');
+      toast('success', 'Password updated', 'Any other devices signed in to this account have been signed out');
+      nav('/dashboard');
+    } catch (e) { toast('error', 'Could not reset your password', e.message); }
+    finally { setBusy(false); }
+  }
+
+  if (!ready) return <div className="page page--narrow"><p className="body01 t2">Loading…</p></div>;
+  if (!token) {
+    return (
+      <div className="page page--narrow">
+        <h1 className="h04">This reset link is incomplete</h1>
+        <p className="body01 t2 mt3">
+          Some mail clients cut the end off long links. Open the email again and click the link itself, or request a new one.
+        </p>
+        <p className="body01 mt5"><a onClick={() => nav('/signup#login')}>← Back to log in</a></p>
+      </div>
+    );
+  }
+  return (
+    <div className="page page--narrow">
+      <h1 className="h04">Choose a new password</h1>
+      <p className="body01 t2 mt3">
+        This link works once. Setting a new password also signs out every other device using this account.
+      </p>
+      <div className="mt6" style={{ maxWidth: 380 }}>
+        <div className="field">
+          <label htmlFor="rsPass">New password (8+ characters)</label>
+          <input id="rsPass" className="input" type="password" placeholder="••••••••"
+            value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="rsConfirm">Confirm new password</label>
+          <input id="rsConfirm" className="input" type="password" placeholder="••••••••"
+            value={confirm} onChange={(e) => setConfirm(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()} />
+        </div>
+        <button className="btn btn--primary" style={{ width: '100%' }} disabled={busy} onClick={submit}>
+          Set new password<span className="ico">→</span>
+        </button>
+      </div>
+      <p className="helper mt5">
+        Trouble? <a onClick={() => nav('/contact')}>Contact support</a> or email{' '}
+        <a href={supportMailto('Password reset help')}>{SUPPORT_EMAIL}</a>.
+      </p>
     </div>
   );
 }

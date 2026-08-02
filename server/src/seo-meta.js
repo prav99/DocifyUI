@@ -18,7 +18,7 @@ export const PAGE_META = {
   },
   '/pricing': {
     title: 'Pricing — Free, Starter, Team & Enterprise | ' + SITE_NAME,
-    desc: 'Start free with 5 generations a month — no credit card. Starter $29/mo for small teams; Team $99/mo ($79 billed annually) with five seats, 10 automation pipelines, and a 14-day free trial. Enterprise adds custom style-guide rules and a DPA, with SSO and audit logs on request.'
+    desc: 'Start free with 5 generations a month — no credit card. Starter $29/mo for small teams; Team $99/mo ($79 billed annually) with five seats and 10 automation pipelines. Online payment is not live yet, so paid plans are set up directly by our team. Enterprise adds custom style-guide rules and a DPA, with SSO and audit logs on request.'
   },
   '/signup': {
     title: 'Start Free — Create Your Account | ' + SITE_NAME,
@@ -95,7 +95,7 @@ const FAQ_ITEMS = [
     ['Is my source code stored?',
       'We keep no copy of your source files. Docify reads a limited selection of files at generation time and sends them to Anthropic, our AI subprocessor, to write the document; the files themselves are never written to our database. The finished document is stored with your account and can quote short excerpts, because it is written from your code. You can revoke access at any time.'],
     ['How quickly does Docify pay for itself?',
-      'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. The Team plan is $79 per month billed annually ($99 monthly) and includes five seats — roughly $16 per person. At a typical loaded engineering cost of $75–120 per hour, the whole subscription is covered by about 40–60 minutes of saved documentation work per month across the entire team. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is the 14-day free trial — run it against a real release and compare the result with what that release usually costs you.']
+      'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. The Team plan is $79 per month billed annually ($99 monthly) and includes five seats — roughly $16 per person. At a typical loaded engineering cost of $75–120 per hour, the whole subscription is covered by about 40–60 minutes of saved documentation work per month across the entire team. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is the free plan — run five documents against a real release and compare the result with what that release usually costs you.']
 ];
 
 const FAQ_LD = JSON.stringify({
@@ -154,9 +154,11 @@ ${faqHtml()}
 <h2>Starter — $29/month ($24 billed annually)</h2>
 <p>Two seats, one automation pipeline, 60 documents a month, every export format except DITA, and the full AI quality pipeline.</p>
 <h2>Team — $99/month ($79 billed annually) · 5 seats included · most popular</h2>
-<p>Five seats included (extra seats $12), 10 automation pipelines, 250 pooled documents a month, every output format including DITA, the full AI quality pipeline with AI-search-readiness estimates, usage analytics, priority support, and a 14-day free trial — no credit card.</p>
+<p>Five seats included (extra seats $12), 10 automation pipelines, 250 pooled documents a month, every output format including DITA, the full AI quality pipeline with AI-search-readiness estimates, usage analytics, and priority support.</p>
 <h2>Enterprise — custom, annual contract</h2>
-<p>Everything in Team plus custom style-guide rules, a DPA, and dedicated support with SLA. SSO (SAML/OIDC) and audit logs are available on request. <a href="/contact">Contact us</a>.</p>`,
+<p>Everything in Team plus custom style-guide rules, a DPA, and dedicated support with SLA. SSO (SAML/OIDC) and audit logs are available on request. <a href="/contact">Contact us</a>.</p>
+<h2>How to buy</h2>
+<p>Online payment is not live yet, so paid plans are set up directly by our team — <a href="/contact">contact us</a> to start Starter or Team. The free plan needs no credit card and no conversation.</p>`,
   '/docs': () => `
 <h1>Docify documentation</h1>
 <p>How Docify works: connecting GitHub, GitLab, and Bitbucket; generating and auto-updating documentation from code; the AI quality review and AI-search readiness; human review and approval; automation pipelines; and every output format. Popular guides: <a href="/docs/llm-as-a-judge">AI-readiness scoring</a>, <a href="/docs/ai-compatibility-checker">AI compatibility checker</a>, <a href="/docs/docs-from-commits">Documentation from code commits</a>, <a href="/docs/ci-pipeline-setup">CI pipeline setup</a>.</p>`,

@@ -2,15 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, download, getCatalog } from '../api.js';
 import { useFlow, toast } from '../store.jsx';
-import { NavBar, IcCheck, PreviewFrame, HelpLink } from '../ui.jsx';
+import { NavBar, PreviewFrame, HelpLink, Notif } from '../ui.jsx';
 import { buildChips } from './Generate.jsx';
 import posthog from '../posthog.js';
 
+/* The three presets are not cosmetic: server-side (adapters/report.js
+   REPORT_PRESETS) each one selects a different set of sections, and the
+   descriptions below name exactly those sections so the choice is honest. */
 const PRESET_LABEL = { executive: 'Executive summary', full: 'Full audit report', technical: 'Technical quality report' };
 const PRESETS = [
-  ['executive', 'Executive summary', 'Cover, summary, scorecards, and recommendation.'],
-  ['full', 'Full audit report', 'Everything — all findings, links, style, and applied fixes.'],
-  ['technical', 'Technical quality report', 'Scores, findings, links, style, and fixes.']
+  ['executive', 'Executive summary', 'Cover, summary, scores, and the recommendation — no finding-by-finding detail.'],
+  ['full', 'Full audit report', 'Everything: summary, scores, assistant estimates, rubric findings, link and style findings, applied fixes, recommendation.'],
+  ['technical', 'Technical quality report', 'Everything except the executive summary — straight to scores, findings, links, style, and fixes.']
 ];
 
 export default function ExportPage() {
@@ -25,16 +28,37 @@ export default function ExportPage() {
   const [preset, setPreset] = useState('full');        // executive | full | technical
   const [cfgOpen, setCfgOpen] = useState(false);       // preset configuration popover
   const [copied, setCopied] = useState(false);         // share-link confirmation
+  const [loadErr, setLoadErr] = useState('');          // document fetch failed — not "still loading"
+  const [reportErr, setReportErr] = useState('');
 
   useEffect(() => {
     if (!flow.genId) { nav('/dashboard'); return; }
+    let alive = true;
     // Fetched fresh on arrival, so every applied fix is already in what we show.
-    api('/generations/' + flow.genId).then((d) => setGen(d.generation)).catch(() => {});
-    api('/generations/' + flow.genId + '/quality').then((d) => setReport(d.report)).catch(() => {});
-    getCatalog().then(setCatalog).catch(() => {});
+    api('/generations/' + flow.genId)
+      .then((d) => { if (alive) { setGen(d.generation); setLoadErr(''); } })
+      .catch((e) => { if (alive) setLoadErr(e.message || 'Request failed'); });
+    api('/generations/' + flow.genId + '/quality')
+      .then((d) => { if (alive) { setReport(d.report); setReportErr(''); } })
+      .catch((e) => { if (alive) setReportErr(e.message || 'Request failed'); });
+    getCatalog().then((c) => { if (alive) setCatalog(c); }).catch(() => { /* format labels degrade to the raw id */ });
+    return () => { alive = false; };
   }, [flow.genId, nav]);
 
-  if (!gen) return <div className="page"><p className="body01 t2">Loading…</p></div>;
+  if (loadErr && !gen) {
+    return (
+      <div className="page">
+        <h1 className="h04">Export</h1>
+        <div className="mt6">
+          <Notif kind="error" title="This document could not be loaded">
+            {loadErr}. Nothing has been lost — open it again from the Documents tab, or retry from the dashboard.
+          </Notif>
+        </div>
+        <button className="btn btn--tertiary mt5" onClick={() => nav('/history')}>Open Documents<span className="ico">→</span></button>
+      </div>
+    );
+  }
+  if (!gen) return <div className="page"><p className="body01 t2">Loading your document…</p></div>;
 
   const fmtDefn = catalog ? (catalog.formats[gen.track] || []).find((f) => f.id === gen.format) : null;
   const dt = catalog ? (catalog.doctypes[gen.track] || []).find((x) => x.id === gen.docTypes[0]) : null;
@@ -43,8 +67,7 @@ export default function ExportPage() {
   const gatePassed = report ? !!report.gatePassed : gen.score >= 85;
   const verdict = report ? report.verdict : null;
   const fixedCount = report ? report.fixedCount : 0;
-  const totalIssues = report ? report.issues.length : 0;
-  const fname = (gen.title || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-') + (fmtDefn ? fmtDefn.ext : '');
+  const totalIssues = report ? (report.issues || []).length : 0;
 
   async function dl(kind, fmt) {
     try {
@@ -88,7 +111,7 @@ export default function ExportPage() {
         report_preset: preset,
         quality_score: overall,
       });
-      toast('success', 'AI quality report ready', name);
+      toast('success', 'Quality report ready', name);
     } catch (e) {
       posthog.captureException(e, { event: 'quality_report_download_error', report_format: fmt });
       toast('error', 'Report generation failed', e.message + ' — try again');
@@ -104,7 +127,8 @@ export default function ExportPage() {
           <HelpLink topic="export" />
         </div>
         <p className="body01 t2 mt3">
-          Overall score {overall} / 100{verdict ? ' · ' + verdict : ''} — every download below is built from the
+          {typeof overall === 'number' ? 'Overall score ' + overall + ' / 100' : 'Not scored yet'}
+          {verdict ? ' · ' + verdict : ''} — every download below is built from the
           latest corrected content, so the fixes you applied are already in.
         </p>
 
@@ -148,22 +172,23 @@ export default function ExportPage() {
               <button className="btn btn--primary" style={{ width: '100%' }} onClick={() => dl('doc')}>
                 Download {fmtDefn ? fmtDefn.name : gen.format.toUpperCase()}<span className="ico">↓</span>
               </button>
-              <div className="qr-split">
+              <div className="qr-split" onKeyDown={(e) => { if (e.key === 'Escape') { setMenuOpen(false); setCfgOpen(false); } }}>
                 <button className="btn btn--tertiary qr-split-main" disabled={!report || !!busyFmt}
                   aria-haspopup="menu" aria-expanded={menuOpen}
                   onClick={() => setMenuOpen((o) => !o)}>
                   {busyFmt ? 'Generating ' + busyFmt.toUpperCase() + ' report…'
-                    : report ? 'Download AI quality report' : 'Preparing report…'}
+                    : report ? 'Download quality report' : reportErr ? 'Quality report unavailable' : 'Preparing report…'}
                   <span className="ico">▾</span>
                 </button>
                 {(menuOpen || cfgOpen) && <div className="qr-scrim" onClick={() => { setMenuOpen(false); setCfgOpen(false); }} />}
                 {menuOpen && (
                   <div className="qr-menu" role="menu">
+                    <p className="helper" role="presentation" style={{ padding: '6px 12px 2px' }}>Preset: {PRESET_LABEL[preset]}</p>
                     <button className="qr-mi" role="menuitem" onClick={() => dlReport('pdf')}>PDF report<span className="helper">Management-ready, printable</span></button>
                     <button className="qr-mi" role="menuitem" onClick={() => dlReport('html')}>HTML report<span className="helper">Self-contained, responsive</span></button>
                     <button className="qr-mi" role="menuitem" onClick={() => dlReport('pptx')}>PowerPoint presentation<span className="helper">Executive slide deck</span></button>
                     <div className="qr-sep" />
-                    <button className="qr-mi" role="menuitem" onClick={() => { setMenuOpen(false); setCfgOpen(true); }}>Configure report…<span className="helper">Preset: {PRESET_LABEL[preset]}</span></button>
+                    <button className="qr-mi" role="menuitem" onClick={() => { setMenuOpen(false); setCfgOpen(true); }}>Configure report…<span className="helper">Change which sections are included</span></button>
                   </div>
                 )}
                 {cfgOpen && (
@@ -190,9 +215,18 @@ export default function ExportPage() {
               </div>
             </div>
             <p className="helper mt5">
-              Includes the complete AI judge review, scores, broken-link analysis, style-guide results, applied
-              fixes, and the publish-readiness assessment — the same data across every format.
+              {PRESET_LABEL[preset]}: {(PRESETS.find(([id]) => id === preset) || [, , ''])[2]} PDF, HTML, and
+              PowerPoint are rendered from one model, so the numbers cannot differ between them. Scores come
+              from the deterministic quality rubric, and the assistant figures are modelled estimates of
+              AI-search readiness — not a ranking guarantee.
             </p>
+            {reportErr && !report && (
+              <div className="mt5">
+                <Notif kind="warning" title="The quality report is not available for this document">
+                  {reportErr}. The document downloads above are unaffected.
+                </Notif>
+              </div>
+            )}
           </div>
           <div className="tile tile--white" style={{ padding: 24 }}>
             <h2 className="h02 mb5">Keep it current</h2>

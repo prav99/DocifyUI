@@ -20,14 +20,34 @@ const ACCENTS = [
   ['#0f62fe', 'Blue'], ['#007d79', 'Teal'], ['#6929c4', 'Purple'], ['#393939', 'Gray']
 ];
 
+// Reference files are held as { name, text }. Sessions started before their
+// contents were read may still hold bare filenames in sessionStorage.
+const refFiles = (f) => (f.files || [])
+  .map((x) => (typeof x === 'string' ? { name: x, text: '' } : x))
+  .filter((x) => x && x.name);
+
+// The server compiles manual instructions into the writing policy with a
+// 4,000-character budget (adapters/styleguide.js), so reference text is trimmed
+// to what genuinely reaches the model rather than sent and silently dropped.
+const INSTRUCTION_BUDGET = 4000;
+
 export default function Format() {
   const nav = useNavigate();
   const { flow, setFlow } = useFlow();
   const { user } = useAuth();
   const [catalog, setCatalog] = useState(null);
+  const [catErr, setCatErr] = useState('');
+  const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState({ cover: true });
-  useEffect(() => { getCatalog().then(setCatalog); }, []);
+  useEffect(() => {
+    let alive = true;
+    setCatErr('');
+    getCatalog()
+      .then((c) => { if (alive) setCatalog(c); })
+      .catch((e) => { if (alive) setCatErr(e.message || 'Could not load the format catalogue'); });
+    return () => { alive = false; };
+  }, [reload]);
   // The track's default format (DITA on technical) is not available on every
   // plan. Land on the first format this account can actually export, so the
   // step never opens with nothing selected and Generate greyed out.
@@ -42,6 +62,18 @@ export default function Format() {
     const first = opts.find((f) => f.ok && (allowed == null || allowed.includes(f.id)));
     if (first) setFlow({ formats: [first.id], format: first.id, genId: null });
   }, [catalog, user, flow.track]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (catErr) {
+    return (
+      <div className="page">
+        <div className="genfail">
+          <b>Could not load output formats.</b> <span>{catErr}</span>
+          <button className="btn btn--tertiary btn--sm btn--center" style={{ marginLeft: 12 }}
+            onClick={() => setReload((n) => n + 1)}>Try again</button>
+          <button className="btn btn--tertiary btn--sm btn--center" onClick={() => nav('/doctype')}>← Back</button>
+        </div>
+      </div>
+    );
+  }
   if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
 
   const oc = { ...OUT_DEFAULTS, ...(flow.outputCfg || {}) };
@@ -49,7 +81,9 @@ export default function Format() {
   const toggleAcc = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }));
 
   // Plain render helpers (NOT components): keeps the DOM stable across
-  // re-renders so text inputs never lose focus while typing.
+  // re-renders so text inputs never lose focus while typing. The text fields
+  // are controlled — uncontrolled defaultValue left previously typed text on
+  // screen after "Reset to defaults" had already cleared it from the payload.
   const tog = (k, label, help) => (
     <div className="optrow" key={k}>
       <div className={'toggle' + (oc[k] ? ' on' : '')} onClick={() => setOut(k, !oc[k])}>
@@ -61,8 +95,8 @@ export default function Format() {
   const txt = (k, label, ph) => (
     <div className="optrow" key={k}>
       <label className="label01 t2" htmlFor={'out-' + k}>{label}</label>
-      <input id={'out-' + k} className="input" placeholder={ph || ''} defaultValue={oc[k]}
-        onInput={(e) => setOut(k, e.target.value)} />
+      <input id={'out-' + k} className="input" placeholder={ph || ''} value={String(oc[k] == null ? '' : oc[k])}
+        onChange={(e) => setOut(k, e.target.value)} />
     </div>
   );
   const sel = (k, label, options) => (
@@ -115,15 +149,38 @@ export default function Format() {
       const scopeNote = Object.entries(flow.srcScope || {})
         .map(([p, s]) => p.charAt(0).toUpperCase() + p.slice(1) + ': ' + s.label)
         .join('; ');
-      const instructions = [scopeNote && 'Focus on these source items — ' + scopeNote + '.', flow.instructions]
+      const head = [scopeNote && 'Focus on these source items — ' + scopeNote + '.', flow.instructions]
         .filter(Boolean).join('\n');
+      // Reference files ride with the instructions — that is the only channel
+      // whose text the generator actually reads. Anything past the budget is
+      // dropped by the server, so say so instead of pretending it was used.
+      const refs = refFiles(flow).filter((r) => r.text);
+      let refsFit = 'all';
+      let instructions = head;
+      if (refs.length) {
+        const block = 'Reference material supplied by the customer — follow it where it applies:\n\n'
+          + refs.map((r) => '--- ' + r.name + ' ---\n' + r.text).join('\n\n');
+        const room = INSTRUCTION_BUDGET - head.length - 2;
+        if (room < 200) refsFit = 'none';
+        else {
+          instructions = [head, block.slice(0, room)].filter(Boolean).join('\n\n');
+          if (block.length > room) refsFit = 'partial';
+        }
+      }
+      if (refsFit === 'none') {
+        toast('info', 'Reference files not sent',
+          'Your typed instructions already fill the ' + INSTRUCTION_BUDGET + ' characters the generator reads. Shorten them to include the reference text.');
+      } else if (refsFit === 'partial') {
+        toast('info', 'Reference text trimmed',
+          'Instructions and reference text share ' + INSTRUCTION_BUDGET + ' characters per run — the tail of your reference files was left out.');
+      }
       const body = {
         // The repository's real default branch, carried from the catalogue at
         // the Source step. 'main' is only a last resort; the server re-resolves
         // and corrects it if this branch turns out to hold no source.
         repo: flow.repo || flow.provider, branch: flow.branch || 'main', track: flow.track,
         docTypes: flow.docTypes, format: selected[0], formats: selected,
-        instructions, files: flow.files, provider: flow.provider || 'github',
+        instructions, files: refFiles(flow).map((r) => r.name), provider: flow.provider || 'github',
         skillName: flow.skillName || '', skill: flow.skillContent || '',
         brief: { audience: flow.briefAudience || '', emphasis: flow.briefEmphasis || '', tone: flow.briefTone || '' },
         output: {
@@ -142,15 +199,22 @@ export default function Format() {
       // the Dashboard alongside this one.
       const extras = (flow.extraRepos || []).filter((x) => x && x.repo && x.repo !== body.repo);
       let started = 0;
+      const failedExtras = [];
       for (const ex of extras) {
         try {
           await api('/generations', { method: 'POST', body: { ...body, repo: ex.repo, provider: ex.provider, branch: ex.branch || 'main' } });
           started += 1;
-        } catch { /* one bad extra must not block the primary run */ }
+        } catch (e) { failedExtras.push(ex.repo + ' (' + e.message + ')'); } // one bad extra must not block the primary run
       }
       if (started) {
         toast('success', started + ' more generation' + (started > 1 ? 's' : '') + ' started',
           'Same settings, one per additional repository — follow them on the Dashboard.');
+      }
+      // A quota refusal or an unreachable repository used to disappear here,
+      // leaving the customer expecting documents that were never queued.
+      if (failedExtras.length) {
+        toast('error', failedExtras.length + ' repository generation' + (failedExtras.length > 1 ? 's' : '') + ' did not start',
+          failedExtras.join(' · '));
       }
       setFlow({ genId: d.generation.id });
       nav('/generate');
@@ -261,7 +325,8 @@ export default function Format() {
                 <label className="label01 t2" htmlFor="out-disclaimer">Disclaimer / legal notice</label>
                 <textarea id="out-disclaimer" className="textarea" rows={3}
                   placeholder="e.g. This document is provided as-is without warranty of any kind…"
-                  defaultValue={oc.disclaimer} onInput={(e) => setOut('disclaimer', e.target.value)} />
+                  value={String(oc.disclaimer == null ? '' : oc.disclaimer)}
+                  onChange={(e) => setOut('disclaimer', e.target.value)} />
               </div>
             </>)}
           </div>

@@ -23,14 +23,7 @@ const DEFAULT_CFG = {
   track: 'technical', docTypes: ['api'], format: 'markdown', styleGuide: '',
   templateFrom: 'latest', updatePolicy: 'place', versioning: 'semver-patch',
   gate: 85, minAssistant: 0, autoFix: true, requireApproval: false, approvalGate: false,
-  publishTo: 'workspace', notifyEmail: '', notifyOn: { success: true, blocked: true, failure: true }
-};
-
-const OUTCOME_TAG = {
-  published: ['tag--green', 'Published'],
-  held: ['tag--red', 'Gate blocked'],
-  'awaiting-approval': ['tag--amber', 'Awaiting approval'],
-  skipped: ['tag--gray', 'Filtered out']
+  notifyEmail: '', notifyOn: { success: true, blocked: true, failure: true }
 };
 
 const TRIGGER_LABEL = { webhook: 'Merge (webhook)', simulate: 'Simulated merge', manual: 'Manual run' };
@@ -50,6 +43,31 @@ const WZ_STYLE_GUIDES = [
 
 function fmtWhen(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+// owner/name (GitLab subgroups add more segments) — the shape every code host
+// accepts and the only thing the repository reader can resolve.
+const REPO_RE = /^[\w.-]+(\/[\w.-]+)+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Jira deep link for a run: the URL stored with the run, or rebuilt from the
+// profile's site so runs recorded before the site was configured still link.
+function jiraHref(cfg, jira) {
+  if (!jira || !jira.issue) return '';
+  if (jira.url) return jira.url;
+  const site = String((cfg && cfg.jira && cfg.jira.site) || '').trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(site) ? site + '/browse/' + jira.issue : '';
+}
+
+/* The issue key a run was traced to — a real link when the pipeline knows the
+   Jira site, plain text otherwise. */
+function JiraIssue({ cfg, jira, className }) {
+  const href = jiraHref(cfg, jira);
+  if (!href) return <span className={className}>{jira.issue}</span>;
+  return (
+    <a className={className} href={href} target="_blank" rel="noopener noreferrer"
+      title={'Open ' + jira.issue + ' in Jira'}>{jira.issue} ↗</a>
+  );
 }
 
 /* ---- Automation run helpers: traceable filenames + a clear status model ---- */
@@ -94,11 +112,22 @@ function Adv({ title, children, defaultOpen = false }) {
   );
 }
 
+/* Space/Enter must activate these custom widgets — without it the wizard's
+   update policy and every toggle are mouse-only. */
+function activateKeys(onActivate) {
+  return (e) => {
+    if (!onActivate) return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onActivate(); }
+  };
+}
+
 /* ---------------- Radio row with a one-line explanation ---------------- */
-function RadioRow({ on, label, sub, tag, onClick }) {
+function RadioRow({ on, label, sub, tag, onClick, readOnly = false }) {
   return (
-    <div className={'radioline' + (on ? ' on' : '')} onClick={onClick} role="radio" aria-checked={on}
-      style={{ alignItems: 'flex-start' }}>
+    <div className={'radioline' + (on ? ' on' : '')} onClick={readOnly ? undefined : onClick}
+      role="radio" aria-checked={on} aria-disabled={readOnly || undefined}
+      tabIndex={readOnly ? -1 : on ? 0 : -1} onKeyDown={readOnly ? undefined : activateKeys(onClick)}
+      style={{ alignItems: 'flex-start', cursor: readOnly ? 'default' : undefined }}>
       <span className="rdot" style={{ marginTop: 2 }} />
       <span>
         <span className="body01" style={{ display: 'block', fontWeight: on ? 600 : 400 }}>
@@ -113,7 +142,8 @@ function RadioRow({ on, label, sub, tag, onClick }) {
 /* ---------------- Toggle row ---------------- */
 function Tog({ on, label, sub, onClick }) {
   return (
-    <div className={'toggle' + (on ? ' on' : '')} onClick={onClick} style={{ alignItems: 'flex-start' }}>
+    <div className={'toggle' + (on ? ' on' : '')} onClick={onClick} role="switch" aria-checked={!!on}
+      tabIndex={0} onKeyDown={activateKeys(onClick)} style={{ alignItems: 'flex-start' }}>
       <span className="track" style={{ marginTop: 2 }} />
       <span>
         <span className="body01" style={{ display: 'block' }}>{label}</span>
@@ -159,9 +189,10 @@ function PipelinePreview({ cfg, step, name }) {
     {
       steps: [5], label: 'PUBLISH & NOTIFY',
       lines: [
-        cfg.publishTo === 'workspace' ? 'workspace + export center' : 'export center only',
-        'notify ' + (cfg.notifyEmail || 'account email') + ' · ' +
-          [cfg.notifyOn.success && 'published', cfg.notifyOn.blocked && 'blocked', cfg.notifyOn.failure && 'failed'].filter(Boolean).join(', ')
+        'workspace + export center',
+        'email ' + (cfg.notifyEmail || 'account email') + ' · ' +
+          ([cfg.notifyOn.success && 'published', cfg.notifyOn.blocked && 'blocked', cfg.notifyOn.failure && 'failed']
+            .filter(Boolean).join(', ') || 'no emails')
       ]
     }
   ];
@@ -309,9 +340,49 @@ function Wizard({ existing, catalog, onDone }) {
       || histList.find((g) => g.repo === cfg.repo))
     : null;
 
-  const canNext = step === 0 ? !!cfg.repo : step === 3 ? (cfg.docTypes.length > 0 && !!cfg.format && targetValid) : true;
+  // A plan change can leave a saved pipeline pointing at a format the account
+  // no longer includes — it has to be re-picked here rather than failing mid-run.
+  const formatOk = !!cfg.format && (!formats.length || formats.some((f) => f.id === cfg.format));
+  // A repository picked from the catalogue is trusted as-is; a typed one has to
+  // look like owner/name, or the repository reader can never resolve it.
+  const repoOk = !!cfg.repo && (REPO_RE.test(String(cfg.repo).trim()) || !!(repos && repos.some((r) => r.name === cfg.repo)));
+  const emailOk = !cfg.notifyEmail || EMAIL_RE.test(cfg.notifyEmail);
+
+  // One validity rule per step, shared by the Next button and the step headers,
+  // so jumping ahead can never land on a later step with an earlier one invalid.
+  function stepInvalid(i) {
+    if (i === 0) return repoOk ? '' : cfg.repo ? 'A repository looks like owner/name — e.g. expressjs/express.' : 'Choose a repository first.';
+    if (i === 3) {
+      if (!cfg.docTypes.length) return 'Pick at least one document type.';
+      if (!formatOk) return 'Pick an output format your plan includes (Advanced → Output format).';
+      if (!targetValid) {
+        return repoMismatch
+          ? 'The pinned document belongs to a different repository.'
+          : 'Select the document this pipeline will keep up to date.';
+      }
+    }
+    if (i === 5) return emailOk ? '' : 'Notification email is not a valid address.';
+    return '';
+  }
+  const blockedWhy = stepInvalid(step);
+
+  // Backward navigation is always free; a forward jump stops at the first
+  // incomplete step instead of dropping the user into a config that will fail.
+  function jumpTo(i) {
+    if (i <= step) { setStep(i); return; }
+    for (let k = 0; k < i; k++) {
+      const why = stepInvalid(k);
+      if (why) { setStep(k); toast('info', 'Finish step ' + (k + 1) + ' first', why); return; }
+    }
+    setStep(i);
+  }
+  const stepReachable = (i) => i <= step || !WIZ_STEPS.slice(0, i).some((_, k) => stepInvalid(k));
 
   async function saveProfile() {
+    for (let k = 0; k < WIZ_STEPS.length; k++) {
+      const why = stepInvalid(k);
+      if (why) { setStep(k); toast('error', 'Step ' + (k + 1) + ' needs attention', why); return; }
+    }
     setSaving(true);
     try {
       const body = { name, config: cfg };
@@ -337,13 +408,20 @@ function Wizard({ existing, catalog, onDone }) {
       <h1 className="h04 mt3">{existing ? 'Edit: ' + existing.name : 'New automation pipeline'}</h1>
       <p className="body01 t2 mt3">Configure once — every merge then executes these six steps automatically.</p>
 
-      <div className="wizhead mt6">
-        {WIZ_STEPS.map((s, i) => (
-          <button key={s} className={'wizstep' + (i === step ? ' on' : i < step ? ' done' : '')} onClick={() => setStep(i)}>
-            <span className="wiznum mono">{i < step ? '✓' : i + 1}</span>{s}
-          </button>
-        ))}
-      </div>
+      <nav className="wizhead mt6" aria-label="Setup steps">
+        {WIZ_STEPS.map((s, i) => {
+          const reachable = stepReachable(i);
+          return (
+            <button key={s} type="button" className={'wizstep' + (i === step ? ' on' : i < step ? ' done' : '')}
+              aria-current={i === step ? 'step' : undefined} aria-disabled={reachable ? undefined : true}
+              aria-label={'Step ' + (i + 1) + ' · ' + s + (reachable ? '' : ' — earlier steps are incomplete')}
+              style={reachable ? undefined : { opacity: 0.55 }}
+              onClick={() => jumpTo(i)}>
+              <span className="wiznum mono">{i < step ? '✓' : i + 1}</span>{s}
+            </button>
+          );
+        })}
+      </nav>
 
       <div className="wizgrid mt5">
       <div className="tile tile--white" style={{ padding: 24 }}>
@@ -463,6 +541,7 @@ function Wizard({ existing, catalog, onDone }) {
                 <label htmlFor="wzpath">Only react to changes in these folders</label>
                 <input id="wzpath" className="input" placeholder="src/, api/ — leave empty to watch everything"
                   defaultValue={cfg.pathFilter} onBlur={(e) => set({ pathFilter: e.target.value.trim() })} />
+                <p className="helper">Comma-separated folder prefixes, matched against the changed files a merge reports.</p>
               </div>
               <div className="stack">
                 <Tog on={cfg.jira.enabled} label="Tag each update with its Jira issue"
@@ -483,6 +562,9 @@ function Wizard({ existing, catalog, onDone }) {
                       <input id="wzjsite" className="input" placeholder="https://yourteam.atlassian.net"
                         defaultValue={cfg.jira.site}
                         onBlur={(e) => set({ jira: { ...cfg.jira, site: e.target.value.trim() } })} />
+                      {cfg.jira.site && !/^https?:\/\//i.test(cfg.jira.site)
+                        ? <p className="helper" style={{ color: 'var(--support-error)' }}>Include the scheme — https://yourteam.atlassian.net — or run history cannot link the issue.</p>
+                        : <p className="helper">Turns the issue key on every run into a link to the issue. Leave empty and the key stays plain text.</p>}
                     </div>
                   </div>
                   <div className="stack">
@@ -552,9 +634,8 @@ function Wizard({ existing, catalog, onDone }) {
                 sub="No shared document — every merge produces its own file."
                 onClick={() => set({ updatePolicy: 'create' })} />
               {cfg.updatePolicy === 'update' && (
-                <RadioRow on label="Rewrite the whole document each merge (legacy)"
-                  sub="This pipeline was saved with the older policy — pick any option above to change it."
-                  onClick={() => {}} />
+                <RadioRow on readOnly label="Rewrite the whole document each merge (legacy)"
+                  sub="This pipeline was saved with the older policy — pick any option above to change it." />
               )}
             </div>
 
@@ -603,11 +684,11 @@ function Wizard({ existing, catalog, onDone }) {
                         <button className="btn btn--primary btn--sm btn--center" onClick={() => selectHistoryDoc(suggestion)}>Use this</button>
                       </div>
                     )}
-                    <div className="tgt-tabs">
-                      <button className={'tgt-tab' + (docSource === 'history' ? ' is-on' : '')} onClick={() => setDocSource('history')}>Import History</button>
-                      <button className={'tgt-tab' + (docSource === 'upload' ? ' is-on' : '')} onClick={() => setDocSource('upload')}>Upload</button>
-                      <button className="tgt-tab is-soon" disabled title="Coming soon">Workspace · soon</button>
-                      <button className="tgt-tab is-soon" disabled title="Coming soon">Connected repos · soon</button>
+                    <div className="tgt-tabs" role="tablist" aria-label="Where the document comes from">
+                      <button type="button" role="tab" aria-selected={docSource === 'history'} className={'tgt-tab' + (docSource === 'history' ? ' is-on' : '')} onClick={() => setDocSource('history')}>Import History</button>
+                      <button type="button" role="tab" aria-selected={docSource === 'upload'} className={'tgt-tab' + (docSource === 'upload' ? ' is-on' : '')} onClick={() => setDocSource('upload')}>Upload</button>
+                      <button type="button" className="tgt-tab is-soon" disabled title="Not available yet">Workspace · soon</button>
+                      <button type="button" className="tgt-tab is-soon" disabled title="Not available yet">Connected repos · soon</button>
                     </div>
                     {docSource === 'history' && (
                       <div className="tgt-hist">
@@ -655,14 +736,23 @@ function Wizard({ existing, catalog, onDone }) {
               </div>
             )}
 
-            <Adv title="Advanced — output format, version numbering, template">
+            {!formatOk && (
+              <p className="helper mt3" style={{ color: 'var(--support-error)' }}>
+                {cfg.format
+                  ? 'This pipeline’s output format (' + String(cfg.format).toUpperCase() + ') is not included in your current plan — pick another under Advanced below.'
+                  : 'Choose an output format under Advanced below.'}
+              </p>
+            )}
+
+            <Adv title="Advanced — output format, version numbering, template" defaultOpen={!formatOk}>
               <div className="grid2">
                 <div className="field">
                   <label htmlFor="wzfmt">Output format</label>
-                  <select id="wzfmt" className="select" value={cfg.format} onChange={(e) => set({ format: e.target.value })}>
+                  <select id="wzfmt" className="select" value={formatOk ? cfg.format : ''} onChange={(e) => set({ format: e.target.value })}>
                     <option value="">Select…</option>
                     {formats.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                   </select>
+                  <p className="helper">Formats your plan includes. Automation runs produce this format.</p>
                 </div>
                 <div className="field">
                   <label htmlFor="wzver">Version numbering</label>
@@ -709,30 +799,39 @@ function Wizard({ existing, catalog, onDone }) {
 
         {step === 5 && (
           <>
-            <h2 className="h02 mb2">Step 6 · Publishing &amp; notifications</h2>
-            <div className="grid2 mt5">
-              <div className="field">
-                <label htmlFor="wzpub">Publish destination</label>
-                <select id="wzpub" className="select" value={cfg.publishTo} onChange={(e) => set({ publishTo: e.target.value })}>
-                  <option value="workspace">Workspace — dashboard &amp; export center</option>
-                  <option value="export">Export center only</option>
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="wzmail">Notification email</label>
-                <input id="wzmail" className="input" placeholder="defaults to your account email"
-                  defaultValue={cfg.notifyEmail} onBlur={(e) => set({ notifyEmail: e.target.value.trim() })} />
-              </div>
+            <h2 className="h02 mb2">Step 6 · Where output lands &amp; who hears about it</h2>
+
+            <p className="label01 t2 mb2 mt5">WHERE EVERY RUN LANDS</p>
+            <div className="tile" style={{ padding: 16 }}>
+              <p className="body01">Your Docify workspace — the document appears under Documents, and every run in this
+                pipeline&rsquo;s history with a download in your chosen format.</p>
+              <p className="helper mt2">
+                Docify reads your repository and never writes to it: no commits, no branches, no pull requests.
+                Getting output back into your repo or wiki is a manual step you control.
+              </p>
             </div>
-            <p className="label01 t2 mb3">NOTIFY ON</p>
+
+            <p className="label01 t2 mb3 mt6">EMAIL ME WHEN</p>
             <div className="stack">
-              <Tog on={cfg.notifyOn.success} label="Published" sub="A run cleared every check and shipped"
+              <Tog on={cfg.notifyOn.success} label="A run publishes" sub="It cleared the quality gate and the ranking floor"
                 onClick={() => set({ notifyOn: { ...cfg.notifyOn, success: !cfg.notifyOn.success } })} />
-              <Tog on={cfg.notifyOn.blocked} label="Gate blocked / awaiting approval" sub="A run needs your attention"
+              <Tog on={cfg.notifyOn.blocked} label="A run is gate-blocked or waiting for approval" sub="It finished scoring but did not publish"
                 onClick={() => set({ notifyOn: { ...cfg.notifyOn, blocked: !cfg.notifyOn.blocked } })} />
-              <Tog on={cfg.notifyOn.failure} label="Run failed" sub="The pipeline itself errored"
+              <Tog on={cfg.notifyOn.failure} label="A run fails" sub="The pipeline itself errored"
                 onClick={() => set({ notifyOn: { ...cfg.notifyOn, failure: !cfg.notifyOn.failure } })} />
             </div>
+            <div className="field mt5">
+              <label htmlFor="wzmail">Notification email</label>
+              <input id="wzmail" className="input" placeholder="defaults to your account email"
+                defaultValue={cfg.notifyEmail} onBlur={(e) => set({ notifyEmail: e.target.value.trim() })} />
+              {!emailOk && <p className="helper" style={{ color: 'var(--support-error)' }}>Enter a valid address, or leave it empty to use your account email.</p>}
+            </div>
+            <p className="helper mt3">
+              Email is sent only when this Docify deployment has mail delivery configured — otherwise the run
+              is still recorded here, with nothing sent. Two outcomes end the run before scoring and send no
+              email: a merge the relevance engine filters out, and a merge held because it carried no Jira
+              issue. Both appear in this pipeline&rsquo;s run history.
+            </p>
             <div className="field mt5">
               <label htmlFor="wzname">Pipeline name</label>
               <input id="wzname" className="input" defaultValue={name} onBlur={(e) => setName(e.target.value.trim() || 'Documentation pipeline')} />
@@ -740,11 +839,12 @@ function Wizard({ existing, catalog, onDone }) {
           </>
         )}
 
-        <div className="row row--between mt6">
+        <div className="row row--between mt6" style={{ alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <button className="btn btn--ghost btn--center" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>← Back</button>
+          {blockedWhy && <span className="helper" style={{ color: 'var(--support-error)' }}>{blockedWhy}</span>}
           {step < 5
-            ? <button className="btn btn--primary" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>Next<span className="ico">→</span></button>
-            : <button className="btn btn--primary" disabled={saving} onClick={saveProfile}>{saving ? 'Saving…' : existing ? 'Save changes' : 'Create pipeline'}<span className="ico">✓</span></button>}
+            ? <button className="btn btn--primary" disabled={!!blockedWhy} onClick={() => setStep((s) => s + 1)}>Next<span className="ico">→</span></button>
+            : <button className="btn btn--primary" disabled={saving || !!blockedWhy} onClick={saveProfile}>{saving ? 'Saving…' : existing ? 'Save changes' : 'Create pipeline'}<span className="ico">✓</span></button>}
         </div>
       </div>
       <PipelinePreview cfg={cfg} step={step} name={name} />
@@ -837,7 +937,8 @@ function PlacementStudio({ profile, onEdit }) {
               <input id="pvfiles" className="input" value={files} onChange={(e) => setFiles(e.target.value)} />
             </div>
           </div>
-          <button className="btn btn--primary" disabled={busy} onClick={findLoc}>{busy ? 'Finding…' : 'Find location'}<span className="ico">→</span></button>
+          <button className="btn btn--primary" disabled={busy || !msg.trim()} onClick={findLoc}>{busy ? 'Finding…' : 'Find location'}<span className="ico">→</span></button>
+          {!msg.trim() && <p className="helper mt2">Enter a commit message to preview where its change would land.</p>}
 
           {P && (
             <div className="grid2 mt5" style={{ alignItems: 'start' }}>
@@ -852,13 +953,20 @@ function PlacementStudio({ profile, onEdit }) {
                 <div style={{ height: 6, background: 'var(--border-subtle)', marginTop: 10 }}>
                   <div style={{ height: 6, width: (chosen ? chosen.confidence : P.confidence) + '%', background: 'var(--button-primary)' }} />
                 </div>
-                <p className="helper mt2">{(chosen ? chosen.confidence : P.confidence)}% match{pv.jira && pv.jira.matched ? ' · ' + pv.jira.issue + ' → commit' : ''}</p>
+                <p className="helper mt2">
+                  {(chosen ? chosen.confidence : P.confidence)}% match
+                  {pv.jira && pv.jira.matched && (
+                    <> · <JiraIssue cfg={cfg} jira={pv.jira} /> → commit</>
+                  )}
+                </p>
                 <p className="helper mt3">{P.reason}</p>
               </div>
               <div className="tile" style={{ padding: 16 }}>
                 <p className="label01 t2 mb2">OTHER CANDIDATES</p>
                 {cands ? cands.map((c, i) => (
-                  <div key={i} className="prun" style={{ cursor: 'pointer', marginBottom: 8, padding: 10, ...(i === sel ? { outline: '2px solid var(--button-primary)', outlineOffset: '-2px' } : {}) }} onClick={() => setSel(i)}>
+                  <div key={i} className="prun" role="button" tabIndex={0} aria-pressed={i === sel}
+                    onKeyDown={activateKeys(() => setSel(i))}
+                    style={{ cursor: 'pointer', marginBottom: 8, padding: 10, ...(i === sel ? { outline: '2px solid var(--button-primary)', outlineOffset: '-2px' } : {}) }} onClick={() => setSel(i)}>
                     <div className="row row--between"><span className="body01" style={{ fontSize: 13 }}>{c.title}</span><span className="mono helper">{c.confidence}%</span></div>
                     <div style={{ height: 4, background: 'var(--border-subtle)', marginTop: 6 }}><div style={{ height: 4, width: c.confidence + '%', background: 'var(--button-primary)' }} /></div>
                     <p className="helper mt2">p.{c.page} · {c.mode === 'insert-new' ? 'new sub-section' : 'update in place'}</p>
@@ -879,14 +987,18 @@ function RunProgress({ genId }) {
   const [g, setG] = useState(null);
   useEffect(() => {
     if (!genId) return undefined;
-    let alive = true; let t;
+    let alive = true; let t; let tries = 0;
     const poll = async () => {
       try {
         const d = await api('/generations/' + genId);
         if (!alive) return;
         setG(d.generation);
         if (d.generation.status === 'running' || d.generation.status === 'queued') t = setTimeout(poll, 1200);
-      } catch { t = setTimeout(poll, 2500); }
+      } catch {
+        // Bounded retry, and never after unmount — a failing endpoint used to
+        // leave a permanent poll running once the user navigated away.
+        if (alive && tries++ < 8) t = setTimeout(poll, 2500);
+      }
     };
     poll();
     return () => { alive = false; clearTimeout(t); };
@@ -911,15 +1023,23 @@ function Detail({ id, onBack, onEdit }) {
   const [p, setP] = useState(null);
   const [ins, setIns] = useState(null);
   const [showSecret, setShowSecret] = useState(false);
+  const [err, setErr] = useState('');
   const pollRef = useRef(null);
 
   async function load() {
     const d = await api('/profiles/' + id);
     setP(d.profile);
-    api('/profiles/' + id + '/insights').then(setIns).catch(() => {});
+    setErr('');
+    api('/profiles/' + id + '/insights').then(setIns).catch(() => setIns({ summary: { runs: 0 }, series: [] }));
     return d.profile;
   }
-  useEffect(() => { load().catch(() => {}); return () => clearTimeout(pollRef.current); }, [id]);
+  // A deleted or unreachable pipeline must say so — the page used to sit on
+  // "Loading…" forever.
+  useEffect(() => {
+    setP(null); setIns(null); setErr('');
+    load().catch((e) => setErr(e.message || 'Could not load this pipeline'));
+    return () => clearTimeout(pollRef.current);
+  }, [id]);
   useEffect(() => {
     if (!p) return undefined;
     if (!(p.runs || []).some((r) => r.status === 'running')) return undefined;
@@ -927,6 +1047,18 @@ function Detail({ id, onBack, onEdit }) {
     return () => clearTimeout(pollRef.current);
   }, [p]);
 
+  if (err) {
+    return (
+      <div>
+        <button className="linkbtn" onClick={onBack}>← All pipelines</button>
+        <div className="tile tile--white mt5" style={{ padding: 24, maxWidth: 640 }}>
+          <h2 className="h02">This pipeline could not be loaded</h2>
+          <p className="helper mt2">{err}</p>
+          <button className="btn btn--tertiary mt3" onClick={() => { setErr(''); load().catch((e) => setErr(e.message || 'Could not load this pipeline')); }}>Try again</button>
+        </div>
+      </div>
+    );
+  }
   if (!p) return <p className="body01 t2">Loading…</p>;
   const cfg = p.config;
   const origin = window.location.origin.replace(':5173', ':4000');
@@ -970,13 +1102,16 @@ function Detail({ id, onBack, onEdit }) {
   }
   async function runNow() {
     try {
-      await api('/profiles/' + p.id + '/run', { method: 'POST', body: { simulate: true } });
+      // No simulate flag: this is a real manual run and must be recorded as one,
+      // not filed in history as a simulated merge.
+      await api('/profiles/' + p.id + '/run', { method: 'POST', body: {} });
       toast('success', 'Run started', 'It runs right here — watch the progress below.');
       load();
     } catch (e) { toast('error', 'Could not start run', e.message); }
   }
 
-  const series = ins ? ins.series : [];
+  const series = (ins && ins.series) || [];
+  const insReady = !!(ins && ins.summary);
 
   return (
     <div>
@@ -987,7 +1122,8 @@ function Detail({ id, onBack, onEdit }) {
           <span className={'tag ' + (p.status === 'active' ? 'tag--green' : 'tag--gray')}>{p.status === 'active' ? 'Active' : 'Paused'}</span>
         </div>
         <div className="row">
-          <button className="btn btn--primary btn--sm" disabled={p.status !== 'active'} onClick={runNow}>Run now</button>
+          <button className="btn btn--primary btn--sm" disabled={p.status !== 'active'} onClick={runNow}
+            title="Runs this pipeline once now — a real generation that uses your document quota">Run now</button>
           <button className="btn btn--tertiary btn--sm" onClick={() => onEdit(p)}>Edit</button>
           <button className="btn btn--ghost btn--sm" onClick={async () => { await api('/profiles/' + p.id, { method: 'PUT', body: { status: p.status === 'active' ? 'paused' : 'active' } }); load(); }}>
             {p.status === 'active' ? 'Pause' : 'Resume'}
@@ -997,7 +1133,7 @@ function Detail({ id, onBack, onEdit }) {
       <div className="row mt3" style={{ flexWrap: 'wrap', gap: 6 }}>
         <span className="tag tag--gray">{cfg.repo || 'no repository'}</span>
         <span className="tag tag--gray">merge → {cfg.branch}</span>
-        <span className="tag tag--blue">{cfg.docTypes.join(', ')} · {String(cfg.format).toUpperCase()}</span>
+        <span className="tag tag--blue">{(cfg.docTypes || []).join(', ') || 'no document types'} · {String(cfg.format || '').toUpperCase()}</span>
         <span className="tag tag--outline">policy: {cfg.updatePolicy === 'place' ? 'contextual placement' : cfg.updatePolicy}</span>
         <span className="tag tag--outline">gate ≥ {cfg.gate}{cfg.minAssistant ? ' · rank ≥ ' + cfg.minAssistant + '%' : ''}</span>
         {cfg.autoFix && <span className="tag tag--green">auto-fix</span>}
@@ -1023,18 +1159,24 @@ function Detail({ id, onBack, onEdit }) {
           <p className="helper mt3"><b>GitHub</b> — Settings → Webhooks: JSON content type, paste the secret · <b>GitLab</b> — secret as Secret token · <b>Bitbucket</b> — append <span className="mono">?token=&lt;secret&gt;</span>.</p>
           <div className="divider" style={{ margin: '16px 0' }} />
           <h2 className="h02 mb3">Simulate a merge</h2>
-          <p className="helper mb3">Exercises the exact webhook path — including the create / update / version / sections decision.</p>
+          <p className="helper mb3">
+            Exercises the exact webhook path — including the create / update / version / sections decision.
+            Each simulation is a real generation: it consumes one document from your monthly quota per
+            document type, and it runs even while the pipeline is paused.
+          </p>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <button className="btn btn--tertiary btn--sm" onClick={() => simulate('routine')}>Routine merge</button>
             <button className="btn btn--tertiary btn--sm" onClick={() => simulate('impact')}>Auth + error files changed</button>
             <button className="btn btn--tertiary btn--sm" onClick={() => simulate('release')}>Release merge (v3.0.0)</button>
-            <button className="btn btn--tertiary btn--sm" onClick={() => simulate('jira')}>Jira-linked merge ({(cfg.jira && cfg.jira.projectKey) || 'KAN'}-42)</button>
+            {cfg.jira && cfg.jira.enabled && (
+              <button className="btn btn--tertiary btn--sm" onClick={() => simulate('jira')}>Jira-linked merge ({cfg.jira.projectKey || 'KAN'}-42)</button>
+            )}
           </div>
         </div>
 
         <div className="tile tile--white" style={{ padding: 24 }}>
           <h2 className="h02 mb3">Effectiveness</h2>
-          {ins && ins.summary.runs > 0 ? (
+          {insReady && ins.summary.runs > 0 ? (
             <>
               <div className="row" style={{ gap: 24, flexWrap: 'wrap' }}>
                 <div><p className="metricsm mono">{ins.summary.publishRate}%</p><p className="helper">publish rate</p></div>
@@ -1054,7 +1196,8 @@ function Detail({ id, onBack, onEdit }) {
                 </p>
               )}
             </>
-          ) : <p className="helper">No completed runs yet — simulate a merge to see trends.</p>}
+          ) : ins === null ? <p className="helper">Loading trends…</p>
+            : <p className="helper">No completed runs yet — simulate a merge to see trends.</p>}
         </div>
       </div>
 
@@ -1075,7 +1218,7 @@ function Detail({ id, onBack, onEdit }) {
                   <span className={'tag ' + scls}>{slabel}</span>
                   {r.status === 'complete' && r.overall != null && <ScoreTag n={r.overall} />}
                   <span className="body01" style={{ fontWeight: 600 }}>{TRIGGER_LABEL[r.trigger] || r.trigger}</span>
-                  {r.jira && r.jira.matched && <span className="tag tag--outline">{r.jira.issue}</span>}
+                  {r.jira && r.jira.matched && <JiraIssue cfg={cfg} jira={r.jira} className="tag tag--outline" />}
                   {r.version ? <span className="tag tag--blue">v{r.version}</span> : null}
                   {r.grounded === false && <span className="tag tag--red">Template fallback</span>}
                   <span className="helper" style={{ marginLeft: 'auto' }}>{fmtWhen(r.at)}</span>
@@ -1157,7 +1300,7 @@ export default function Automation() {
         await api('/profiles/' + p.id, { method: 'DELETE' });
         toast('info', 'Pipeline deleted', p.name);
       } else if (action === 'run') {
-        await api('/profiles/' + p.id + '/run', { method: 'POST', body: { simulate: true } });
+        await api('/profiles/' + p.id + '/run', { method: 'POST', body: {} });
         toast('success', 'Run started', 'Watch it run — progress and download appear on the pipeline page.');
         nav('/automation/' + p.id);
         return;

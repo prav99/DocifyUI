@@ -1,7 +1,8 @@
 import { Router } from 'express';
+import cluster from 'node:cluster';
 import { prisma } from './db.js';
 import { requireAuth, freshToken } from './auth.js';
-import { SOURCES, DOCTYPES, FORMATS, PLANS, PLAN_LIMITS, planLimits, formatAllowed, CI_YAML, docTypeName, formatDef } from './catalog.js';
+import { SOURCES, DOCTYPES, FORMATS, PLANS, PLAN_LIMITS, planLimits, formatAllowed, docTypeName, formatDef } from './catalog.js';
 import { rateLimiter } from './ratelimit.js';
 import { documentsUsedThisMonth, quotaError, reserveDocumentQuota, releaseDocumentQuota } from './quota.js';
 import { listRepos, listOrgRepos as ghOrgRepos, listBranches as ghBranches } from './adapters/github.js';
@@ -23,7 +24,7 @@ import { buildReportModel, renderReportHtml, renderReportPdf, renderReportPptx, 
 import { fetchRepoFiles, fetchRepoFilesResolved } from './adapters/repofiles.js';
 import { buildDocx, buildPdf } from './adapters/exporters.js';
 import { charge, paymentsLive } from './adapters/stripe.js';
-import { sendMail } from './adapters/mailer.js';
+import { sendMail, mailEnabled } from './adapters/mailer.js';
 import { SUPPORT_EMAIL } from './config.js';
 import { syncRouter } from './docsync.js';
 import { hubRouter, resolveEffectiveConfig, invalidateCatalogue } from './repohub.js';
@@ -36,6 +37,9 @@ export const apiRouter = Router();
 // message body can never inject markup into the email we send ourselves.
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Where the app is served from — used for links inside outgoing mail.
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const j = (s, fb) => { try { return JSON.parse(s); } catch { return fb; } };
@@ -67,7 +71,8 @@ apiRouter.post('/waitlist', async (req, res) => {
 /* ---------- Contact / support form (public) ----------
    Emails the customer's message to SUPPORT_EMAIL via the mail adapter. With
    SMTP configured (see server/.env.example) it sends real mail; without it the
-   adapter logs to the server console, so the flow works in dev with zero keys.
+   adapter only logs to the console, so this route refuses rather than telling a
+   customer their enquiry was sent when it went nowhere.
    No secrets are ever exposed to the browser — the client only POSTs the form. */
 apiRouter.post('/contact', async (req, res) => {
   const { name = '', email = '', topic = '', message = '' } = req.body || {};
@@ -93,10 +98,22 @@ apiRouter.post('/contact', async (req, res) => {
     `<p style="white-space:pre-wrap">${escapeHtml(cleanMessage)}</p>`
   ].join('\n');
 
+  // Without SMTP the adapter prints a line to the console and returns
+  // successfully — which used to surface as "Message sent" while the enquiry
+  // was lost. Say so instead, and log it where an operator will see it.
+  if (!mailEnabled()) {
+    console.error('[contact] SMTP is not configured — enquiry from ' + cleanEmail +
+      ' (' + (cleanTopic || 'no topic') + ') could NOT be delivered and was not stored.');
+    return res.status(503).json({
+      error: 'Message delivery is not configured on this server, so we could not send your message. Please email ' + SUPPORT_EMAIL + ' directly.',
+      delivered: false, contact: true
+    });
+  }
+
   try {
     // replyTo lets the support team reply straight to the customer.
     await sendMail(SUPPORT_EMAIL, subject, html, { replyTo: cleanEmail });
-    res.json({ ok: true });
+    res.json({ ok: true, delivered: true });
   } catch (e) {
     console.error('contact send failed', e);
     res.status(502).json({ error: 'Could not send your message right now — please email us directly.' });
@@ -113,6 +130,10 @@ apiRouter.post('/contact', async (req, res) => {
    push, and a generic { repo, branch, commit } body for custom CI. */
 // Normalize a git event across providers, keeping the merge metadata the
 // document-handling engine analyzes: branch, commit, message, changed files.
+// `filesKnown` records whether the payload actually carried a changed-file
+// list. GitHub's merged-PR payload and Bitbucket's push payload do not, and an
+// empty list there means "unknown", not "nothing changed" — the difference
+// decides whether the path filter can be applied at all.
 function normalizeGitEvent(b = {}) {
   if (b.ref && String(b.ref).startsWith('refs/heads/')) { // GitHub / GitLab push
     const commits = Array.isArray(b.commits) ? b.commits : [];
@@ -123,7 +144,7 @@ function normalizeGitEvent(b = {}) {
       commit: (b.head_commit && b.head_commit.id) || b.checkout_sha || b.after || '',
       message: (b.head_commit && b.head_commit.message) || (commits[0] && commits[0].message) || '',
       repo: (b.repository && b.repository.full_name) || (b.project && b.project.path_with_namespace) || '',
-      files
+      files, filesKnown: commits.length > 0
     };
   }
   if (b.pull_request && b.action === 'closed' && b.pull_request.merged) { // GitHub merged PR
@@ -133,7 +154,10 @@ function normalizeGitEvent(b = {}) {
       commit: b.pull_request.merge_commit_sha || '',
       message: b.pull_request.title || '',
       repo: (b.repository && b.repository.full_name) || '',
-      files: []
+      // GitHub sends no file list on a pull_request event — reading it needs an
+      // authenticated call to /pulls/:n/files, which this public receiver has no
+      // credentials for.
+      files: [], filesKnown: false, filesWhy: 'GitHub pull-request payloads carry no changed-file list'
     };
   }
   if (b.push && Array.isArray(b.push.changes)) { // Bitbucket push
@@ -144,7 +168,7 @@ function normalizeGitEvent(b = {}) {
       commit: (ch && ch.new && ch.new.target && ch.new.target.hash) || '',
       message: (ch && ch.new && ch.new.target && ch.new.target.message) || '',
       repo: (b.repository && b.repository.full_name) || '',
-      files: []
+      files: [], filesKnown: false, filesWhy: 'Bitbucket push payloads carry no changed-file list'
     };
   }
   if (b.branch) { // generic (custom CI)
@@ -152,7 +176,8 @@ function normalizeGitEvent(b = {}) {
       kind: b.kind === 'mergedPr' ? 'mergedPr' : 'push',
       branch: String(b.branch), commit: String(b.commit || ''),
       message: String(b.message || ''), repo: String(b.repo || ''),
-      files: Array.isArray(b.files) ? b.files.map(String) : []
+      files: Array.isArray(b.files) ? b.files.map(String) : [],
+      filesKnown: Array.isArray(b.files)
     };
   }
   return null;
@@ -268,16 +293,25 @@ apiRouter.post('/webhooks/git/:hookId', async (req, res) => {
     if ((ev.kind === 'push' && !cfg.events.push) || (ev.kind === 'mergedPr' && !cfg.events.mergedPr)) {
       return res.json({ ok: true, action: 'ignored', reason: 'Event type ' + ev.kind + ' is not enabled for this profile' });
     }
-    if (cfg.pathFilter && ev.files.length) {
-      const pats = cfg.pathFilter.split(',').map((s) => s.trim()).filter(Boolean);
-      if (pats.length && !ev.files.some((f) => pats.some((p) => f.includes(p)))) {
+    // Path filter. When the payload carries no file list the filter CANNOT be
+    // evaluated, so the event fails open — but loudly: silently treating
+    // "unknown" as "matches everything" is what made the filter look applied
+    // when it never ran. The note rides into the run record.
+    let pathFilterNote = '';
+    const pats = String(cfg.pathFilter || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (pats.length) {
+      if (!ev.filesKnown) {
+        pathFilterNote = 'Path filter (' + cfg.pathFilter + ') could not be applied: ' +
+          (ev.filesWhy || 'this event carried no changed-file list') + ', so the event was allowed through.';
+        console.warn('[automation] ' + profile.name + ': ' + pathFilterNote);
+      } else if (!ev.files.some((f) => pats.some((p) => f.includes(p)))) {
         return res.json({ ok: true, action: 'ignored', reason: 'No changed file matches the path filter (' + cfg.pathFilter + ')' });
       }
     }
     // Respond immediately; the pipeline runs in the background (webhook
     // senders time out fast). Progress is visible in the run history.
-    profileRun(profile, { ...ev, trigger: 'webhook' }).catch((e) => console.error('profile run', e));
-    return res.json({ ok: true, action: 'regenerating', profile: profile.name });
+    profileRun(profile, { ...ev, trigger: 'webhook', pathFilterNote }).catch((e) => console.error('profile run', e));
+    return res.json({ ok: true, action: 'regenerating', profile: profile.name, ...(pathFilterNote ? { warning: pathFilterNote } : {}) });
   }
 
   const auto = await prisma.automation.findUnique({ where: { id: req.params.hookId } });
@@ -308,9 +342,23 @@ async function liveHealth() {
     out.ok = false;
     out.components.database = { ok: false, error: 'unreachable' };
   }
-  out.components.aiGeneration = { ok: !!process.env.ANTHROPIC_API_KEY, note: process.env.ANTHROPIC_API_KEY ? 'configured' : 'not configured — template fallback active' };
-  out.components.webhooks = { ok: true, note: 'receiver in-process' };
-  out.components.api = { ok: true };
+  // `probe` says how each line was established. Only the database and the API
+  // itself are measured; the other two report CONFIGURATION state, so they are
+  // labelled as configuration and never as a health check we did not run.
+  out.components.database.probe = 'live';
+  out.components.database.label = out.components.database.ok ? 'Operational' : 'Down';
+  const aiKey = !!process.env.ANTHROPIC_API_KEY;
+  out.components.aiGeneration = {
+    ok: aiKey, probe: 'config', label: aiKey ? 'Configured' : 'Not configured',
+    note: aiKey
+      ? 'API key configured — configuration state, not a live model call'
+      : 'not configured — template fallback active'
+  };
+  out.components.webhooks = {
+    ok: true, probe: 'config', label: 'Configured',
+    note: 'receiver mounted in this process — individual deliveries are not probed'
+  };
+  out.components.api = { ok: true, probe: 'live', label: 'Operational' };
   return out;
 }
 
@@ -319,10 +367,23 @@ apiRouter.get('/health', async (req, res) => {
   res.status(h.ok ? 200 : 503).json(h);
 });
 
-// One sampler per process; retention 95 days.
+// One sampler per SERVICE — not per process. Production forks one worker per
+// CPU (cluster.js), and every worker runs this module: an unguarded sampler
+// wrote N rows per interval while the uptime denominator stayed at one row per
+// interval, which is what produced 599% uptime on a 6-core box. Worker 1 is the
+// designated sampler; any worker may take over once the last sample is older
+// than two intervals, so a respawned cluster does not stop recording.
 const SAMPLE_EVERY_MS = 5 * 60 * 1000;
+async function shouldSample() {
+  const last = await prisma.statusSample.findFirst({ orderBy: { at: 'desc' } });
+  const age = last ? Date.now() - new Date(last.at).getTime() : Infinity;
+  if (age < SAMPLE_EVERY_MS * 0.9) return false; // this interval is already recorded
+  if (!cluster.isWorker) return true;            // single process (dev, or no cluster)
+  return cluster.worker.id === 1 || age > SAMPLE_EVERY_MS * 2;
+}
 setInterval(async () => {
   try {
+    if (!(await shouldSample())) return;
     const h = await liveHealth();
     await prisma.statusSample.create({
       data: {
@@ -342,17 +403,30 @@ apiRouter.get('/status', async (req, res) => {
     prisma.statusSample.findMany({ where: { at: { gte: new Date(now - 90 * 864e5) } }, orderBy: { at: 'asc' } })
       .catch(() => [])
   ]);
+  // One interval, one data point. Historic rows were written by every worker in
+  // the cluster, so the stored history still contains duplicates — collapsing
+  // them here keeps uptime, the bar strip, and the incident log counting each
+  // five-minute interval exactly once. A failed sample wins its interval: a
+  // degraded reading must never be hidden by a healthy duplicate.
+  const byInterval = new Map();
+  for (const s of samples) {
+    const slot = Math.floor(new Date(s.at).getTime() / SAMPLE_EVERY_MS);
+    const prev = byInterval.get(slot);
+    if (!prev || (prev.ok && !s.ok)) byInterval.set(slot, s);
+  }
+  const points = [...byInterval.values()].sort((a, b) => new Date(a.at) - new Date(b.at));
   // Uptime per window: expected one sample per 5 minutes; missing or failed
   // samples both count against uptime.
   const uptime = {};
   for (const [label, ms] of [['24h', 864e5], ['7d', 7 * 864e5], ['30d', 30 * 864e5]]) {
-    const inWin = samples.filter((s) => now - new Date(s.at).getTime() <= ms);
+    const inWin = points.filter((s) => now - new Date(s.at).getTime() <= ms);
     const expected = Math.max(1, Math.floor(ms / SAMPLE_EVERY_MS));
     const okCount = inWin.filter((s) => s.ok).length;
     // A young deployment has fewer samples than the window expects — measure
-    // against observed history, never claim more than we can prove.
+    // against observed history, never claim more than we can prove. Clamped at
+    // 100 so no counting error can ever publish an impossible number.
     uptime[label] = inWin.length
-      ? Math.round((okCount / Math.min(expected, Math.max(inWin.length, 1))) * 1000) / 10
+      ? Math.min(100, Math.round((okCount / Math.min(expected, Math.max(inWin.length, 1))) * 1000) / 10)
       : null;
   }
   // Daily buckets for the 90-day bar strip.
@@ -360,7 +434,7 @@ apiRouter.get('/status', async (req, res) => {
   for (let i = 89; i >= 0; i--) {
     const dayStart = new Date(new Date(now - i * 864e5).toISOString().slice(0, 10));
     const dayEnd = new Date(dayStart.getTime() + 864e5);
-    const inDay = samples.filter((s) => new Date(s.at) >= dayStart && new Date(s.at) < dayEnd);
+    const inDay = points.filter((s) => new Date(s.at) >= dayStart && new Date(s.at) < dayEnd);
     const okc = inDay.filter((s) => s.ok).length;
     days.push({
       date: dayStart.toISOString().slice(0, 10),
@@ -370,7 +444,7 @@ apiRouter.get('/status', async (req, res) => {
   // Incidents: consecutive failed samples in the last 30 days.
   const incidents = [];
   let run = null;
-  for (const s of samples.filter((x) => now - new Date(x.at).getTime() <= 30 * 864e5)) {
+  for (const s of points.filter((x) => now - new Date(x.at).getTime() <= 30 * 864e5)) {
     if (!s.ok) {
       if (!run) run = { start: s.at, end: s.at, samples: 0 };
       run.end = s.at; run.samples++;
@@ -385,7 +459,7 @@ apiRouter.get('/status', async (req, res) => {
     incidents: incidents.slice(-10).reverse().map((i) => ({
       start: i.start, end: i.end, approxMinutes: i.samples * 5
     })),
-    monitoringSince: samples.length ? samples[0].at : null,
+    monitoringSince: points.length ? points[0].at : null,
     generatedAt: new Date().toISOString()
   });
 });
@@ -949,7 +1023,10 @@ function serializeGen(g, opts = {}) {
 // Ordered pipeline stages with live-progress targets. runPipeline advances
 // through these at REAL work boundaries (not a timer): the % shown while a
 // stage is running is its `progress`, and the client eases toward the next.
-function pipelineStages({ provider = 'github', skillName = '', instructions = '', files = [] } = {}) {
+// Reference-file NAMES are stored with a generation, but nothing reads their
+// contents — so no stage claims them. Only instructions and an uploaded skill,
+// which the prompt genuinely carries, earn a stage here.
+function pipelineStages({ provider = 'github', skillName = '', instructions = '' } = {}) {
   const jira = provider === 'jira';
   const stages = [
     { key: 'parse', label: jira ? 'Reading Jira projects' : 'Parsing repository structure', progress: 8 },
@@ -957,7 +1034,7 @@ function pipelineStages({ provider = 'github', skillName = '', instructions = ''
     { key: 'analyse', label: 'Analysing sources & scope', progress: 32 }
   ];
   if (skillName) stages.push({ key: 'skill', label: 'Applying skill: ' + skillName, progress: 40 });
-  if ((instructions && instructions.trim()) || (files && files.length)) {
+  if (instructions && instructions.trim()) {
     stages.push({ key: 'custom', label: 'Applying your instructions', progress: 44 });
   }
   stages.push(
@@ -996,7 +1073,23 @@ function outlinePreviewHtml(title, content) {
 }
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// Generations executing in THIS process. The crash-recovery sweep resumes
+// anything left queued/running, and without this a run that is still mid-flight
+// here would be started a second time — two pipelines writing one row, and two
+// model bills for one document.
+const activeRuns = new Set();
+
 async function runPipeline(genId) {
+  if (activeRuns.has(genId)) return;
+  activeRuns.add(genId);
+  try {
+    await runPipelineOnce(genId);
+  } finally {
+    activeRuns.delete(genId);
+  }
+}
+
+async function runPipelineOnce(genId) {
   // Captured up front so the failure path can refund the reservation even when
   // the row itself is unreadable — that is exactly when a customer is most
   // likely to be charged for nothing.
@@ -1013,7 +1106,7 @@ async function runPipeline(genId) {
     alreadyDelivered = Boolean(gen.content);
     // Real stage tracking: each `mark` fires when actual work reaches that
     // boundary, writing step + stage label + detail + % (never a timer).
-    const stages = pipelineStages({ provider: gen.provider, skillName: gen.skillName, instructions: gen.instructions, files: j(gen.files, []) });
+    const stages = pipelineStages({ provider: gen.provider, skillName: gen.skillName, instructions: gen.instructions });
     const idxOf = (key) => stages.findIndex((s) => s.key === key);
     const mark = async (key, detail = '') => {
       const s = stages.find((x) => x.key === key);
@@ -1382,15 +1475,26 @@ async function runPipeline(genId) {
    resumed automatically — the kept-aiDocs guard inside runPipeline ensures a
    resume can only improve a row, never degrade grounded content. */
 setTimeout(async () => {
+  // Every worker in the cluster runs this module, so the sweep is confined to
+  // one process — otherwise each worker resumes the same rows in parallel.
+  if (cluster.isWorker && cluster.worker.id !== 1) return;
   try {
     const stuck = await prisma.generation.findMany({
-      where: { status: { in: ['queued', 'running'] } },
+      where: {
+        status: { in: ['queued', 'running'] },
+        // A row minted seconds ago belongs to a request that is still running
+        // (possibly in another worker) — resuming it would double-start a live
+        // pipeline. Generation has no updatedAt column, so creation time is the
+        // recency signal available here.
+        createdAt: { lt: new Date(Date.now() - 60000) }
+      },
       orderBy: { createdAt: 'desc' },
       take: 10
     });
-    if (stuck.length) {
-      console.log('recovery: resuming ' + stuck.length + ' interrupted generation(s)');
-      stuck.forEach((g, i) => setTimeout(() => runPipeline(g.id).catch((e) => console.error('recovery run failed:', e.message)), i * 4000));
+    const resumable = stuck.filter((g) => !activeRuns.has(g.id));
+    if (resumable.length) {
+      console.log('recovery: resuming ' + resumable.length + ' interrupted generation(s)');
+      resumable.forEach((g, i) => setTimeout(() => runPipeline(g.id).catch((e) => console.error('recovery run failed:', e.message)), i * 4000));
     }
   } catch (e) { console.error('recovery scan skipped:', e.message); }
 }, 8000).unref?.();
@@ -1431,7 +1535,7 @@ apiRouter.post('/generations', async (req, res) => {
   const wanted = Math.max(1, docTypes.length);
   const over = await reserveDocumentQuota(req.uid, req.user.plan, wanted, { generationId: genId, trigger: 'manual' });
   if (over) return res.status(402).json({ ...over, upgrade: true });
-  const steps = buildSteps({ provider, instructions, files, skillName });
+  const steps = buildSteps({ provider, instructions, skillName });
   const gen = await prisma.generation.create({
     data: {
       id: genId,
@@ -1591,7 +1695,9 @@ function serializeReport(rep, gen) {
     } : null,
     aiScore: llmDim ? llmDim.score : aiScore(issues.length, fixed.length),
     fixedCount: fixed.length, remaining: issues.length - fixed.length,
-    title: gen ? gen.title || docTypeName(gen.track, j(gen.docTypes, [])[0]) : ''
+    title: gen ? gen.title || docTypeName(gen.track, j(gen.docTypes, [])[0]) : '',
+    // The document's real age, so nothing downstream has to guess at it.
+    generatedAt: gen ? gen.createdAt : null
   };
 }
 
@@ -1720,14 +1826,18 @@ apiRouter.get('/billing', async (req, res) => {
   const u = await prisma.user.findUnique({ where: { id: req.uid } });
   const p = PLANS[u.plan] || PLANS.free;
   const per = u.plan === 'team' ? (u.billingCycle === 'annual' ? p.annual : p.monthly) : 0;
+  // No processor is connected (adapters/stripe.js simulates), so there is no
+  // subscription and no invoice date to report. Publishing today+1 month would
+  // be inventing a billing event that will never happen.
   const next = new Date();
   if (u.billingCycle === 'annual') next.setFullYear(next.getFullYear() + 1); else next.setMonth(next.getMonth() + 1);
+  const billed = u.plan === 'team' && paymentsLive();
   const limits = planLimits(u.plan);
   const usedDocs = await documentsUsedThisMonth(req.uid);
   const pipelines = await prisma.automationProfile.count({ where: { userId: req.uid } });
   res.json({
     plan: u.plan, cycle: u.billingCycle, seats: u.seats, perSeat: per,
-    nextInvoice: u.plan === 'team' ? next.toISOString().slice(0, 10) : null,
+    nextInvoice: billed ? next.toISOString().slice(0, 10) : null,
     amount: u.plan === 'team' ? (u.billingCycle === 'annual' ? per * u.seats * 12 : per * u.seats) : 0,
     // Live usage against the advertised caps (null limit = unlimited).
     usage: {
@@ -1820,51 +1930,88 @@ apiRouter.get('/team', async (req, res) => {
   res.json({ members: rows });
 });
 
+// Docify has no shared-workspace or accept-invite flow yet, so the mail must
+// not imply one: it tells the recipient a seat was recorded and what that does
+// and does not give them. Claiming "click here to join" would be a promise the
+// product cannot keep.
+function inviteEmailHtml(owner, recipient) {
+  const who = escapeHtml(owner.name || owner.email);
+  return [
+    '<p>' + who + ' (' + escapeHtml(owner.email) + ') added <b>' + escapeHtml(recipient) + '</b> to their team on Docify.</p>',
+    '<p>Docify does not have shared workspaces yet, so this reserves a seat on their account — it does not give you access to their documents, and there is nothing to accept.</p>',
+    '<p>You can create your own account at <a href="' + CLIENT_ORIGIN + '/signup">' + CLIENT_ORIGIN + '/signup</a>.</p>',
+    '<p>Not expecting this? Reply to ' + escapeHtml(owner.email) + ', or contact ' + SUPPORT_EMAIL + '.</p>'
+  ].join('\n');
+}
+
 apiRouter.post('/team/invite', async (req, res) => {
   const { email } = req.body || {};
   if (!email || !String(email).includes('@')) return res.status(400).json({ error: 'A valid email is required' });
+  const clean = String(email).trim();
   // Seats are advertised per plan, so they are enforced. The owner occupies a
   // seat (bootstrapUser creates their TeamMember row), and on Team the ceiling
   // is the number of seats the account actually pays for.
   const seatRule = planLimits(req.user.plan).seats;
   const seatLimit = seatRule === 'purchased' ? Math.max(1, req.user.seats || 5) : seatRule;
-  if (seatLimit != null) {
-    const used = await prisma.teamMember.count({ where: { ownerId: req.uid } });
-    if (used >= seatLimit) {
-      return res.status(402).json({
-        upgrade: true,
-        error: seatLimit === 1
-          ? 'The Free plan is a single seat. Upgrade to invite teammates.'
-          : 'Your plan includes ' + seatLimit + ' seats and all of them are in use. ' +
-            (req.user.plan === 'team' ? 'Add seats from Billing to invite more people.' : 'Upgrade to add more teammates.')
-      });
-    }
+  const existing = await prisma.teamMember.findMany({ where: { ownerId: req.uid } });
+  // Two rows for one address would burn a seat that can only be freed by
+  // guessing which duplicate to remove.
+  if (existing.some((m) => m.email.toLowerCase() === clean.toLowerCase())) {
+    return res.status(400).json({ error: clean + ' is already on your team.' });
+  }
+  if (seatLimit != null && existing.length >= seatLimit) {
+    return res.status(402).json({
+      upgrade: true,
+      error: seatLimit === 1
+        ? 'The Free plan is a single seat. Upgrade to invite teammates.'
+        : 'Your plan includes ' + seatLimit + ' seats and all of them are in use. ' +
+          (req.user.plan === 'team' ? 'Add seats from Billing to invite more people.' : 'Upgrade to add more teammates.')
+    });
   }
   const row = await prisma.teamMember.create({
-    data: { ownerId: req.uid, email: String(email).trim(), status: 'invited', role: 'Writer' }
+    data: { ownerId: req.uid, email: clean, status: 'invited', role: 'Writer' }
   });
-  res.json({ member: row });
+  // The seat is recorded either way; whether an email actually went out is
+  // reported, never assumed — the UI must not say "we emailed them" when no
+  // mail transport exists or the send failed.
+  let emailed = false;
+  let note = '';
+  if (!mailEnabled()) {
+    note = 'The seat is reserved, but no email could be sent — mail delivery is not configured on this server.';
+    console.warn('[team] invite recorded for ' + clean + ' but SMTP is not configured — no email sent');
+  } else {
+    try {
+      await sendMail(clean, 'You were added to a Docify team', inviteEmailHtml(req.user, clean), { replyTo: req.user.email });
+      emailed = true;
+    } catch (e) {
+      note = 'The seat is reserved, but the invitation email could not be delivered (' + (e.message || 'send failed') + ').';
+      console.error('[team] invite email failed for ' + clean + ':', e && e.message);
+    }
+  }
+  res.json({ member: row, emailed, note });
+});
+
+// Removing a member frees the seat. Owner-scoped by ownerId, and the owner's
+// own row is protected: deleting it would leave an account whose seat count no
+// longer includes the person paying for it.
+apiRouter.delete('/team/:id', async (req, res) => {
+  const row = await prisma.teamMember.findFirst({ where: { id: req.params.id, ownerId: req.uid } });
+  if (!row) return res.status(404).json({ error: 'Team member not found' });
+  if (row.role === 'Owner' || row.email.toLowerCase() === String(req.user.email || '').toLowerCase()) {
+    return res.status(400).json({ error: 'You cannot remove yourself from your own team.' });
+  }
+  await prisma.teamMember.delete({ where: { id: row.id } });
+  res.json({ ok: true, removed: row.id });
 });
 
 /* ---------------- Automation: auto-regenerate on merge ----------------
-   End-to-end: a per-user webhook endpoint (HMAC-verified) receives push /
-   merge events from GitHub, GitLab, or Bitbucket, matches the watched
-   branch, clones the user's latest generation config as the template, runs
-   the full pipeline (generate → judge → score), enforces the quality gate,
-   and records every run. "Simulate merge" exercises the identical path. */
-
-async function getAutomation(uid) {
-  let row = await prisma.automation.upsert({
-    where: { userId: uid }, update: {}, create: { userId: uid }
-  });
-  if (!row.secret) {
-    const crypto = await import('node:crypto');
-    row = await prisma.automation.update({
-      where: { id: row.id }, data: { secret: crypto.randomBytes(24).toString('hex') }
-    });
-  }
-  return row;
-}
+   Automation profiles (below) are the product surface. What remains here is
+   the single-automation engine that still serves webhooks registered before
+   profiles existed: a delivery to an Automation row's endpoint clones the
+   user's latest generation as the template, runs the full pipeline
+   (generate → judge → score), enforces the quality gate, and records the run.
+   No route creates Automation rows any more — the CRUD endpoints the old UI
+   used were removed once nothing called them. */
 
 async function latestTemplate(uid) {
   const rows = await prisma.generation.findMany({
@@ -1877,35 +2024,6 @@ function branchMatches(watched, branch) {
   if (!branch) return false;
   if (watched.endsWith('/*')) return branch.startsWith(watched.slice(0, -1));
   return watched === branch;
-}
-
-function ciSnippet(auto, tpl) {
-  const project = tpl ? (tpl.title || 'documentation').toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'your-project-docs';
-  const formats = tpl ? tpl.format : 'dita,markdown';
-  return [
-    'name: docgen-regenerate',
-    'on:',
-    '  push:',
-    '    branches: [' + auto.branch.replace('/*', '/**') + ']',
-    '',
-    'jobs:',
-    '  regenerate-docs:',
-    '    runs-on: ubuntu-latest',
-    '    steps:',
-    '      - uses: actions/checkout@v4',
-    '      - name: Regenerate documentation',
-    '        uses: docgen/generate-action@v2',
-    '        with:',
-    '          api-key: ${{ secrets.DOCGEN_API_KEY }}',
-    '          project: ' + project,
-    '          formats: ' + formats,
-    '          quality-gate: ' + auto.gate,
-    '      - name: Upload quality report',
-    '        uses: actions/upload-artifact@v4',
-    '        with:',
-    '          name: docgen-quality-report',
-    '          path: .docgen/report.html'
-  ].join('\n');
 }
 
 async function recordRun(autoId, run) {
@@ -1930,19 +2048,34 @@ async function triggerRegeneration(uid, auto, { trigger, commit, branch, repo })
     await recordRun(auto.id, { ...base, status: 'skipped', note: 'No completed generation to use as a template — generate a document once first.' });
     return { run: { ...base, status: 'skipped' } };
   }
-  // Automation fires on every merge, so the cap has to hold here too — this
-  // is the path that can run up a bill without anyone watching.
   const owner = await prisma.user.findUnique({ where: { id: uid } });
+  const ownerPlan = owner ? owner.plan : 'free';
+  // The template was generated under whatever plan applied then. A downgrade
+  // since must not keep producing a paid format on every merge — the same gate
+  // POST /generations applies, enforced here too.
+  if (!formatAllowed(ownerPlan, tpl.format)) {
+    const def = formatDef(tpl.track, tpl.format) || {};
+    const note = (def.name || tpl.format) + ' is not included in the ' + (PLANS[ownerPlan] || PLANS.free).name +
+      ' plan, so this run was skipped instead of generating it. Upgrade, or regenerate your template in an included format.';
+    await recordRun(auto.id, { ...base, status: 'skipped', note });
+    return { run: { ...base, status: 'skipped', note } };
+  }
+  // Automation fires on every merge, so the cap has to hold here too — this
+  // is the path that can run up a bill without anyone watching. The generation
+  // id is minted first so the reservation carries it: without one, a failed run
+  // could never hand the documents back.
+  const genId = 'gen_' + (await import('node:crypto')).randomBytes(12).toString('hex');
   const wantedDocs = Math.max(1, j(tpl.docTypes, []).length);
-  const overQuota = await reserveDocumentQuota(uid, owner ? owner.plan : 'free', wantedDocs, { trigger: 'automation' });
+  const overQuota = await reserveDocumentQuota(uid, ownerPlan, wantedDocs, { generationId: genId, trigger: 'automation' });
   if (overQuota) {
     await recordRun(auto.id, { ...base, status: 'skipped', note: overQuota.error });
     return { run: { ...base, status: 'skipped', note: overQuota.error } };
   }
   const steps = ['Merge ' + (commit ? String(commit).slice(0, 7) + ' ' : '') + 'detected on ' + base.branch,
-    ...buildSteps({ provider: 'github', instructions: tpl.instructions, files: j(tpl.files, []), skillName: tpl.skillName || '' })];
+    ...buildSteps({ provider: 'github', instructions: tpl.instructions, skillName: tpl.skillName || '' })];
   const gen = await prisma.generation.create({
     data: {
+      id: genId,
       userId: uid, repo: base.repo || tpl.repo, branch: base.branch, track: tpl.track,
       docTypes: tpl.docTypes, format: tpl.format, instructions: tpl.instructions,
       files: tpl.files, skillName: tpl.skillName || '', skill: tpl.skill || '',
@@ -1979,7 +2112,7 @@ const PROFILE_DEFAULTS = {
   track: 'technical', docTypes: ['api'], format: 'markdown',      // step 4
   templateFrom: 'latest', updatePolicy: 'auto', versioning: 'semver-patch',
   gate: 85, minAssistant: 0, autoFix: true, requireApproval: false, // step 5
-  publishTo: 'workspace', notifyEmail: '',                          // step 6
+  notifyEmail: '',                                                  // step 6
   // Import History approval gate: regenerated documents enter "Under review"
   // and only versions approved there count as publishable.
   approvalGate: false,
@@ -2003,8 +2136,19 @@ const PROFILE_DEFAULTS = {
   ruleSetId: ''
 };
 
+// Wizard fields that nothing in the engine reads. A published document always
+// lands in the workspace and the export centre, so a stored "publish
+// destination" only ever described a choice that did not exist. Dropped on read
+// and on write, so no stored value can imply behaviour the engine lacks.
+const UNUSED_PROFILE_KEYS = ['publishTo'];
+function stripUnusedProfileKeys(config) {
+  const c = { ...(config && typeof config === 'object' ? config : {}) };
+  for (const k of UNUSED_PROFILE_KEYS) delete c[k];
+  return c;
+}
+
 function profCfg(p) {
-  const c = j(p.config, {});
+  const c = stripUnusedProfileKeys(j(p.config, {}));
   return {
     ...PROFILE_DEFAULTS, ...c,
     events: { ...PROFILE_DEFAULTS.events, ...(c.events || {}) },
@@ -2221,7 +2365,10 @@ function computePlacement(cfg, event, jira, existing) {
 
 function bumpVersion(v, strategy) {
   if (strategy === 'date') return new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-  const m = String(v || '2.4.0').match(/(\d+)\.(\d+)\.(\d+)/) || [null, '2', '4', '0'];
+  const m = String(v || '').match(/(\d+)\.(\d+)\.(\d+)/);
+  // A document with no recorded version is AT its first version — bumping from
+  // an assumed 2.4.0 would stamp it with a release history it never had.
+  if (!m) return '1.0.0';
   const [maj, min, pat] = [Number(m[1]), Number(m[2]), Number(m[3])];
   return strategy === 'semver-minor' ? maj + '.' + (min + 1) + '.0' : maj + '.' + min + '.' + (pat + 1);
 }
@@ -2285,6 +2432,16 @@ async function profileRun(profile, event) {
     await save({ at: new Date().toISOString(), trigger: event.trigger, commit: event.commit || '', status: 'skipped', outcome: 'skipped', note });
     return { status: 'skipped', note };
   }
+  // Same format entitlement the one-off wizard enforces. A pipeline created on
+  // a paid plan keeps firing after a downgrade, and generating a format the
+  // plan no longer includes would produce a document its owner cannot download.
+  if (!formatAllowed(runPlan, cfg.format)) {
+    const def = formatDef(cfg.track, cfg.format) || {};
+    const note = (def.name || cfg.format) + ' is not included in the ' + (PLANS[runPlan] || PLANS.free).name +
+      ' plan, so this run was skipped instead of generating it. Upgrade, or change this pipeline to an included format.';
+    await save({ at: new Date().toISOString(), trigger: event.trigger, commit: event.commit || '', status: 'skipped', outcome: 'skipped', note });
+    return { status: 'skipped', note };
+  }
   const jira = resolveJiraLink(cfg, event);
   const decision = await decideDocAction(uid, cfg, event, jira);
   await save({
@@ -2292,6 +2449,9 @@ async function profileRun(profile, event) {
     branch: event.branch || cfg.branch, files: (event.files || []).length,
     action: decision.action, reason: decision.reason, impacted: decision.impacted || [],
     placement: decision.placement || null, jira: jira || null,
+    // Why the configured path filter did not narrow this event, when it could
+    // not be evaluated — visible in the run record instead of silently ignored.
+    ...(event.pathFilterNote ? { pathFilterNote: event.pathFilterNote } : {}),
     status: 'running'
   });
   // Relevance gate: merges classified as internal are logged and skipped —
@@ -2363,7 +2523,7 @@ async function profileRun(profile, event) {
     const steps = [
       'Merge ' + (event.commit ? String(event.commit).slice(0, 7) + ' ' : '') + 'on ' + (event.branch || cfg.branch) +
         (jira && jira.matched ? ' · ' + jira.issue : '') + ' → ' + actionLabel,
-      ...buildSteps({ provider: cfg.provider, instructions: tplRow ? tplRow.instructions : '', files: [], skillName: tplRow ? tplRow.skillName || '' : '' })
+      ...buildSteps({ provider: cfg.provider, instructions: tplRow ? tplRow.instructions : '', skillName: tplRow ? tplRow.skillName || '' : '' })
     ];
     const data = {
       repo: cfg.repo || (tplRow ? tplRow.repo : 'unmapped'), branch: event.branch || cfg.branch,
@@ -2379,18 +2539,22 @@ async function profileRun(profile, event) {
     };
     // An in-place update costs exactly as much model time as a new document,
     // so it consumes quota too — counting Generation rows would let this path
-    // run free on every merge.
+    // run free on every merge. The reservation carries the generation id (the
+    // row being updated, or the id the new row is about to be created with) so
+    // a run that fails outright can hand the documents back.
+    const inPlace = (decision.action === 'update' || decision.action === 'sections' || decision.action === 'place') && decision.existing;
+    const genId = inPlace ? decision.existing.id : 'gen_' + (await import('node:crypto')).randomBytes(12).toString('hex');
     const pipelineDocs = Math.max(1, (cfg.docTypes || []).length);
-    const pipelineOver = await reserveDocumentQuota(uid, (await prisma.user.findUnique({ where: { id: uid } }) || {}).plan || 'free', pipelineDocs, { trigger: 'automation' });
+    const pipelineOver = await reserveDocumentQuota(uid, runPlan, pipelineDocs, { generationId: genId, trigger: 'automation' });
     if (pipelineOver) {
       await save({ status: 'skipped', outcome: 'skipped', note: pipelineOver.error });
       return { status: 'skipped', note: pipelineOver.error };
     }
     let gen;
-    if ((decision.action === 'update' || decision.action === 'sections' || decision.action === 'place') && decision.existing) {
-      gen = await prisma.generation.update({ where: { id: decision.existing.id }, data });
+    if (inPlace) {
+      gen = await prisma.generation.update({ where: { id: genId }, data });
     } else {
-      gen = await prisma.generation.create({ data: { userId: uid, ...data } });
+      gen = await prisma.generation.create({ data: { id: genId, userId: uid, ...data } });
     }
     await save({ genId: gen.id, version });
     await runPipeline(gen.id);
@@ -2452,7 +2616,7 @@ async function profileRun(profile, event) {
       sendMail(to, 'Docify · ' + profile.name + ' — ' + outcome + ' at ' + q.overall + '/100',
         '<p><b>' + decision.action.toUpperCase() + '</b> — ' + decision.reason + '</p>' +
         '<p>Overall ' + q.overall + ' · ChatGPT ' + (probs.chatgpt ?? '—') + '% · Claude ' + (probs.claude ?? '—') + '% · Gemini ' + (probs.gemini ?? '—') + '%</p>' +
-        (holdWhy ? '<p>Held: ' + holdWhy + '</p>' : '<p>Published to ' + cfg.publishTo + '.</p>')
+        (holdWhy ? '<p>Held: ' + holdWhy + '</p>' : '<p>Published to your Docify workspace.</p>')
       ).catch(() => {});
     }
     return { runId, outcome, overall: q.overall };
@@ -2534,7 +2698,7 @@ apiRouter.post('/profiles', async (req, res) => {
     data: {
       userId: req.uid,
       name: String(name || 'Documentation pipeline').slice(0, 80),
-      config: JSON.stringify(config || {}),
+      config: JSON.stringify(stripUnusedProfileKeys(config)),
       secret: await newSecret()
     }
   });
@@ -2554,7 +2718,7 @@ apiRouter.put('/profiles/:id', async (req, res) => {
   if (badCfg) return res.status(400).json({ error: badCfg });
   const data = {};
   if (typeof name === 'string' && name.trim()) data.name = name.trim().slice(0, 80);
-  if (config && typeof config === 'object') data.config = JSON.stringify(config);
+  if (config && typeof config === 'object') data.config = JSON.stringify(stripUnusedProfileKeys(config));
   if (status === 'active' || status === 'paused') data.status = status;
   const updated = await prisma.automationProfile.update({ where: { id: row.id }, data });
   res.json({ profile: serializeProfile(updated) });
@@ -2814,29 +2978,6 @@ apiRouter.get('/profiles/:id/insights', async (req, res) => {
   });
 });
 
-apiRouter.get('/automation', async (req, res) => {
-  const row = await getAutomation(req.uid);
-  const tpl = await latestTemplate(req.uid);
-  res.json({
-    automation: { ...row, runs: j(row.runs, []) },
-    snippet: ciSnippet(row, tpl),
-    webhookUrl: '/api/webhooks/git/' + row.id,
-    template: tpl ? { id: tpl.id, title: tpl.title, repo: tpl.repo, track: tpl.track, docTypes: j(tpl.docTypes, []), format: tpl.format, skillName: tpl.skillName || '' } : null
-  });
-});
-
-apiRouter.put('/automation', async (req, res) => {
-  const { enabled, branch, gate } = req.body || {};
-  const data = {};
-  if (typeof enabled === 'boolean') data.enabled = enabled;
-  if (typeof branch === 'string' && branch.trim()) data.branch = branch.trim();
-  if (Number.isInteger(gate) && gate >= 0 && gate <= 100) data.gate = gate;
-  await getAutomation(req.uid);
-  const row = await prisma.automation.update({ where: { userId: req.uid }, data });
-  const tpl = await latestTemplate(req.uid);
-  res.json({ automation: { ...row, runs: j(row.runs, []) }, snippet: ciSnippet(row, tpl) });
-});
-
 // Real branches of the template repository, from the connected code host.
 // Falls back to the branches we actually know about (template + default)
 // and says so — no invented branch names.
@@ -2859,23 +3000,4 @@ apiRouter.get('/automation/branches', async (req, res) => {
     } catch { /* try the next connected code host */ }
   }
   res.json({ branches: fallback, repo, live: false });
-});
-
-apiRouter.post('/automation/rotate-secret', async (req, res) => {
-  await getAutomation(req.uid);
-  const crypto = await import('node:crypto');
-  const row = await prisma.automation.update({
-    where: { userId: req.uid }, data: { secret: crypto.randomBytes(24).toString('hex') }
-  });
-  res.json({ automation: { ...row, runs: j(row.runs, []) } });
-});
-
-// Manual trigger / "Simulate merge" — exercises the exact webhook path.
-apiRouter.post('/automation/run', async (req, res) => {
-  const auto = await getAutomation(req.uid);
-  const { run } = await triggerRegeneration(req.uid, auto, {
-    trigger: req.body && req.body.trigger === 'simulate' ? 'simulate' : 'manual',
-    commit: 'sim' + Date.now().toString(36).slice(-4), branch: auto.branch.replace('/*', '/next')
-  });
-  res.json({ run });
 });

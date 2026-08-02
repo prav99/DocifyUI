@@ -448,7 +448,7 @@ export const FAQS = [
   },
   {
     q: 'How quickly does Docify pay for itself?',
-    a: 'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. The Team plan is $79 per month billed annually ($99 monthly) and includes five seats — roughly $16 per person. At a typical loaded engineering cost of $75–120 per hour, the whole subscription is covered by about 40–60 minutes of saved documentation work per month across the entire team. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is the 14-day free trial — run it against a real release and compare the result with what that release usually costs you.'
+    a: 'We do not yet publish measured customer savings, so we will not quote one. What we can give you is the arithmetic. The Team plan is $79 per month billed annually ($99 monthly) and includes five seats — roughly $16 per person. At a typical loaded engineering cost of $75–120 per hour, the whole subscription is covered by about 40–60 minutes of saved documentation work per month across the entire team. The cost estimator on this page runs the calculation with your own figures, and the honest way to check it is the free plan — run five documents against a real release and compare the result with what that release usually costs you.'
   }
 ];
 
@@ -909,7 +909,7 @@ export default function Landing() {
             <div className="grid3">
               <div><p className="metricnum">≥ <CountUp to={85} /></p><p className="body01 t2 mt3">The quality score a document must reach before the gate allows it to publish. Below the bar, it waits for a human, not a customer.</p></div>
               <div><p className="metricnum">0</p><p className="body01 t2 mt3">Copies of your repository kept. Files are read at generation time through a read-only grant you can revoke, and are never written to our database.</p></div>
-              <div><p className="metricnum">$<CountUp to={79} /></p><p className="body01 t2 mt3">Per month for a five-seat team on the annual plan — list price, with a 14-day free trial to test on a real release first. The estimator above compares it with your current process.</p></div>
+              <div><p className="metricnum">$<CountUp to={79} /></p><p className="body01 t2 mt3">Per month for a five-seat team on the annual plan — list price. Test the output first on the free plan, then the estimator above compares it with your current process.</p></div>
             </div>
           </Reveal>
         </div>
@@ -956,7 +956,7 @@ export default function Landing() {
             </tbody>
           </table>
           <div className="row mt5" style={{ flexWrap: 'wrap' }}>
-            <span className="helper">Plus DocBook, ePub, XHTML, and MDX outputs · Jira, OpenAPI, and more sources supported in generation.</span>
+            <span className="helper">Plus DocBook XML and ePub outputs · Jira, Confluence, Notion, and OpenAPI sources supported in generation.</span>
           </div>
         </Reveal>
       </div>
@@ -997,7 +997,8 @@ export default function Landing() {
             <p className="helper mt4" style={{ color: '#c6c6c6', maxWidth: 640, lineHeight: 1.6 }}>
               Run the estimator with your own figures, then test the output on your own repository —
               five free generations, no credit card. If the numbers work, Docify Team is $79 a month
-              billed annually ($99 monthly), with five seats included.
+              billed annually ($99 monthly), with five seats included. Online payment is not live yet,
+              so we set paid plans up directly — just get in touch.
             </p>
             <div className="row mt6" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => nav('/signup')}>Start free — 5 documents<span className="ico">→</span></button>

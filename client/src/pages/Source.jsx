@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCatalog } from '../api.js';
 import { useFlow, useAuth, toast } from '../store.jsx';
@@ -52,12 +52,20 @@ function JiraIssuePicker({ cfg, patch, project }) {
   // project changes, so one project's epics never leak into another's list.
   useEffect(() => { setEpics(null); setVersions(null); }, [project]);
   useEffect(() => {
+    let live = true;
     if (mode === 'epic' && epics === null) {
-      api('/jira/epics?project=' + encodeURIComponent(project || '')).then((d) => setEpics(d.epics)).catch(() => setEpics([]));
+      api('/jira/epics?project=' + encodeURIComponent(project || ''))
+        .then((d) => { if (live) setEpics(d.epics); })
+        .catch(() => { if (live) setEpics([]); });
     }
     if (mode === 'release' && versions === null) {
-      api('/jira/versions?project=' + encodeURIComponent(project || '')).then((d) => setVersions(d.versions)).catch(() => setVersions([]));
+      api('/jira/versions?project=' + encodeURIComponent(project || ''))
+        .then((d) => { if (live) setVersions(d.versions); })
+        .catch(() => { if (live) setVersions([]); });
     }
+    // A project switched mid-flight must not have the previous project's
+    // answer land in the list.
+    return () => { live = false; };
   }, [mode, epics, versions, project]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addIssues = (list) => {
@@ -107,7 +115,7 @@ function JiraIssuePicker({ cfg, patch, project }) {
 
       <div className="row mt3" style={{ gap: 6, flexWrap: 'wrap' }}>
         {JIRA_MODES.map(([id, l]) => (
-          <button key={id} type="button" className={'chip' + (mode === id ? ' on' : '')}
+          <button key={id} type="button" className={'chip' + (mode === id ? ' on' : '')} aria-pressed={mode === id}
             onClick={() => { setMode(id); setResults(null); setInvalid([]); setInput(''); }}>{l}</button>
         ))}
       </div>
@@ -237,12 +245,15 @@ function SelChips({ items, onRemove, onClear, noun }) {
   return (
     <div className="mt4">
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        {items.map((i) => (
-          <span key={i.id} className="iskey" title={i.title}>
-            <span className="iskey-sum" style={{ color: '#0043ce' }}>{i.title.length > 38 ? i.title.slice(0, 38) + '…' : i.title}</span>
-            <button type="button" aria-label={'Remove ' + i.title} onClick={() => onRemove(i.id)}>✕</button>
-          </span>
-        ))}
+        {items.map((i) => {
+          const t = i.title || 'Untitled';
+          return (
+            <span key={i.id} className="iskey" title={t}>
+              <span className="iskey-sum" style={{ color: '#0043ce' }}>{t.length > 38 ? t.slice(0, 38) + '…' : t}</span>
+              <button type="button" aria-label={'Remove ' + t} onClick={() => onRemove(i.id)}>✕</button>
+            </span>
+          );
+        })}
       </div>
       <p className="helper mt2">
         {items.length} {noun}{items.length > 1 ? 's' : ''} selected as source material.
@@ -350,7 +361,7 @@ function ConfluencePicker({ cfg, patch, space }) {
       </p>
       <div className="row mt3" style={{ gap: 6, flexWrap: 'wrap' }}>
         {[['browse', 'Browse space'], ['search', 'Search'], ['cql', 'CQL']].map(([id, l]) => (
-          <button key={id} type="button" className={'chip' + (mode === id ? ' on' : '')}
+          <button key={id} type="button" className={'chip' + (mode === id ? ' on' : '')} aria-pressed={mode === id}
             onClick={() => { setMode(id); setResults(null); setQ(''); }}>{l}</button>
         ))}
       </div>
@@ -403,6 +414,12 @@ function OpenApiPicker({ cfg, patch }) {
     const source = method === 'url' ? { url: inp.url.trim() }
       : method === 'paste' ? { text: inp.text }
       : { provider: inp.provider, repo: inp.repo.trim(), branch: inp.branch.trim() || 'main', path: inp.path.trim().replace(/^\//, '') };
+    if (method === 'url' && !source.url) {
+      return toast('error', 'Enter a specification URL', 'The address of your OpenAPI or Swagger file — JSON or YAML.');
+    }
+    if (method === 'paste' && !String(source.text || '').trim()) {
+      return toast('error', 'Paste a specification first', 'JSON or YAML — the whole document.');
+    }
     if (method === 'repo' && (!source.repo || !source.path)) {
       return toast('error', 'Repository and file path are required', 'e.g. acme/payments-api and openapi/openapi.yaml');
     }
@@ -481,7 +498,7 @@ function OpenApiPicker({ cfg, patch }) {
         <>
           <div className="row mt4" style={{ gap: 6, flexWrap: 'wrap' }}>
             {[['url', 'From URL'], ['paste', 'Paste spec'], ['repo', 'From repository']].map(([id, l]) => (
-              <button key={id} type="button" className={'chip' + (method === id ? ' on' : '')}
+              <button key={id} type="button" className={'chip' + (method === id ? ' on' : '')} aria-pressed={method === id}
                 onClick={() => setMethod(id)}>{l}</button>
             ))}
           </div>
@@ -620,7 +637,10 @@ export default function Source() {
   const { flow, setFlow } = useFlow();
   const { user } = useAuth();
   const [catalog, setCatalog] = useState(null);
+  const [catalogErr, setCatalogErr] = useState('');
   const [lists, setLists] = useState({}); // provider -> repo/project list
+  const [listErr, setListErr] = useState({}); // provider -> why the list could not load
+  const [hubErr, setHubErr] = useState('');
   const [waitlistFor, setWaitlistFor] = useState(null);
   const [wlEmail, setWlEmail] = useState(user ? user.email : '');
   const [busy, setBusy] = useState(false);
@@ -633,16 +653,24 @@ export default function Source() {
   const setCfg = (id, patch) =>
     setFlow((f) => ({ srcCfg: { ...(f.srcCfg || {}), [id]: { ...((f.srcCfg || {})[id] || {}), ...patch } } }));
 
-  useEffect(() => { getCatalog().then(setCatalog); }, []);
+  const loadCatalog = useCallback(() => {
+    setCatalogErr('');
+    getCatalog().then(setCatalog).catch((e) => setCatalogErr(e.message));
+  }, []);
+  useEffect(() => { loadCatalog(); }, [loadCatalog]);
   // ONE source of truth: the unified catalogue built from everything the user
   // configured on the Repository Connections page (accounts, organisations,
   // groups, workspaces, individually added repositories). This page never
   // configures connections — it only consumes.
-  useEffect(() => {
+  const loadHub = useCallback(() => {
+    setHubErr('');
     api('/hub/catalogue')
-      .then(setCat)
-      .catch(() => setCat({ providers: {}, orgs: [], repos: [] }));
+      .then((d) => setCat(d))
+      // Swallowing this used to render "No repositories available" — a claim
+      // about the account when the truth is that the request failed.
+      .catch((e) => { setCat({ providers: {}, orgs: [], repos: [] }); setHubErr(e.message); });
   }, []);
+  useEffect(() => { loadHub(); }, [loadHub]);
 
   // Returning from Repository Connections with fresh repos? Auto-select the
   // first one so the user lands exactly where they left off — repo chosen.
@@ -703,18 +731,36 @@ export default function Source() {
       .filter((p) => lists[p] === undefined && PICK_AFTER[p] && (cfg[p] || {}).connected)
       .forEach((p) => {
         setLists((l) => ({ ...l, [p]: null })); // mark loading
+        setListErr((x) => ({ ...x, [p]: '' }));
         api('/repos?provider=' + p)
           .then((d) => setLists((l) => ({ ...l, [p]: d.repos })))
           .catch((e) => {
+            // Kept distinct from an empty list: "nothing found" and "we could
+            // not ask" call for different actions from the user.
             setLists((l) => ({ ...l, [p]: [] }));
+            setListErr((x) => ({ ...x, [p]: e.message }));
             toast('error', 'Could not load list', e.message);
           });
       });
   }, [sources, cfg, lists]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!catalog) return <div className="page"><p className="body01 t2">Loading…</p></div>;
+  if (!catalog) {
+    return (
+      <div className="page">
+        {catalogErr ? (
+          <div className="sync-empty">
+            <p className="h03">Could not load the source catalogue</p>
+            <p className="body01 t2 mt3">{catalogErr}</p>
+            <button className="btn btn--tertiary btn--sm btn--center mt5" onClick={loadCatalog}>Try again</button>
+          </div>
+        ) : <p className="body01 t2" role="status">Loading…</p>}
+      </div>
+    );
+  }
 
-  const byId = (id) => catalog.sources.find((x) => x.id === id);
+  // A flow saved before a source existed (or after one was withdrawn) must not
+  // blank the page — fall back to a placeholder the UI can still render.
+  const byId = (id) => catalog.sources.find((x) => x.id === id) || { id, name: id, desc: '', avail: false };
   // All connection management lives on ONE page. Workflows only link to it.
   const goConnections = () => nav('/repos?return=' + encodeURIComponent('/source'));
 
@@ -761,6 +807,7 @@ export default function Source() {
       });
       // never keep the token in browser state; keep the normalized site + account
       setCfg(id, { connected: true, token: '', info: d.info || null, url: (d.info && d.info.site) || c.url });
+      setListErr((x) => ({ ...x, [id]: '' }));
       setLists((l) => ({ ...l, [id]: undefined })); // (re)load the pick-list
       toast('success', byId(id).name + ' connected',
         d.info && d.info.account ? 'Verified as ' + d.info.account : 'Credentials verified' + (c.url ? ' against ' + c.url : ''));
@@ -773,14 +820,23 @@ export default function Source() {
     setBusy(true);
     try {
       await api('/sources/' + id, { method: 'DELETE' });
-      setCfg(id, { connected: false, sel: '', info: null, token: '' });
+      // Selections belong to the account that was just disconnected — keeping
+      // them would silently carry one account's issues into the next.
+      setCfg(id, {
+        connected: false, sel: '', info: null, token: '',
+        issues: [], items: [], includeChildren: false, scope: '', scopeLabel: '', scopeInput: ''
+      });
       setLists((l) => ({ ...l, [id]: undefined }));
+      setListErr((x) => ({ ...x, [id]: '' }));
       toast('info', byId(id).name + ' disconnected', 'Enter new credentials to reconnect');
     } catch (e) { toast('error', 'Could not disconnect', e.message); }
     finally { setBusy(false); }
   }
 
-  const reloadList = (id) => setLists((l) => ({ ...l, [id]: undefined }));
+  const reloadList = (id) => {
+    setListErr((x) => ({ ...x, [id]: '' }));
+    setLists((l) => ({ ...l, [id]: undefined }));
+  };
 
   // Validate the optional scope (issue IDs / page link) against the provider.
   async function checkScope(id) {
@@ -942,8 +998,10 @@ export default function Source() {
             return (
               <div key={s.id}
                 className={'tile tile--click cbtile' + (on ? ' tile--selected' : '') + (s.avail ? '' : ' tile--disabled')}
-                role="checkbox" aria-checked={on} tabIndex={0}
-                aria-label={s.name + ' — ' + s.desc}
+                // An unavailable source cannot be checked — it opens the
+                // waitlist — so it must not announce itself as a checkbox.
+                role={s.avail ? 'checkbox' : 'button'} aria-checked={s.avail ? on : undefined} tabIndex={0}
+                aria-label={s.name + ' — ' + s.desc + (s.avail ? '' : ' — coming soon, join the waitlist')}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(s); } }}
                 onClick={() => toggle(s)}>
                 <span className="cb">{on ? <IcCheck c="#ffffff" /> : null}</span>
@@ -1030,9 +1088,24 @@ export default function Source() {
                       </button>
                     </div>
 
+                    {hubErr && (
+                      <p className="helper mt3" style={{ color: 'var(--support-error, #da1e28)' }}>
+                        Your repository catalogue could not be loaded: {hubErr}
+                        {' '}<button type="button" className="linkbtn" onClick={loadHub}>Try again</button>
+                      </p>
+                    )}
+                    {/* The catalogue reports WHY a provider came back empty
+                        (expired token, revoked access) — silence here reads as
+                        "you never connected it". */}
+                    {!loading && hostIds.filter((p) => (provs[p] || {}).reason).map((p) => (
+                      <p key={p} className="helper mt2" style={{ color: 'var(--support-error, #da1e28)' }}>
+                        {byId(p).name}: {provs[p].reason} — reconnect the account on Repository Connections.
+                      </p>
+                    ))}
+
                     {loading ? (
-                      <p className="helper mt5">Loading your repository catalogue…</p>
-                    ) : !anyRepos ? (() => {
+                      <p className="helper mt5" role="status">Loading your repository catalogue…</p>
+                    ) : hubErr ? null : !anyRepos ? (() => {
                       // Repositories may exist under a host the user has not
                       // selected. Saying "none available" then would be false —
                       // and sends them to connect something already connected.
@@ -1236,6 +1309,7 @@ export default function Source() {
                                 <select id={'pick-' + id} className="select" value={c.sel || ''} onChange={(e) => setCfg(id, { sel: e.target.value })}>
                                   <option value="" disabled>
                                     {lists[id] === null || lists[id] === undefined ? 'Loading from ' + s.name + '…'
+                                      : listErr[id] ? 'The list could not be loaded'
                                       : (lists[id] || []).length === 0 ? 'Nothing found — check access, then reload'
                                       : 'Choose a ' + PICK_AFTER[id].toLowerCase() + '…'}
                                   </option>
@@ -1245,12 +1319,17 @@ export default function Source() {
                                     </option>
                                   ))}
                                 </select>
-                                {Array.isArray(lists[id]) && lists[id].length === 0 && (
+                                {listErr[id] ? (
+                                  <p className="helper mt2" style={{ color: 'var(--support-error, #da1e28)' }}>
+                                    {listErr[id]}
+                                    {' '}<button className="linkbtn" onClick={() => reloadList(id)}>Try again</button>
+                                  </p>
+                                ) : Array.isArray(lists[id]) && lists[id].length === 0 ? (
                                   <p className="helper mt2">
                                     The account may not have access to any {PICK_AFTER[id].toLowerCase()}s yet.
                                     {' '}<button className="linkbtn" onClick={() => reloadList(id)}>Reload list</button>
                                   </p>
-                                )}
+                                ) : null}
                               </div>
                             )}
                             {id === 'jira' && (

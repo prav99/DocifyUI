@@ -19,7 +19,16 @@ const APPROVAL_TAG = {
   published: ['tag--blue', 'Published']
 };
 
-const fmtDate = (iso) => { try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return '—'; } };
+/* Keyed by the state the server reports AFTER the change, never by the
+   transition that was requested. */
+const APPROVAL_TOAST = {
+  draft: ['Back to draft', 'It is no longer approved or published.'],
+  review: ['Sent for review', 'It is now waiting for a review decision.'],
+  approved: ['Approved', 'Publish it when you are ready for your pipeline to distribute it.'],
+  published: ['Published', 'This version is now the one your pipeline distributes.']
+};
+
+const fmtDate = (iso) => { const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
 
 /* ---------------- Line diff: LCS-based, with collapse + jump ---------------- */
 function lineDiff(aText, bText) {
@@ -112,6 +121,7 @@ export default function History() {
     description: 'Every generated document with full version history, inline comparison, and an approval workflow before publishing.'
   });
   const [rows, setRows] = useState(null);
+  const [loadErr, setLoadErr] = useState('');
   const [q, setQ] = useState('');
   const [provider, setProvider] = useState('');
   const [approval, setApproval] = useState('');
@@ -127,12 +137,19 @@ export default function History() {
     if (q) p.set('q', q);
     if (provider) p.set('provider', provider);
     if (approval) p.set('approval', approval);
-    api('/history?' + p.toString()).then((d) => setRows(d.documents)).catch(() => setRows([]));
+    // An unreachable API and an account with no documents look identical if a
+    // failure is swallowed into an empty list — keep them distinguishable.
+    return api('/history?' + p.toString())
+      .then((d) => { setRows(d.documents || []); setLoadErr(''); })
+      .catch((e) => { setRows([]); setLoadErr(e.message || 'Request failed'); });
   };
-  useEffect(() => { load(); }, [q, provider, approval]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Typing in the search box must not fire a request per keystroke.
+  useEffect(() => { const t = setTimeout(load, q ? 250 : 0); return () => clearTimeout(t); }, [q, provider, approval]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadVersions = async (id) => {
-    if (!id || versions[id]) return;
+  // `force` re-reads after a mutation; without it a cached timeline would
+  // survive a restore or a status change and show stale version counts.
+  const loadVersions = async (id, force = false) => {
+    if (!id || (versions[id] && !force)) return;
     try {
       const d = await api('/history/' + id + '/versions');
       setVersions((v) => ({ ...v, [id]: d }));
@@ -146,11 +163,22 @@ export default function History() {
   const setStatus = async (id, to) => {
     setBusy(id + to);
     try {
-      await api('/history/' + id + '/status', { method: 'POST', body: { to } });
-      toast('success',
-        to === 'published' ? 'Published' : to === 'approved' ? 'Approved' : to === 'review' ? 'Sent for review' : 'Back to draft',
-        to === 'published' ? 'This version is now the one your pipeline distributes.' : '');
-      load();
+      const r = await api('/history/' + id + '/status', { method: 'POST', body: { to } });
+      // The transition we ASKED for is an intent; the state the server stored
+      // is the fact. Reporting the intent is how a message can end up
+      // describing a different transition from the one that actually landed.
+      const now = (r && r.approval) || to;
+      const [title, detail] = APPROVAL_TOAST[now] || ['Status updated', 'This document is now “' + now + '”.'];
+      // Patch the row from the response before refetching, so the workflow
+      // buttons re-render against the real state even if the list reload is
+      // slow or fails outright.
+      setRows((rs) => (rs || []).map((x) => (x.id === id
+        ? { ...x, approval: now, approvedAt: (r && r.approvedAt) || null, approvalLog: ((r && r.approvalLog) || x.approvalLog || []).slice(-8) }
+        : x)));
+      const filteredOut = approval && approval !== now;
+      toast('success', title, filteredOut ? detail + ' It no longer matches the “' + (APPROVAL_TAG[approval] || [])[1] + '” filter, so it has left this list.' : detail);
+      await load();
+      await loadVersions(id, true);
     } catch (e) { toast('error', 'Status change failed', e.message); }
     finally { setBusy(''); }
   };
@@ -160,13 +188,21 @@ export default function History() {
     try {
       await api('/history/' + id + '/restore', { method: 'POST', body: { versionId: v.id } });
       toast('success', 'Version ' + v.version + ' restored', 'The current state was snapshotted first — nothing was lost. The restored document is a fresh draft.');
-      load();
+      // A restore rewrites the current content and adds a version, so any open
+      // comparison is now against text that no longer exists.
+      setDiff(null);
       // Keep this document open (it's already at /history/:id) and refresh its
       // versions in place after the restore.
       setOpenId(id);
-      try { const d = await api('/history/' + id + '/versions'); setVersions((x) => ({ ...x, [id]: d })); } catch { /* keep open */ }
+      await load();
+      await loadVersions(id, true);
     } catch (e) { toast('error', 'Restore failed', e.message); }
     finally { setBusy(''); }
+  };
+
+  const doDownload = async (path, what) => {
+    try { toast('success', 'Download started', await download(path)); }
+    catch (e) { toast('error', what + ' download failed', e.message); }
   };
 
   return (
@@ -196,11 +232,23 @@ export default function History() {
         {rows && <span className="helper" style={{ marginLeft: 'auto' }}>{rows.length} document{rows.length === 1 ? '' : 's'}</span>}
       </div>
 
-      {rows === null ? <p className="body01 t2 mt6">Loading documents…</p> : rows.length === 0 ? (
+      {rows === null ? <p className="body01 t2 mt6">Loading documents…</p> : loadErr ? (
+        <div className="notconn mt6" style={{ borderLeftColor: 'var(--support-error)' }}>
+          <div>
+            <p className="body01"><b>Your documents could not be loaded</b></p>
+            <p className="helper mt2">{loadErr}. Nothing has been lost — this is a loading problem, not an empty account.</p>
+            <button className="btn btn--tertiary btn--sm btn--center mt3" onClick={load}>Retry</button>
+          </div>
+        </div>
+      ) : rows.length === 0 ? (
         <div className="notconn mt6">
           <div>
-            <p className="body01"><b>No documents match</b></p>
-            <p className="helper mt2">Generated documents appear here automatically — run a generation, or clear the filters.</p>
+            <p className="body01"><b>{q || provider || approval ? 'No documents match these filters' : 'No documents yet'}</b></p>
+            <p className="helper mt2">
+              {q || provider || approval
+                ? 'Clear the search and filters to see everything in this account.'
+                : 'Generated documents appear here automatically — run a generation to create the first one.'}
+            </p>
           </div>
         </div>
       ) : (
@@ -219,30 +267,44 @@ export default function History() {
                 return (
                   <React.Fragment key={r.id}>
                     <tr style={{ cursor: 'pointer' }} onClick={() => openRow(r.id)}>
-                      <td><b>{r.title}</b></td>
+                      <td><b>{r.title || 'Untitled'}</b></td>
                       <td><span className={'provtag prov--' + r.provider}>{r.provider}</span> <span className="mono" style={{ fontSize: 12 }}>{r.repo}</span></td>
-                      <td>{r.docTypes.join(', ')} · {String(r.format).toUpperCase()}</td>
+                      <td>{(r.docTypes || []).join(', ')} · {String(r.format || '').toUpperCase()}</td>
                       <td>{r.source}</td>
-                      <td style={{ color: r.score >= 85 ? 'var(--support-success)' : r.score >= 70 ? '#b28600' : 'var(--support-error)' }}><b>{r.score}</b></td>
+                      <td style={{ color: r.score >= 85 ? 'var(--support-success)' : r.score >= 70 ? '#b28600' : 'var(--support-error)' }}>
+                        <b>{typeof r.score === 'number' ? r.score : '—'}</b>
+                      </td>
                       <td>v{r.versions}</td>
                       <td><span className={'tag ' + cls}>{label}</span></td>
                       <td className="helper">{fmtDate(r.createdAt)}</td>
-                      <td>{openId === r.id ? '▲' : '▼'}</td>
+                      {/* The row is clickable, but a click target must also be
+                          reachable and operable from the keyboard. */}
+                      <td>
+                        <button className="linkbtn" aria-expanded={openId === r.id} aria-controls={'doc-detail-' + r.id}
+                          aria-label={(openId === r.id ? 'Collapse ' : 'Expand ') + (r.title || 'this document')}
+                          onClick={(e) => { e.stopPropagation(); openRow(r.id); }}>
+                          {openId === r.id ? '▲' : '▼'}
+                        </button>
+                      </td>
                     </tr>
                     {openId === r.id && (
-                      <tr>
+                      <tr id={'doc-detail-' + r.id}>
                         <td colSpan={9} style={{ background: 'var(--layer-01, #f4f4f4)', padding: '16px 20px' }}>
                           {!vd ? <p className="helper">Loading version history…</p> : (
                             <>
                               <div className="row row--between" style={{ flexWrap: 'wrap', gap: 10 }}>
                                 <p className="label01 t2">VERSION TIMELINE ({vd.versions.length + 1})</p>
+                                {/* Each button is gated on the CURRENT state, so the
+                                    set on screen is always the set of transitions
+                                    that are legal right now. */}
                                 <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                                  {r.approval !== 'review' && <button className="btn btn--ghost btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'review')}>Send for review</button>}
-                                  {(r.approval === 'review' || r.approval === 'draft') && <button className="btn btn--tertiary btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'approved')}>Approve</button>}
-                                  {r.approval === 'approved' && <button className="btn btn--primary btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'published')}>Publish</button>}
-                                  {(r.approval === 'approved' || r.approval === 'published') && <button className="btn btn--ghost btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'draft')}>Back to draft</button>}
-                                  <button className="btn btn--tertiary btn--sm btn--center"
-                                    onClick={() => download('/generations/' + r.id + '/download?fmt=' + r.format + '&doc=' + r.docTypes[0]).catch((e) => toast('error', 'Download failed', e.message))}>
+                                  <span className="helper" style={{ alignSelf: 'center' }}>Now: <b>{label}</b></span>
+                                  {r.approval !== 'review' && <button className="btn btn--ghost btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'review')}>{busy === r.id + 'review' ? 'Sending…' : 'Send for review'}</button>}
+                                  {(r.approval === 'review' || r.approval === 'draft') && <button className="btn btn--tertiary btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'approved')}>{busy === r.id + 'approved' ? 'Approving…' : 'Approve'}</button>}
+                                  {r.approval === 'approved' && <button className="btn btn--primary btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'published')}>{busy === r.id + 'published' ? 'Publishing…' : 'Publish'}</button>}
+                                  {(r.approval === 'approved' || r.approval === 'published') && <button className="btn btn--ghost btn--sm btn--center" disabled={!!busy} onClick={() => setStatus(r.id, 'draft')}>{busy === r.id + 'draft' ? 'Reverting…' : 'Back to draft'}</button>}
+                                  <button className="btn btn--tertiary btn--sm btn--center" disabled={!!busy}
+                                    onClick={() => doDownload('/generations/' + r.id + '/download?fmt=' + encodeURIComponent(r.format) + (r.docTypes && r.docTypes[0] ? '&doc=' + encodeURIComponent(r.docTypes[0]) : ''), 'Document')}>
                                     Download current
                                   </button>
                                 </span>
@@ -263,8 +325,10 @@ export default function History() {
                                         {diff && diff.rowId === r.id && diff.v === v.version ? 'Hide comparison' : 'Compare with current'}
                                       </button>
                                       <button className="linkbtn" disabled={!!busy}
-                                        onClick={() => download('/history/' + r.id + '/versions/' + v.id + '/download').catch((e) => toast('error', 'Download failed', e.message))}>Download</button>
-                                      <button className="linkbtn" disabled={!!busy} onClick={() => restore(r.id, v)}>Restore</button>
+                                        onClick={() => doDownload('/history/' + r.id + '/versions/' + v.id + '/download', 'Version ' + v.version)}>Download</button>
+                                      <button className="linkbtn" disabled={!!busy} onClick={() => restore(r.id, v)}>
+                                        {busy === r.id + 'restore' ? 'Restoring…' : 'Restore'}
+                                      </button>
                                     </span>
                                   </div>
                                 ))}

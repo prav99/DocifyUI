@@ -413,14 +413,27 @@ describe('plan limits are enforced server-side', () => {
   test('Doc Sync AI operations consume the same allowance', async () => {
     const u = await signup('docsync-quota@example.test');
     await prisma.usageEvent.create({ data: { userId: u.id, kind: 'document', count: 5 } });
+    // Long enough to pass each route's own input validation: those checks now
+    // run BEFORE any quota reservation (a 404 or a too-short document must not
+    // cost a document), so a stub fixture would 400 before reaching the quota
+    // gate and this test would prove nothing about billing.
     const doc = await prisma.syncDoc.create({
-      data: { userId: u.id, name: 'd', content: 'hello world', status: 'ready' }
+      data: {
+        userId: u.id, name: 'd', status: 'ready',
+        content: '# Payments guide\n\nThis document explains how to authenticate, create a charge, and handle refunds against the API.\n',
+        sections: JSON.stringify([{ id: 's1', title: 'Authentication', level: 2, text: 'Send the API key in the Authorization header on every request.' }])
+      }
     });
-    // Every Doc Sync route that reaches Anthropic must refuse at quota.
-    for (const path of ['/sync/documents/' + doc.id + '/standardize',
-      '/sync/documents/' + doc.id + '/sync',
-      '/sync/documents/' + doc.id + '/simulate']) {
-      const r = await api(path, { method: 'POST', token: u.token, body: {} });
+    // Every Doc Sync route that reaches Anthropic must refuse at quota. Each
+    // request carries a VALID body: those routes now validate before reserving
+    // (a bad request must not cost a document), so an empty body would 400
+    // before the quota gate and prove nothing about billing.
+    for (const [path, body] of [
+      ['/sync/documents/' + doc.id + '/standardize', {}],
+      ['/sync/documents/' + doc.id + '/sync', {}],
+      ['/sync/documents/' + doc.id + '/simulate', { message: 'feat(auth): rotate API keys every 90 days', files: ['src/auth.js'] }]
+    ]) {
+      const r = await api(path, { method: 'POST', token: u.token, body });
       assert.equal(r.status, 402, path + ' spent model time at quota (status ' + r.status + ')');
     }
     const rw = await api('/sync/rewrite', { method: 'POST', token: u.token, body: { text: 'x', mode: 'clarity' } });

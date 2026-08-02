@@ -148,10 +148,16 @@ function titleFromMessage(message) {
   return t.charAt(0).toUpperCase() + t.slice(1, 70);
 }
 
-/* ---------------- Mock commit feed (swap for the GitHub webhook in production) -
+/* ---------------- Sample commit feed -------------------------------------------
    Deterministic, ordered like a real repo history. Each entry carries the merge
    metadata the engine analyzes plus a documentation payload for the changed
-   portion only. */
+   portion only.
+
+   This is the ONLY source of commits Doc Sync walks: no webhook writes SyncUpdate
+   rows today (only these routes do). Every response that carries a feed commit is
+   flagged `demo`/`sample` so no screen can present a fictional author as a real
+   one, and no copy may promise that connecting a webhook replaces this feed until
+   a webhook path actually creates updates. */
 export const COMMIT_FEED = [
   {
     sha: '9f2c1ab', author: 'Meera Krishnan', message: 'PAY-231 feat(auth): rotate API keys automatically every 90 days',
@@ -557,9 +563,15 @@ syncRouter.get('/overview', async (req, res) => {
   });
 });
 
-// The mock commit feed a mapped repository exposes (for the timeline + pickers).
+// The sample commit feed a mapped repository exposes (for the timeline + pickers).
+// Flagged per row and at the top level: fictional authors must never be able to
+// reach a screen that reads as real repository history.
 syncRouter.get('/feed', (req, res) => {
-  res.json({ commits: COMMIT_FEED.map(({ body, ...c }) => c) });
+  res.json({
+    commits: COMMIT_FEED.map(({ body, ...c }) => ({ ...c, demo: true })),
+    sample: true,
+    sampleNote: 'Docify’s built-in sample commit feed — fictional authors, not commits from your repository.'
+  });
 });
 
 syncRouter.get('/documents', async (req, res) => {
@@ -745,29 +757,37 @@ async function recordDecision(userId, doc, commit, decision) {
   }).catch((e) => { console.error('recordDecision:', e.message); return null; });
 }
 
-// Pull the next unseen commits from the mapped repository, filter them through
-// the relevance engine, and queue AI updates only for customer-facing changes.
-
 // Doc Sync's AI operations are real Anthropic calls, so they consume the same
 // monthly allowance as generation. Without this an at-quota account could
 // still spend without limit through Standardize / Sync / Simulate / Rewrite.
-// Returns true when the caller has been answered with a 402.
-async function aiQuotaBlocked(req, res, trigger) {
+//
+// Two rules the callers must keep: reserve only AFTER every validation has
+// passed (a 404, a "still parsing" 400, or a bad input must never cost a
+// document), and release the reservation when the run ends up producing
+// nothing. The reservation carries a synthetic id purely so it can be found
+// again by releaseSyncQuota — Doc Sync has no Generation row to key on.
+// Returns the reservation id, or null when the caller has been answered 402.
+async function reserveSyncQuota(req, res, trigger) {
   const user = await prisma.user.findUnique({ where: { id: req.uid } });
-  const over = await reserveDocumentQuota(req.uid, user ? user.plan : 'free', 1, { trigger: trigger || 'docsync' });
-  if (!over) return false;
-  res.status(402).json({ ...over, upgrade: true });
-  return true;
+  const reservation = 'sync-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const over = await reserveDocumentQuota(req.uid, user ? user.plan : 'free', 1, { generationId: reservation, trigger: trigger || 'docsync' });
+  if (over) { res.status(402).json({ ...over, upgrade: true }); return null; }
+  return reservation;
 }
 
+const releaseSyncQuota = (req, reservation) => releaseDocumentQuota(req.uid, reservation);
+
+// Pull the next unseen commits from the mapped repository, filter them through
+// the relevance engine, and queue updates only for customer-facing changes.
 syncRouter.post('/documents/:id/sync', async (req, res) => {
-  if (await aiQuotaBlocked(req, res, 'docsync-sync')) return;
   const row = await ownDoc(req, res);
   if (!row) return;
   if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
   const batch = Math.min(3, Math.max(1, Number(req.body && req.body.batch) || 2));
   const next = COMMIT_FEED.slice(row.cursor, row.cursor + batch);
-  if (!next.length) return res.json({ created: 0, done: true, message: 'Documentation is up to date with the repository — no new commits.' });
+  if (!next.length) return res.json({ created: 0, done: true, sample: true, message: 'Documentation is up to date with the repository — no new commits.' });
+  const reservation = await reserveSyncQuota(req, res, 'docsync-sync');
+  if (!reservation) return;
   const ctx = await relevanceContext(req.uid, row.repo, row.branch);
   const created = [];
   const filtered = [];
@@ -775,7 +795,7 @@ syncRouter.post('/documents/:id/sync', async (req, res) => {
     const decision = await evaluateCommit(commit, ctx);
     await recordDecision(req.uid, row, commit, decision);
     if (decision.verdict === 'skip') {
-      filtered.push({ sha: commit.sha, message: commit.message, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy });
+      filtered.push({ sha: commit.sha, message: commit.message, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy, demo: true });
       continue;
     }
     const built = buildUpdate(row, commit, await tenantWritingPolicy(req.uid));
@@ -787,22 +807,28 @@ syncRouter.post('/documents/:id/sync', async (req, res) => {
     const u = await prisma.syncUpdate.create({ data: { userId: req.uid, docId: row.id, ...built } });
     created.push(serializeUpdate(u, row.name));
   }
+  // Every commit was filtered out: no document was produced, so nothing is owed.
+  if (!created.length) await releaseSyncQuota(req, reservation);
   await prisma.syncDoc.update({ where: { id: row.id }, data: { cursor: row.cursor + next.length } });
   res.json({
     created: created.length, updates: created, filtered,
+    // These commits come from the built-in sample feed, never from a customer
+    // repository — a client must not present them as real history.
+    sample: true,
+    sampleNote: 'These commits come from Docify’s built-in sample feed. The authors are fictional.',
     remaining: Math.max(0, COMMIT_FEED.length - row.cursor - next.length)
   });
 });
 
 // Simulate a custom commit (what the webhook would deliver) against a document.
 syncRouter.post('/documents/:id/simulate', async (req, res) => {
-  if (await aiQuotaBlocked(req, res, 'docsync-simulate')) return;
   const row = await ownDoc(req, res);
   if (!row) return;
   if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
   const b = req.body || {};
   const message = String(b.message || '').trim();
   if (!message) return res.status(400).json({ error: 'A commit message is required' });
+  if (!j(row.sections, []).length) return res.status(400).json({ error: 'The document has no sections to place into' });
   const files = String(b.files || '').split(/[\s,]+/).filter(Boolean).slice(0, 20);
   const commit = {
     sha: 'sim' + Date.now().toString(36).slice(-4),
@@ -815,11 +841,14 @@ syncRouter.post('/documents/:id/simulate', async (req, res) => {
       'This documents only the changed portion of the repository — the rest of the document is untouched.'
     ]
   };
+  const reservation = await reserveSyncQuota(req, res, 'docsync-simulate');
+  if (!reservation) return;
   // Simulated merges run through the same relevance gate as real ones.
   const ctx = await relevanceContext(req.uid, row.repo, row.branch);
   const decision = await evaluateCommit(commit, ctx);
   await recordDecision(req.uid, row, commit, decision);
   if (decision.verdict === 'skip') {
+    await releaseSyncQuota(req, reservation); // filtered out: no document produced
     return res.status(200).json({
       filtered: true,
       decision: { score: decision.score, rationale: decision.rationale, eliminatedBy: decision.eliminatedBy },
@@ -827,7 +856,10 @@ syncRouter.post('/documents/:id/simulate', async (req, res) => {
     });
   }
   const built = buildUpdate(row, commit, await tenantWritingPolicy(req.uid));
-  if (!built) return res.status(400).json({ error: 'The document has no sections to place into' });
+  if (!built) {
+    await releaseSyncQuota(req, reservation);
+    return res.status(400).json({ error: 'The document has no sections to place into' });
+  }
   const reasoning = j(built.reasoning, {});
   reasoning.relevance = { verdict: decision.verdict, score: decision.score, rationale: decision.rationale, engine: decision.engine };
   built.reasoning = JSON.stringify(reasoning);
@@ -842,10 +874,11 @@ syncRouter.post('/documents/:id/simulate', async (req, res) => {
    Ships as a review-queue proposal with before/after consistency scores;
    nothing changes until the full diff is approved. */
 syncRouter.post('/documents/:id/standardize', async (req, res) => {
-  if (await aiQuotaBlocked(req, res, 'docsync-standardize')) return;
   const row = await ownDoc(req, res);
   if (!row) return;
   if (row.status !== 'ready') return res.status(400).json({ error: 'Document is still being parsed — try again in a moment' });
+  const before = String(row.content || '');
+  if (before.trim().length < 40) return res.status(400).json({ error: 'The document is too short to standardize' });
   const docType = ['userguide', 'api', 'install', 'quickstart', 'troubleshoot', 'relnotes', 'admin']
     .includes(String((req.body || {}).docType)) ? String(req.body.docType) : 'userguide';
   // Per-job style overrides from the Governance workspace: a guide bias and
@@ -853,6 +886,8 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
   const guideOverride = ['docify', 'ibm', 'microsoft', 'google', 'apple', 'atlassian', 'marketing', 'custom']
     .includes(String((req.body || {}).guide)) ? String(req.body.guide) : '';
   const jobNotes = String((req.body || {}).notes || '').slice(0, 4000);
+  const reservation = await reserveSyncQuota(req, res, 'docsync-standardize');
+  if (!reservation) return;
   try {
     let tenant = await prisma.writingProfile.findUnique({ where: { userId: req.uid } }).catch(() => null);
     if (guideOverride || jobNotes) {
@@ -865,8 +900,6 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
       };
     }
     const policy = resolveWritingPolicy({ track: 'technical', docType, tenant });
-    const before = String(row.content || '');
-    if (before.trim().length < 40) return res.status(400).json({ error: 'The document is too short to standardize' });
     const auditBefore = styleAudit(before, policy);
     const { pairs, simulated } = await aiRestructureDocument({
       title: row.name, content: before, docType, styleSys: compileStylePrompt(policy)
@@ -897,7 +930,10 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
         confidence: Math.max(70, Math.min(97, 70 + (auditAfter.scores.overall - auditBefore.scores.overall))),
         reasoning: JSON.stringify(reasoning),
         diff: JSON.stringify({ startLine: 1, before: before.split(/\r?\n/), after: md.split('\n') }),
-        snippet: md.slice(0, 4000)
+        // The snippet is what the review editor loads and what approval applies:
+        // for a restructure that is the ENTIRE rewritten document. Truncating it
+        // would silently delete everything past the cut on approve.
+        snippet: md
       }
     });
     res.status(201).json({
@@ -905,7 +941,10 @@ syncRouter.post('/documents/:id/standardize', async (req, res) => {
       scores: { before: auditBefore.scores, after: auditAfter.scores },
       simulated: !!simulated
     });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) {
+    await releaseSyncQuota(req, reservation); // no proposal was produced
+    res.status(400).json({ error: e.message });
+  }
 });
 
 /* ---------------- Governance: analysis before correction ----------------
@@ -1034,7 +1073,12 @@ syncRouter.put('/updates/:id', async (req, res) => {
   // Rebuild the "after" pane so the diff always shows what approval will apply.
   const diff = j(u.diff, {});
   const bodyLines = snippet.split(/\r?\n/);
-  if (u.kind === 'update-existing') {
+  if (u.kind === 'restructure') {
+    // A standardization proposal replaces the whole document, so the edited
+    // text IS the new document — wrapping it under a heading the way a spliced
+    // section is wrapped would corrupt it on approve.
+    diff.after = bodyLines;
+  } else if (u.kind === 'update-existing') {
     const heading = (diff.before && diff.before[0]) || '';
     diff.after = [heading, '', ...bodyLines];
   } else {
@@ -1072,8 +1116,12 @@ syncRouter.post('/updates/:id/approve', async (req, res) => {
   });
   await prisma.syncVersion.create({
     data: {
+      // 'ai-update' is the historical value every existing version row carries;
+      // renaming it would split the history in two. The label belongs to the UI.
       docId: doc.id, number, source: 'ai-update', commit: u.commit,
-      summary: (u.kind === 'update-existing' ? 'Updated “' : 'Inserted under “') + (anchor.title || 'section') + '” — ' + u.message.slice(0, 90),
+      summary: u.kind === 'restructure'
+        ? 'Standardized the whole document — ' + u.message.slice(0, 90)
+        : (u.kind === 'update-existing' ? 'Updated “' : 'Inserted under “') + (anchor.title || 'section') + '” — ' + u.message.slice(0, 90),
       content: nextContent
     }
   });
@@ -1097,7 +1145,6 @@ syncRouter.post('/updates/:id/reject', async (req, res) => {
    or a deterministic local fallback. The client shows the result as a
    proposal — nothing is applied here. */
 syncRouter.post('/rewrite', async (req, res) => {
-  if (await aiQuotaBlocked(req, res, 'docsync-rewrite')) return;
   const b = req.body || {};
   const text = String(b.text || '');
   if (!text.trim()) return res.status(400).json({ error: 'No text to rewrite' });
@@ -1106,10 +1153,13 @@ syncRouter.post('/rewrite', async (req, res) => {
   const action = allow.has(String(b.action)) ? String(b.action) : 'rewrite';
   const instruction = b.instruction ? String(b.instruction).slice(0, 800) : null;
   const guide = b.guide ? String(b.guide) : null;
+  const reservation = await reserveSyncQuota(req, res, 'docsync-rewrite');
+  if (!reservation) return;
   try {
     const out = await rewriteText({ text, action, instruction, guide });
     res.json(out);
   } catch (e) {
+    await releaseSyncQuota(req, reservation); // nothing was rewritten
     res.status(500).json({ error: 'Rewrite failed: ' + (e.message || 'unknown') });
   }
 });
@@ -1120,7 +1170,7 @@ syncRouter.post('/rewrite', async (req, res) => {
    body rides in diff.after (what Approve applies) and the audit rides in
    reasoning.audit. Approve then publishes exactly what was reviewed. */
 syncRouter.put('/updates/:id/content', async (req, res) => {
-  const u = await prisma.syncUpdate.findFirst({ where: { id: req.params.id, userId: req.uid } });
+  const u = await prisma.syncUpdate.findFirst({ where: { id: req.params.id, userId: req.uid }, include: { doc: { select: { name: true } } } });
   if (!u) return res.status(404).json({ error: 'Update not found' });
   if (u.status !== 'pending') return res.status(400).json({ error: 'Only pending proposals can be edited' });
   const body = req.body || {};
@@ -1134,9 +1184,11 @@ syncRouter.put('/updates/:id/content', async (req, res) => {
   if (body.stats && typeof body.stats === 'object') reasoning.reviewStats = body.stats;
   const updated = await prisma.syncUpdate.update({
     where: { id: u.id },
-    data: { diff: JSON.stringify(diff), reasoning: JSON.stringify(reasoning), snippet: after.join('\n').slice(0, 100000) }
+    // snippet mirrors diff.after exactly — it is what the editor reloads and,
+    // for a restructure, what approval writes back as the whole document.
+    data: { diff: JSON.stringify(diff), reasoning: JSON.stringify(reasoning), snippet: after.join('\n') }
   });
-  res.json({ update: serializeUpdate(updated, u.docId) });
+  res.json({ update: serializeUpdate(updated, u.doc && u.doc.name) });
 });
 
 // Full content of one version (compare view).

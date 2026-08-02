@@ -11,7 +11,38 @@
    included and the depth — never the numbers.
    ===================================================================== */
 import PDFDocument from 'pdfkit';
-import PptxGenJS from 'pptxgenjs';
+
+/* pptxgenjs 4.x points its "import" condition at an ESM file inside a package
+   that declares no "type": "module", so `import 'pptxgenjs'` throws on Node 20
+   unless the host happens to enable module detection. At the top level that
+   took the whole API down at boot; here it costs at most the PPTX format.
+   The CJS build in the same package is valid either way, so fall back to it
+   rather than losing an export format to a packaging bug upstream. */
+let pptxCtor = null;
+const pptxUnavailable = (cause) => {
+  const err = new Error('PowerPoint export is unavailable on this server (pptxgenjs could not be loaded). Export as PDF or HTML instead.');
+  err.status = 503;
+  if (cause) err.cause = cause;
+  return err;
+};
+async function loadPptx() {
+  if (pptxCtor) return pptxCtor;
+  let esmError = null;
+  for (const load of [
+    async () => (await import('pptxgenjs')),
+    async () => {
+      const { createRequire } = await import('node:module');
+      return createRequire(import.meta.url)('pptxgenjs');
+    }
+  ]) {
+    try {
+      const mod = await load();
+      const ctor = mod && (mod.default || mod);
+      if (typeof ctor === 'function') { pptxCtor = ctor; return pptxCtor; }
+    } catch (e) { esmError = esmError || e; }
+  }
+  throw pptxUnavailable(esmError);
+}
 
 /* ---------- shared helpers ---------- */
 const escX = (s) => String(s == null ? '' : s)
@@ -486,9 +517,10 @@ export function renderReportPdf(model, opts = {}) {
 /* =====================================================================
    PowerPoint — pptxgenjs. Executive deck, NOT screenshots.
    ===================================================================== */
-export function renderReportPptx(model, opts = {}) {
+export async function renderReportPptx(model, opts = {}) {
   const preset = opts.preset || 'full';
   const m = model.meta; const sc = model.score; const ex = model.exec;
+  const PptxGenJS = await loadPptx();
   const p = new PptxGenJS();
   p.defineLayout({ name: 'W', width: 13.333, height: 7.5 }); p.layout = 'W';
   const BR = '0F62FE'; const INK = '161616'; const MUT = '525252'; const OK = '24A148'; const WN = '8E6A00'; const BAD = 'DA1E28'; const PANEL = 'F4F4F4';

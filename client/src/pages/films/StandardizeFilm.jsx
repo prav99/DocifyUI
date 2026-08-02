@@ -76,7 +76,7 @@ const STD_SCENES = [
     /* vo word map: Docify(1) rebuilds(2) each(3) document(4) against(5) the(6)
        chosen(7) standard(8) and(9) every(10) consistency(11) score(12)
        climbs(13)… — rows mount on beats 2/4/6, all climbs gate on "score". */
-    vo: 'Docify rebuilds each document against the chosen standard — and every consistency score climbs into the nineties.',
+    vo: 'Docify rebuilds each document against the chosen standard — and in this example every consistency score climbs into the nineties.',
     cues: [{ at: 600, sfx: 'process' }, { at: 4700, sfx: 'pop' }, { at: 5600, sfx: 'pop' }],
     render: (beat) => (
       <div>
@@ -95,8 +95,8 @@ const STD_SCENES = [
             </div>
           )
         ))}
-        <Callout x={58} y={22} at={5700} tone="green">all three now 89+</Callout>
-        <p className="helper mt5 demo-late">14 terminology fixes · tone: plain & direct · structure aligned to template.</p>
+        <Callout x={58} y={22} at={5700} tone="green">sample documents — all three now 89+</Callout>
+        <p className="helper mt5 demo-late">14 terminology fixes · tone: plain &amp; direct · structure aligned to template. Sample figures — your own documents score on their own content.</p>
       </div>
     )
   },
@@ -155,5 +155,5 @@ const STD_SCENES = [
 
 export function StandardizeDemo() {
   return <DemoShell name="standardize at scale" crumb="docify / standardize / house-style" scenes={STD_SCENES}
-    posterMeta={{ kicker: 'STANDARDIZE AT SCALE', title: 'Inconsistency is rework on an instalment plan — retire it.', sub: 'Three legacy docs rebuilt to one house style — 58→89, 63→91, 71→93 — every change a reviewable diff. In 30 seconds.', mins: '30 sec' }} />;
+    posterMeta={{ kicker: 'STANDARDIZE AT SCALE', title: 'Inconsistency is rework on an instalment plan — retire it.', sub: 'Three sample legacy docs rebuilt to one house style — 58→89, 63→91, 71→93 in this example — every change a reviewable diff. In 30 seconds.', mins: '30 sec' }} />;
 }

@@ -32,7 +32,7 @@ const CELL_LAST = { borderRight: 'none' };
 export default function Pricing() {
   usePageMeta({
     title: 'Pricing — Free, Starter, Team & Enterprise',
-    description: 'Start free with 5 generations a month, no credit card. Starter from $24, Team from $79 with a 14-day free trial, and Enterprise with custom style-guide rules and a DPA (SSO and audit logs on request).',
+    description: 'Start free with 5 generations a month, no credit card. Starter from $24 and Team from $79 per month; online payment is not live yet, so paid plans are set up by our team. Enterprise adds custom style-guide rules and a DPA (SSO and audit logs on request).',
     path: '/pricing'
   });
   const nav = useNavigate();
@@ -46,7 +46,9 @@ export default function Pricing() {
   async function choose(plan) {
     setFlow({ plan });
     posthog.capture('plan_selected', { plan, billing_cycle: annual ? 'annual' : 'monthly' });
-    if (plan === 'starter' || plan === 'team') return nav(user ? '/checkout' : '/signup');
+    // Online payment is not live — the server's /billing/checkout fails closed
+    // rather than granting a plan, so a paid plan starts as a conversation.
+    if (plan === 'starter' || plan === 'team') return nav('/contact?topic=' + plan);
     if (plan === 'free') {
       if (user) { try { await api('/billing/checkout', { method: 'POST', body: { plan: 'free' } }); } catch { /* ignore */ } }
       toast('info', 'Staying on Free', '5 watermarked generations per month');
@@ -83,7 +85,7 @@ export default function Pricing() {
             <p className="h02">Starter</p>
             <p className="h04 mono">${starterPrice}</p>
             <p className="helper">Per month, billed {annual ? 'annually' : 'monthly'} · 2 seats</p>
-            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('starter')}>Choose Starter</button>
+            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('starter')}>Contact us to subscribe</button>
           </div>
           <div className="phead pop" style={CELL}>
             <div className="row row--between" style={{ width: '100%' }}>
@@ -91,11 +93,11 @@ export default function Pricing() {
             </div>
             <p className="h04 mono">${teamPrice}</p>
             <p className="helper">Per month, billed {annual ? 'annually' : 'monthly'} · includes 5 seats, then $12/seat/mo</p>
-            <button className="btn btn--primary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('team')}>Start 14-day trial</button>
+            <button className="btn btn--primary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('team')}>Contact us to subscribe</button>
           </div>
           <div className="phead" style={CELL_LAST}>
             <p className="h02">Enterprise</p><p className="h04 mono">Custom</p><p className="helper">Annual contract</p>
-            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('enterprise')}>Book a demo</button>
+            <button className="btn btn--tertiary btn--field mt3" style={{ width: '100%' }} onClick={() => choose('enterprise')}>Talk to us</button>
           </div>
           {ROWS.map((r) => (
             <React.Fragment key={r[0]}>
@@ -110,12 +112,13 @@ export default function Pricing() {
         </div>
 
         <div className="row mt5" style={{ gap: 24, flexWrap: 'wrap' }}>
-          <span className="helper">14-day free trial on Team — no credit card</span>
-          <span className="helper">30-day money-back guarantee on annual plans</span>
-          <span className="helper">Cancel anytime · read-only access · your source is never stored</span>
+          <span className="helper">Free plan — 5 documents a month, no credit card</span>
+          <span className="helper">Online payment is not live yet — we set paid plans up directly</span>
+          <span className="helper">Switch back to Free at any time · read-only access · your source is never stored</span>
         </div>
       </div>
-      <NavBar back="/export" next={user ? '/checkout' : '/signup'} nextLabel="Continue to checkout"
+      <NavBar back="/export" next={'/contact?topic=' + (flow.plan === 'starter' ? 'starter' : 'team')}
+        nextLabel="Contact us to subscribe"
         note={paidPlan + ' plan · billed ' + (annual ? 'annually' : 'monthly')} />
     </>
   );

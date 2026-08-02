@@ -33,12 +33,33 @@ export const DEFAULT_CONFIG = {
   rules: {
     ignore_commit_types: ['chore', 'refactor', 'test', 'style', 'ci', 'build'],
     ignore_dependency_updates: true,
-    ignore_comment_only_changes: true,
-    ignore_formatting_only_changes: true,
     document_only: null,               // e.g. ['public_api','cli','configuration']
     always_document_paths: []
   },
-  thresholds: { auto_document: 80, review_below: 80, discard_below: 40 }
+  // Two bands, not three: at or above auto_document Docify documents the
+  // change, at or above discard_below it goes to the review queue, below that
+  // it is filtered out. A separate review_below would be a third name for the
+  // auto_document line and is not read by the engine — see RETIRED_KEYS.
+  thresholds: { auto_document: 80, discard_below: 40 }
+};
+
+/* Keys Docify used to ship in the schema but never enforced. They are dropped
+   from any configuration that still carries them and reported as warnings, so
+   a team that set one is told it does nothing instead of believing it works.
+
+   ignore_comment_only_changes / ignore_formatting_only_changes need the DIFF
+   to decide, and the relevance engine is given commit metadata only — changed
+   file paths, the message, and add/delete counts. Implementing them against
+   that data would mean guessing, which is worse than not offering them.
+   Commit-type filtering (`style`, `chore`, `docs`) covers the common case. */
+const RETIRED_KEYS = {
+  rules: {
+    ignore_comment_only_changes: 'Docify sees the changed file paths and the commit message, not the diff, so it cannot tell a comment-only change from any other. Use rules.ignore_commit_types (it already includes "style") or scan.exclude instead.',
+    ignore_formatting_only_changes: 'Docify sees the changed file paths and the commit message, not the diff, so it cannot detect a formatting-only change. Use rules.ignore_commit_types (it already includes "style") instead.'
+  },
+  thresholds: {
+    review_below: 'Not used: anything scoring below thresholds.auto_document and at or above thresholds.discard_below already goes to the review queue.'
+  }
 };
 
 const SURFACE_IDS = ['public_api', 'http_api', 'cli', 'configuration', 'error_messages', 'webhooks', 'ui', 'auth'];
@@ -60,10 +81,23 @@ export function mergeConfig(user) {
   return out;
 }
 
-// Validate + normalize a parsed config; returns { config, errors[] }.
+// Validate + normalize a parsed config; returns { config, errors[], warnings[] }.
+//
+// errors are blocking (callers reject the save with a 400); warnings are not —
+// a retired key must never lock a customer out of saving a rule set they wrote
+// before it was retired, but they still have to be told it does nothing.
 export function validateConfig(raw) {
   const errors = [];
+  const warnings = [];
   const cfg = mergeConfig(raw);
+  for (const [section, keys] of Object.entries(RETIRED_KEYS)) {
+    for (const [key, why] of Object.entries(keys)) {
+      if (cfg[section] && Object.prototype.hasOwnProperty.call(cfg[section], key)) {
+        delete cfg[section][key];
+        warnings.push(section + '.' + key + ' is no longer supported and was ignored. ' + why);
+      }
+    }
+  }
   const arr = (v, path) => {
     if (v == null) return [];
     if (!Array.isArray(v)) { errors.push(path + ' must be a list'); return []; }
@@ -78,7 +112,7 @@ export function validateConfig(raw) {
     const bad = cfg.rules.document_only.filter((s) => !SURFACE_IDS.includes(s));
     if (bad.length) errors.push('rules.document_only contains unknown surfaces: ' + bad.join(', '));
   }
-  for (const k of ['auto_document', 'review_below', 'discard_below']) {
+  for (const k of ['auto_document', 'discard_below']) {
     const n = Number(cfg.thresholds[k]);
     if (!Number.isFinite(n) || n < 0 || n > 100) { errors.push('thresholds.' + k + ' must be 0–100'); cfg.thresholds[k] = DEFAULT_CONFIG.thresholds[k]; }
     else cfg.thresholds[k] = Math.round(n);
@@ -87,7 +121,7 @@ export function validateConfig(raw) {
     errors.push('thresholds.discard_below cannot exceed thresholds.auto_document');
     cfg.thresholds.discard_below = DEFAULT_CONFIG.thresholds.discard_below;
   }
-  return { config: cfg, errors };
+  return { config: cfg, errors, warnings };
 }
 
 // Load configuration from the repository. Never throws; always returns a
@@ -96,6 +130,7 @@ export async function loadRepoConfig(provider, repo, branch = 'main', token = ''
   const sources = { yaml: false, ignoreFile: false, instructions: false };
   let raw = null;
   const errors = [];
+  const warnings = [];
   const y1 = await fetchRepoFile(provider, repo, branch, 'docify.yaml', token);
   const y2 = y1 == null ? await fetchRepoFile(provider, repo, branch, '.docify/config.yaml', token) : null;
   const text = y1 != null ? y1 : y2;
@@ -103,8 +138,9 @@ export async function loadRepoConfig(provider, repo, branch = 'main', token = ''
     sources.yaml = true;
     try { raw = yaml.load(text); } catch (e) { errors.push('docify.yaml parse error: ' + e.message); }
   }
-  const { config, errors: vErrors } = validateConfig(raw);
+  const { config, errors: vErrors, warnings: vWarnings } = validateConfig(raw);
   errors.push(...vErrors);
+  warnings.push(...vWarnings);
 
   const ig = await fetchRepoFile(provider, repo, branch, '.docifyignore', token);
   if (ig != null) {
@@ -118,7 +154,7 @@ export async function loadRepoConfig(provider, repo, branch = 'main', token = ''
     sources.instructions = true;
     instructions = String(instructions).slice(0, 8000);
   }
-  return { config, instructions: instructions || '', sources, errors };
+  return { config, instructions: instructions || '', sources, errors, warnings };
 }
 
 /* ------------------------------ Glob matching ---------------------------- */
@@ -345,6 +381,12 @@ product:
   audience: "developers integrating the API"
 
 scan:
+  # include: leave empty (or omit) to consider the whole repository. When set,
+  # ONLY paths matching one of these globs are read — everything else is out of
+  # scope, before exclude is applied.
+  include:
+    - "src/**"
+    - "openapi/**"
   exclude:
     - "internal/**"
     - "**/*_test.*"
@@ -359,6 +401,7 @@ rules:
 thresholds:
   auto_document: 80   # ≥ 80 → documented automatically
   discard_below: 40   # < 40 → skipped (visible in Filtered out)
+                      # 40–79 → review queue
 `;
 
 export const SAMPLE_INSTRUCTIONS = `# Docify instructions for this repository

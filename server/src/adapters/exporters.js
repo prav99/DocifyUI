@@ -1,6 +1,15 @@
 // Binary exporters: real .docx (OOXML via the docx library) and real .pdf
-// (via pdfkit). Both consume the generated Markdown master and honor the
-// user's output options: paper size, header/footer, page numbers, watermark.
+// (via pdfkit). Both consume the generated Markdown master.
+//
+// Division of labour with the renderer (adapters/llm.js): everything that is
+// part of the DOCUMENT — cover/identity block, table of contents, numbered
+// headings, about/glossary/revision sections, disclaimer and copyright — is
+// already composed into the Markdown master, so it arrives here as content and
+// must not be re-emitted. Everything that is part of the PAGE — paper size,
+// running header/footer, page numbers, watermark, classification marking — has
+// no Markdown representation, so it is applied here, per page, in both
+// builders. Accent colour applies to both worlds: llm.js themes the HTML, the
+// builders theme headings, rules, and quote bars.
 
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow,
@@ -61,8 +70,25 @@ function tokenize(md) {
 const delink = (t) => String(t).replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
 const plain = (t) => delink(t).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
 
+// The accent colour the user picked on the Format step. Normalized once here
+// because docx wants bare hex and pdfkit wants #-prefixed, and an unvalidated
+// value from the client must never reach either writer.
+const DEFAULT_ACCENT = '0F62FE';
+function accentOf(output) {
+  const m = String((output && output.accentColor) || '').trim().match(/^#?([0-9a-fA-F]{6})$/);
+  return m ? m[1].toUpperCase() : DEFAULT_ACCENT;
+}
+
+// Classification is a page marking, not body text: an enterprise reader expects
+// it on every page, so both builders stamp it into the running header.
+function classificationOf(output) {
+  const c = String((output && output.classification) || 'none').trim();
+  return !c || c.toLowerCase() === 'none' ? '' : c.toUpperCase();
+}
+
 /* ---------- .docx ---------- */
-function runs(text, forceBold) {
+function runs(text, opts = {}) {
+  const { bold: forceBold, color } = typeof opts === 'boolean' ? { bold: opts } : opts;
   const src = delink(text);
   const out = [];
   const re = /(\*\*[^*]+\*\*|`[^`]+`)/g;
@@ -72,6 +98,7 @@ function runs(text, forceBold) {
     out.push(new TextRun({
       text: t,
       bold: forceBold || o.bold || undefined,
+      color: color || undefined,
       font: o.code ? 'Courier New' : undefined,
       size: o.code ? 18 : undefined
     }));
@@ -92,16 +119,17 @@ const HEADING = { 1: HeadingLevel.HEADING_1, 2: HeadingLevel.HEADING_2, 3: Headi
 
 export async function buildDocx({ md, title, output = {} }) {
   const toks = tokenize(md);
+  const accent = accentOf(output);
   const children = [];
   for (const tok of toks) {
     if (tok.t === 'h') {
-      children.push(new Paragraph({ heading: HEADING[tok.depth] || HeadingLevel.HEADING_3, children: runs(tok.text), spacing: { before: 240, after: 120 } }));
+      children.push(new Paragraph({ heading: HEADING[tok.depth] || HeadingLevel.HEADING_3, children: runs(tok.text, { color: accent }), spacing: { before: 240, after: 120 } }));
     } else if (tok.t === 'p') {
       children.push(new Paragraph({ children: runs(tok.text), spacing: { after: 120 } }));
     } else if (tok.t === 'q') {
       children.push(new Paragraph({
-        children: runs(tok.text).map((r) => r), indent: { left: 360 },
-        border: { left: { style: BorderStyle.SINGLE, size: 12, color: '0F62FE' } },
+        children: runs(tok.text), indent: { left: 360 },
+        border: { left: { style: BorderStyle.SINGLE, size: 12, color: accent } },
         spacing: { after: 120 }
       }));
     } else if (tok.t === 'ul') {
@@ -117,7 +145,7 @@ export async function buildDocx({ md, title, output = {} }) {
     } else if (tok.t === 'table') {
       const mkRow = (cellsArr, bold) => new TableRow({
         children: cellsArr.map((c) => new TableCell({
-          children: [new Paragraph({ children: runs(c, bold) })],
+          children: [new Paragraph({ children: runs(c, { bold }) })],
           margins: { top: 60, bottom: 60, left: 100, right: 100 }
         }))
       });
@@ -132,8 +160,10 @@ export async function buildDocx({ md, title, output = {} }) {
   }
 
   const isLetter = output.paperSize === 'Letter';
+  const classification = classificationOf(output);
   const headerBits = [];
   if (output.headerText && String(output.headerText).trim()) headerBits.push(new TextRun({ text: String(output.headerText).trim(), color: '666666', size: 16 }));
+  if (classification) headerBits.push(new TextRun({ text: (headerBits.length ? '    ' : '') + classification, color: 'A2191F', size: 16, bold: true }));
   if (output.watermark && String(output.watermark).trim()) headerBits.push(new TextRun({ text: (headerBits.length ? '    ' : '') + '[' + String(output.watermark).trim().toUpperCase() + ']', color: 'BBBBBB', size: 16, bold: true }));
   const footerBits = [];
   if (output.footerText && String(output.footerText).trim()) footerBits.push(new TextRun({ text: String(output.footerText).trim() + '   ', color: '666666', size: 16 }));
@@ -154,11 +184,15 @@ export async function buildDocx({ md, title, output = {} }) {
 /* ---------- .pdf ---------- */
 export function buildPdf({ md, title, output = {} }) {
   return new Promise((resolve, reject) => {
+    const accent = '#' + accentOf(output);
+    const classification = classificationOf(output);
+    const info = { Title: title || 'Document', Producer: 'Docify' };
+    if (output.author && String(output.author).trim()) info.Author = String(output.author).trim();
     const doc = new PDFDocument({
       size: output.paperSize === 'Letter' ? 'LETTER' : 'A4',
       margins: { top: 64, bottom: 64, left: 64, right: 64 },
       bufferPages: true,
-      info: { Title: title || 'Document', Producer: 'Docify' }
+      info
     });
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
@@ -170,13 +204,20 @@ export function buildPdf({ md, title, output = {} }) {
       if (tok.t === 'h') {
         const size = tok.depth === 1 ? 20 : tok.depth === 2 ? 15 : 12;
         doc.moveDown(tok.depth === 1 ? 0.2 : 0.6);
-        doc.font('Helvetica-Bold').fontSize(size).fillColor('#161616').text(plain(tok.text));
+        doc.font('Helvetica-Bold').fontSize(size).fillColor(tok.depth <= 2 ? accent : '#161616').text(plain(tok.text));
         doc.moveDown(0.25);
       } else if (tok.t === 'p') {
         body().text(plain(tok.text), { lineGap: 2 });
         doc.moveDown(0.4);
       } else if (tok.t === 'q') {
+        const top = doc.y;
         doc.font('Helvetica-Oblique').fontSize(10).fillColor('#525252').text(plain(tok.text), { indent: 14, lineGap: 2 });
+        // Quote bar, in the accent colour — skipped when the quote spanned a
+        // page break, where the start and end y are on different pages.
+        if (doc.y > top) {
+          doc.save().lineWidth(2).strokeColor(accent)
+            .moveTo(doc.page.margins.left + 2, top).lineTo(doc.page.margins.left + 2, doc.y).stroke().restore();
+        }
         doc.moveDown(0.4);
       } else if (tok.t === 'ul') {
         body();
@@ -201,15 +242,27 @@ export function buildPdf({ md, title, output = {} }) {
         doc.moveDown(0.5);
       } else if (tok.t === 'hr') {
         doc.moveDown(0.2);
-        doc.moveTo(64, doc.y).lineTo(doc.page.width - 64, doc.y).strokeColor('#dddddd').stroke();
+        doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y)
+          .strokeColor('#dddddd').stroke();
         doc.moveDown(0.4);
       }
     }
 
-    // Page decorations: watermark, header, footer, page numbers.
+    // Page decorations: watermark, header, classification, footer, page numbers.
+    //
+    // The page count is read ONCE, before anything is drawn: pdfkit starts a
+    // new page whenever text is written past the bottom margin (LineWrapper
+    // calls nextSection → continueOnNewPage). A footer is by definition below
+    // the bottom margin, so decorating in place appended one blank page per
+    // real page and printed "Page 1 of 1" on a two-page document. Zeroing the
+    // margins for the duration of the furniture keeps every write on the page
+    // it belongs to; they are restored immediately afterwards.
     const range = doc.bufferedPageRange();
-    for (let i = range.start; i < range.start + range.count; i++) {
+    const pageCount = range.count;
+    for (let i = range.start; i < range.start + pageCount; i++) {
       doc.switchToPage(i);
+      const margins = doc.page.margins;
+      doc.page.margins = { top: 0, bottom: 0, left: margins.left, right: margins.right };
       if (output.watermark && String(output.watermark).trim()) {
         doc.save();
         doc.rotate(-30, { origin: [doc.page.width / 2, doc.page.height / 2] });
@@ -219,15 +272,19 @@ export function buildPdf({ md, title, output = {} }) {
         doc.opacity(1);
       }
       doc.font('Helvetica').fontSize(8).fillColor('#666666');
-      if (output.headerText && String(output.headerText).trim()) {
-        doc.text(String(output.headerText).trim(), 64, 32, { width: doc.page.width - 128, align: 'left', lineBreak: false });
+      const head = String(output.headerText || '').trim();
+      if (head) doc.text(head, margins.left, 32, { width: doc.page.width - margins.left - margins.right, align: 'left', lineBreak: false });
+      if (classification) {
+        doc.fillColor('#a2191f').text(classification, margins.left, 32, { width: doc.page.width - margins.left - margins.right, align: 'right', lineBreak: false });
+        doc.fillColor('#666666');
       }
       const foot = [];
       if (output.footerText && String(output.footerText).trim()) foot.push(String(output.footerText).trim());
-      if (output.pageNumbers !== false) foot.push('Page ' + (i - range.start + 1) + ' of ' + range.count);
+      if (output.pageNumbers !== false) foot.push('Page ' + (i - range.start + 1) + ' of ' + pageCount);
       if (foot.length) {
-        doc.text(foot.join('  ·  '), 64, doc.page.height - 44, { width: doc.page.width - 128, align: 'center', lineBreak: false });
+        doc.text(foot.join('  ·  '), margins.left, doc.page.height - 44, { width: doc.page.width - margins.left - margins.right, align: 'center', lineBreak: false });
       }
+      doc.page.margins = margins;
     }
     doc.end();
   });

@@ -12,14 +12,20 @@ const cfg = {
 
 export const mailEnabled = () => Boolean(cfg.host);
 
+// Every result carries `delivered`. Callers must branch on it rather than on
+// "sendMail resolved": without SMTP the dev path resolves too, and a resolved
+// promise used to be read as proof an email went out.
 export async function sendMail(to, subject, html, opts = {}) {
   if (!mailEnabled()) {
     // Never log the body: it can carry verification links, one-time codes,
     // and customer support messages.
-    console.log('[mail:dev] to=' + to + ' subject=' + subject +
+    const line = '[mail:dev] NOT SENT (SMTP not configured) to=' + to + ' subject=' + subject +
       (opts.replyTo ? ' replyTo=' + opts.replyTo : '') +
-      ' (body suppressed, ' + String(html || '').length + ' chars)');
-    return { dev: true };
+      ' (body suppressed, ' + String(html || '').length + ' chars)';
+    // In production an undelivered email is an incident, not a dev convenience.
+    if (process.env.NODE_ENV === 'production') console.warn(line);
+    else console.log(line);
+    return { delivered: false, dev: true, reason: 'smtp-not-configured' };
   }
   const { default: nodemailer } = await import('nodemailer');
   const transport = nodemailer.createTransport({
@@ -28,11 +34,13 @@ export async function sendMail(to, subject, html, opts = {}) {
     secure: cfg.port === 465,
     auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined
   });
-  return transport.sendMail({
+  const info = await transport.sendMail({
     from: cfg.from,
     to,
     subject,
     html,
     ...(opts.replyTo ? { replyTo: opts.replyTo } : {})
   });
+  // A transport failure still rejects — reaching here means the server accepted it.
+  return { delivered: true, dev: false, info };
 }

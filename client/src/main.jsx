@@ -5,36 +5,53 @@ import './styles.css';
 import { AuthProvider, FlowProvider, Toasts, useAuth } from './store.jsx';
 import { TopBar } from './ui.jsx';
 import Landing from './pages/Landing.jsx';
-import { Signup, LoginRedirect, OAuthComplete } from './pages/Auth.jsx';
-import Source from './pages/Source.jsx';
-import DocType from './pages/DocType.jsx';
-import Format from './pages/Format.jsx';
-import Generate from './pages/Generate.jsx';
-import Quality from './pages/Quality.jsx';
-import ExportPage from './pages/ExportPage.jsx';
-import Pricing from './pages/Pricing.jsx';
-import Checkout from './pages/Checkout.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Automation from './pages/Automation.jsx';
-import DocSync from './pages/DocSync.jsx';
-import Repos from './pages/Repos.jsx';
-import Founder from './pages/Founder.jsx';
-import Assistant from './Assistant.jsx';
-import Settings from './pages/Settings.jsx';
-import { Docs, DocArticle } from './pages/Docs.jsx';
-import Help from './pages/Help.jsx';
-import Legal from './pages/Legal.jsx';
-import Contact from './pages/Contact.jsx';
-import Status from './pages/Status.jsx';
-import Governance from './pages/Governance.jsx';
-import History from './pages/History.jsx';
+import { Signup, LoginRedirect, OAuthComplete, ResetPassword } from './pages/Auth.jsx';
 import { trackPageview, installClickTracking, safeUrl } from './analytics.js';
 import posthog from './posthog.js';
+
+/* Everything past the front door is loaded on demand. The landing page is the
+   only route most visitors ever see, and it must not carry the authenticated
+   app's code. Landing and Auth stay eager — they are first paint. */
+const Source = React.lazy(() => import('./pages/Source.jsx'));
+const DocType = React.lazy(() => import('./pages/DocType.jsx'));
+const Format = React.lazy(() => import('./pages/Format.jsx'));
+const Generate = React.lazy(() => import('./pages/Generate.jsx'));
+const Quality = React.lazy(() => import('./pages/Quality.jsx'));
+const ExportPage = React.lazy(() => import('./pages/ExportPage.jsx'));
+const Pricing = React.lazy(() => import('./pages/Pricing.jsx'));
+const Checkout = React.lazy(() => import('./pages/Checkout.jsx'));
+const Dashboard = React.lazy(() => import('./pages/Dashboard.jsx'));
+const Automation = React.lazy(() => import('./pages/Automation.jsx'));
+const DocSync = React.lazy(() => import('./pages/DocSync.jsx'));
+const Repos = React.lazy(() => import('./pages/Repos.jsx'));
+const Founder = React.lazy(() => import('./pages/Founder.jsx'));
+const Settings = React.lazy(() => import('./pages/Settings.jsx'));
+const Docs = React.lazy(() => import('./pages/Docs.jsx').then((m) => ({ default: m.Docs })));
+const DocArticle = React.lazy(() => import('./pages/Docs.jsx').then((m) => ({ default: m.DocArticle })));
+const Help = React.lazy(() => import('./pages/Help.jsx'));
+const Legal = React.lazy(() => import('./pages/Legal.jsx'));
+const Contact = React.lazy(() => import('./pages/Contact.jsx'));
+const Status = React.lazy(() => import('./pages/Status.jsx'));
+const Governance = React.lazy(() => import('./pages/Governance.jsx'));
+const History = React.lazy(() => import('./pages/History.jsx'));
+const Assistant = React.lazy(() => import('./Assistant.jsx'));
+
+function PageLoading() {
+  return <div className="page"><p className="body01 t2">Loading…</p></div>;
+}
+
+// The click listener attaches to document and is never removed, so installing
+// it twice would double-count every click.
+let clickTrackingInstalled = false;
 
 function Analytics() {
   const loc = useLocation();
   const { user, ready } = useAuth();
-  React.useEffect(() => { installClickTracking(); }, []);
+  React.useEffect(() => {
+    if (clickTrackingInstalled) return;
+    clickTrackingInstalled = true;
+    installClickTracking();
+  }, []);
   React.useEffect(() => {
     trackPageview(loc.pathname + loc.search);
     posthog.capture('$pageview', { $current_url: safeUrl() });
@@ -57,8 +74,10 @@ function Analytics() {
 function RequireAuth({ children }) {
   const { user, ready } = useAuth();
   const loc = useLocation();
-  if (!ready) return <div className="page"><p className="body01 t2">Loading…</p></div>;
-  if (!user) return <Navigate to="/signup" state={{ from: loc.pathname }} replace />;
+  if (!ready) return <PageLoading />;
+  // Carry the whole location, query included, so an expired session lands the
+  // user back exactly where they were once they sign in again.
+  if (!user) return <Navigate to="/signup" state={{ from: loc.pathname + loc.search }} replace />;
   return children;
 }
 
@@ -77,44 +96,49 @@ function App() {
           <Analytics />
           <TopBar />
           <main>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/login" element={<LoginRedirect />} />
-              <Route path="/oauth/complete" element={<OAuthComplete />} />
-              <Route path="/source" element={<RequireAuth><Source /></RequireAuth>} />
-              <Route path="/doctype" element={<RequireAuth><DocType /></RequireAuth>} />
-              <Route path="/format" element={<RequireAuth><Format /></RequireAuth>} />
-              <Route path="/generate" element={<RequireAuth><Generate /></RequireAuth>} />
-              <Route path="/quality" element={<RequireAuth><Quality /></RequireAuth>} />
-              <Route path="/quality/:genId" element={<RequireAuth><Quality /></RequireAuth>} />
-              <Route path="/export" element={<RequireAuth><ExportPage /></RequireAuth>} />
-              <Route path="/pricing" element={<Pricing />} />
-              <Route path="/checkout" element={<RequireAuth><Checkout /></RequireAuth>} />
-              <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-              <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
-              <Route path="/automation/:id" element={<RequireAuth><Automation /></RequireAuth>} />
-              <Route path="/sync" element={<RequireAuth><DocSync /></RequireAuth>} />
-              <Route path="/repos" element={<RequireAuth><Repos /></RequireAuth>} />
-              <Route path="/standardize" element={<RequireAuth><Governance /></RequireAuth>} />
-              {/* Old URL keeps working — bookmarks, help links, history */}
-              <Route path="/governance" element={<Navigate to="/standardize" replace />} />
-              <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
-              <Route path="/history/:id" element={<RequireAuth><History /></RequireAuth>} />
-              <Route path="/founder" element={<RequireAuth><Founder /></RequireAuth>} />
-              <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-              <Route path="/docs" element={<Docs />} />
-              <Route path="/docs/:slug" element={<DocArticle />} />
-              <Route path="/help" element={<Help />} />
-              <Route path="/help/:topic" element={<Help />} />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/legal/:slug" element={<Legal />} />
-              <Route path="/status" element={<Status />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            <React.Suspense fallback={<PageLoading />}>
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/login" element={<LoginRedirect />} />
+                <Route path="/reset" element={<ResetPassword />} />
+                <Route path="/oauth/complete" element={<OAuthComplete />} />
+                <Route path="/source" element={<RequireAuth><Source /></RequireAuth>} />
+                <Route path="/doctype" element={<RequireAuth><DocType /></RequireAuth>} />
+                <Route path="/format" element={<RequireAuth><Format /></RequireAuth>} />
+                <Route path="/generate" element={<RequireAuth><Generate /></RequireAuth>} />
+                <Route path="/quality" element={<RequireAuth><Quality /></RequireAuth>} />
+                <Route path="/quality/:genId" element={<RequireAuth><Quality /></RequireAuth>} />
+                <Route path="/export" element={<RequireAuth><ExportPage /></RequireAuth>} />
+                <Route path="/pricing" element={<Pricing />} />
+                <Route path="/checkout" element={<RequireAuth><Checkout /></RequireAuth>} />
+                <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+                <Route path="/automation" element={<RequireAuth><Automation /></RequireAuth>} />
+                <Route path="/automation/:id" element={<RequireAuth><Automation /></RequireAuth>} />
+                <Route path="/sync" element={<RequireAuth><DocSync /></RequireAuth>} />
+                <Route path="/repos" element={<RequireAuth><Repos /></RequireAuth>} />
+                <Route path="/standardize" element={<RequireAuth><Governance /></RequireAuth>} />
+                {/* Old URL keeps working — bookmarks, help links, history */}
+                <Route path="/governance" element={<Navigate to="/standardize" replace />} />
+                <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
+                <Route path="/history/:id" element={<RequireAuth><History /></RequireAuth>} />
+                <Route path="/founder" element={<RequireAuth><Founder /></RequireAuth>} />
+                <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+                <Route path="/docs" element={<Docs />} />
+                <Route path="/docs/:slug" element={<DocArticle />} />
+                <Route path="/help" element={<Help />} />
+                <Route path="/help/:topic" element={<Help />} />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="/legal/:slug" element={<Legal />} />
+                <Route path="/status" element={<Status />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </React.Suspense>
           </main>
           <Toasts />
-          <Assistant />
+          {/* The help widget floats over every page — it can arrive a beat late
+              rather than delay first paint. */}
+          <React.Suspense fallback={null}><Assistant /></React.Suspense>
         </FlowProvider>
       </AuthProvider>
     </BrowserRouter>

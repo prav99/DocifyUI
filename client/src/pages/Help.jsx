@@ -14,12 +14,13 @@ const TOPICS = {
     intro: 'Create an account with a code host (GitHub, GitLab, Bitbucket) in one click, or with your work email and a password.',
     steps: [
       'Fastest path: click "Continue with GitHub / GitLab / Bitbucket". This signs you in AND authorizes that host as a documentation source in one step.',
-      'Email path: switch to "With email", enter your work address and a password of at least 8 characters. The strength meter must not show "Weak".',
+      'Email path: switch to "With email", enter your work address and a password of at least 8 characters — that length is the only hard requirement. The strength meter is guidance, not a gate; a longer passphrase with mixed characters is genuinely safer.',
       'If email verification is enabled for your workspace, check your inbox for a 6-digit code and enter it to activate the account.',
       'Returning users: click "Log in" at the bottom of the page (or the Login button in the top bar).'
     ],
     issues: [
-      ['"Password must be at least 8 characters"', 'Use 8+ characters. Mixing upper/lower case, digits, and symbols moves the meter to "Strong".'],
+      ['"Password must be at least 8 characters"', 'Use 8 or more characters. Mixing upper/lower case, digits, and symbols moves the strength meter to "Strong" — the meter is advice, the 8-character minimum is the rule.'],
+      ['Forgotten password', 'There is no self-service reset yet. Email support from the address on the account and we will help you regain access.'],
       ['"An account with this email already exists"', 'Switch to Log in — the address is already registered.'],
       ['"Invalid email or password"', 'Check for typos and caps lock. Passwords are case-sensitive.'],
       ['Verification code expired', 'Codes last 10 minutes. Click "Resend code" for a fresh one.'],
@@ -109,34 +110,36 @@ const TOPICS = {
     ]
   },
   quality: {
-    title: 'Step 5 — AI quality review',
+    title: 'Step 5 — Quality review',
     page: '/quality',
-    intro: 'The document is scored against an enterprise documentation rubric: structure, titles, metadata, clarity, and examples. The checks are deterministic rules over the document text, not a language-model opinion.',
+    intro: 'The document is scored against an enterprise documentation rubric: structure, titles, metadata, clarity, and examples. The checks are deterministic rules over the document text, not a language-model opinion — the same document always produces the same score.',
     steps: [
       'The overall score (0–100) and verdict sit at the top. 85+ passes the publish gate.',
       'The "Rubric findings" tab lists open findings — click "Apply fix" on one, or "Fix all remaining" to repair everything at once. Fixes are real content edits.',
-      'The "Scores" tab breaks the result into weighted dimensions; "Broken links" lists link-check failures; "Style guide" shows editorial checks plus your writing-consistency scores (Voice, Terminology, Structure, Formatting) with concrete findings like “Preferred term: sign in · Detected: log in · 4 occurrences”.',
+      'The "Scores" tab breaks the result into weighted dimensions; "Links" lists link findings from the document text; "Style guide" shows editorial checks plus your writing-consistency scores (Voice, Terminology, Structure, Formatting) with concrete findings like “Preferred term: sign in · Detected: log in · 4 occurrences”.',
       '"Re-check this document" runs the rubric again over the current text — useful after edits or applied fixes.',
-      'The dark panel estimates how likely the document is to be retrieved and cited by ChatGPT, Claude, and Gemini — it recomputes after every fix.'
+      'The dark panel estimates how likely the document is to be retrieved and cited by ChatGPT, Claude, and Gemini. It is a modelled signal computed from your own scores — an indicator of readiness, never a guarantee of how any AI system will rank you.'
     ],
     issues: [
       ['Score below the gate', 'Apply the suggested fixes — each one shows its point value. The gate (default 85) is configurable in Automation.'],
-      ['Broken links reported', 'Fix the targets at the source, or let auto-regenerate re-link them on the next merge.']
+      ['Link findings reported', 'Fix the targets at the source, or let auto-regenerate re-link them on the next merge.']
     ]
   },
   export: {
     title: 'Step 6 — Export & download',
     page: '/export',
-    intro: 'Download the finished document in your chosen format, plus the AI quality report as PDF, HTML, or PowerPoint. Every download is built from the latest corrected content.',
+    intro: 'Download the finished document in your chosen format, plus the quality report as PDF, HTML, or PowerPoint. Every download is built from the latest corrected content.',
     steps: [
       'Click "Download <format>" for the document. Binary formats (PDF, Word) are assembled at download time with your page setup applied.',
-      '"AI quality report" downloads the complete Step-5 review as a management-ready PDF, self-contained HTML, or PowerPoint deck.',
+      '"Download quality report" exports the Step-5 review as a management-ready PDF, self-contained HTML, or PowerPoint deck. "Configure report…" picks which sections are included — Executive summary, Full audit report, or Technical quality report.',
       '"Show final preview" renders exactly what the file will contain.',
+      '"Copy quality report link" copies a link to this report. Reports are scoped to the account that generated them, so the link only opens for you — to hand the report to someone else, download it and send the file.',
       'Use "Set up auto-regenerate on merge" to keep the document current automatically — see the Automation help topic.'
     ],
     issues: [
       ['Download does nothing', 'Allow downloads for this site in your browser settings, then retry.'],
-      ['File shows fixes are missing', 'Downloads always include applied fixes. If content looks stale, re-open the export page — it fetches the latest state.']
+      ['File shows fixes are missing', 'Downloads always include applied fixes. If content looks stale, re-open the export page — it fetches the latest state.'],
+      ['A format returns "not included in your plan"', 'Format availability follows your plan. Free exports PDF and Word; paid plans add the rest.']
     ]
   },
   dashboard: {
@@ -178,7 +181,7 @@ const TOPICS = {
     steps: [
       'Add a document two ways: upload a file, or import directly from a docs repository (owner/name + file path). Markdown, Word, and plain text are parsed into a section outline.',
       'Connect the repository whose changes should drive updates. Each merge runs through the relevance engine first — refactors, test-only changes, and dependency bumps are filtered out (see the "Filtered out" tab for every skip, with the reason and a one-click "Document anyway" override).',
-      'Relevant changes produce an update proposal: the AI picks the best-matching section (the reasoning panel explains why, with candidate sections and confidence), rewrites it in place or splices a new sub-section under the right parent, and conforms the insert to your document’s own conventions — bullet style, heading case — so it reads like the same author.',
+      'Relevant changes produce an update proposal: a deterministic placement scorer picks the best-matching section (the reasoning panel shows the candidate sections and why each scored as it did), the AI rewrites it in place or splices a new sub-section under the right parent, and the insert is conformed to your document’s own conventions — bullet style, heading case — so it reads like the same author.',
       'Review each proposal as a side-by-side diff and approve or dismiss. Nothing touches your document without approval; approved versions are kept, so you can roll back.',
       'Tune what counts as documentation-worthy with docify.yaml and .docify/instructions.md in your repository, or a rule set from Repository Connections.',
       'Inherited a messy document written by many people with no standard? Click "Standardize document": the AI rebuilds the whole document against a type blueprint in one consistent voice — facts kept, duplicates merged, terminology normalized — and proposes it as a full-document diff with before/after consistency scores. Approve it or dismiss it; nothing changes silently.'
@@ -229,53 +232,71 @@ const TOPICS = {
     steps: [
       'Writing style tab: set your organization voice once and every future document follows it — pick a style-guide bias (Docify, Microsoft, or Google conventions), define preferred terminology one pair per line (sign in => log in, login), list prohibited words, and add free-form policy notes. Saving bumps the profile version; "Reset to default profile" clears customizations.',
       'Connected sources tab shows each provider connection and whether credentials are on file.',
-      'Invite teammates by email — they receive Writer access by default; owners can change roles.',
-      'Your current plan, billing cycle, and seat count are shown under Plan.'
+      'Add teammates by email — the seat is recorded immediately with Writer access. Invitation emails and a self-serve acceptance flow are not built yet, so tell your teammate to sign up with that exact address.',
+      'Your current plan, billing cycle, seat count, and document usage this month are shown under Plan.'
     ],
     issues: [
-      ['Invite not received', 'Ask the teammate to check spam, or re-send the invite.'],
-      ['Need more seats', 'Change the seat count during checkout, or contact sales on the Enterprise plan.']
+      ['My teammate got no email', 'None is sent yet — adding a member records the seat, it does not email anyone. Ask them to sign up with the same address you entered.'],
+      ['Need to free a seat', 'Removing a member is not built yet. Email support and we will adjust the account.'],
+      ['Need more seats', 'Starter includes 2 seats and Team includes 5, with extra Team seats at $12 each. Enterprise is arranged with us directly.']
     ]
   },
   pricing: {
     title: 'Plans & pricing',
     page: '/pricing',
-    intro: 'Free covers evaluation (5 watermarked generations per month, 1 source, PDF and Word only). Team unlocks every format, source, and automation. Enterprise adds custom volume and controls.',
+    intro: 'Free covers evaluation: 5 watermarked documents a month, 1 source, PDF and Word only. Starter is $29/month ($24 annual) for 2 seats and 60 documents. Team is $99/month ($79 annual) for 5 seats and 250 documents, plus $12 per extra seat. Enterprise is arranged with us directly.',
     steps: [
-      'Toggle monthly vs annual billing — annual is discounted.',
-      'Pick a plan to go to checkout; Enterprise routes to a sales conversation.'
+      'Toggle monthly vs annual billing — annual is discounted (about 17% on Starter, 20% on Team).',
+      'Pick a plan to open checkout; Enterprise routes to a conversation with us.',
+      'Document limits are enforced on the server, so the number on the pricing page is the number your account actually gets.'
     ],
     issues: [
-      ['Hit the free-plan limit', 'The counter resets monthly, or upgrade to Team for unmetered generation.'],
-      ['Watermark on documents', 'Free-plan output is watermarked; paid plans remove it.']
+      ['Hit the plan limit', 'The counter resets monthly. Upgrading raises the cap — no plan is unlimited except by arrangement on Enterprise.'],
+      ['Watermark on documents', 'Free-plan output is watermarked; paid plans remove it.'],
+      ['Is there a free trial?', 'No — there is a permanently free plan instead, with 5 documents a month and no card required.']
     ]
   },
   checkout: {
     title: 'Checkout & billing',
     page: '/checkout',
-    intro: 'Secure card checkout for the Team plan. You are billed per seat, monthly or annually.',
+    intro: 'Online payment is not switched on yet. The checkout page shows exactly what a plan would cost, but Docify has no payment processor connected, so no card is accepted, stored, or charged — the server declines the request rather than granting a plan it cannot bill for.',
     steps: [
-      'Review plan, cycle, and seats, then confirm payment.',
-      'A receipt is emailed after every successful charge; plan changes apply immediately.'
+      'Review the plan, billing cycle, and seat count to see the price.',
+      'The card fields are disabled placeholders — nothing typed there could be sent anywhere, and nothing is stored.',
+      'To start a paid plan today, email support and we will arrange it with you directly.'
     ],
     issues: [
-      ['Payment declined', 'Verify the card details and available balance, or try another card. Nothing is charged on a failed attempt.'],
-      ['Wrong seat count billed', 'Seats can be adjusted any time from Team & settings — changes are prorated.']
+      ['"Online payment is not available yet"', 'That is the expected response — the server deliberately declines rather than activating a plan it cannot charge for. Nothing was charged and your plan is unchanged.'],
+      ['When will card payment work?', 'We are selecting a payment provider that supports our billing entity. Until then, paid plans are arranged over email.']
     ]
   },
   docs: {
     title: 'Product docs & guides',
     page: '/docs',
-    intro: 'Long-form product documentation: concepts, integration guides, and the full API surface of Docify itself.',
+    intro: 'Long-form product documentation: how the quality rubric works, every integration, the automation model, output formats, and account administration.',
     steps: [
-      'Browse the article list, or open a guide directly from links in the app.',
+      'Browse the article list, search it, or open a guide directly from links in the app.',
       'For hands-on help with a specific screen, use the Help link on that screen instead.'
     ],
     issues: []
+  },
+  status: {
+    title: 'System status',
+    page: '/status',
+    intro: 'The public status page shows live component health plus uptime for the last 24 hours, 7 days, and 30 days, all computed from health samples the service records every five minutes.',
+    steps: [
+      'Green means the component answered its last live check; the API and database checks are real probes.',
+      'The 90-day strip shows one square per day. Grey squares are days with no recorded samples — before monitoring began, or a period we did not observe. They are never counted as operational.',
+      'External monitors can poll GET /api/health, which returns 200 when healthy and 503 during a disruption.'
+    ],
+    issues: [
+      ['A number shows "unavailable"', 'The page refuses to print an uptime outside 0–100%, because such a figure can only be a bug. We would rather show nothing than a number we know is wrong.'],
+      ['Dashes instead of percentages', 'Not enough history has been recorded for that window yet. We never fill the gap with an assumed figure.']
+    ]
   }
 };
 
-const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'sync', 'governance', 'history', 'settings', 'pricing', 'checkout', 'docs'];
+const ORDER = ['login', 'source', 'repos', 'doctype', 'format', 'generate', 'quality', 'export', 'dashboard', 'automation', 'sync', 'governance', 'history', 'settings', 'pricing', 'checkout', 'docs', 'status'];
 
 export default function Help() {
   const { topic } = useParams();
@@ -286,21 +307,53 @@ export default function Help() {
     path: topic ? '/help/' + topic : '/help'
   });
   const t = TOPICS[topic];
+  const [q, setQ] = React.useState('');
 
   if (!t) {
+    // Every word must appear somewhere in the topic, so "quality report" finds
+    // the article whose title and body split those two words between them.
+    const terms = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const hay = (id) => {
+      const x = TOPICS[id];
+      return (x.title + ' ' + x.intro + ' ' + x.steps.join(' ') + ' ' + x.issues.map((i) => i.join(' ')).join(' ')).toLowerCase();
+    };
+    const shown = terms.length ? ORDER.filter((id) => terms.every((w) => hay(id).includes(w))) : ORDER;
     return (
       <div className="page">
         <p className="eyebrow mb3" style={{ color: '#0f62fe' }}>HELP CENTER</p>
         <h1 className="h04">How can we help?</h1>
+        {topic && (
+          <div className="notconn mt5">
+            <div>
+              <p className="body01"><b>No help article called “{topic}”</b></p>
+              <p className="helper mt2">It may have been renamed. Pick the closest topic below.</p>
+            </div>
+          </div>
+        )}
         <p className="body01 t2 mt3">Every screen of Docify has its own guide — pick the one you need. You can also open these from the “Help” link on any page.</p>
-        <div className="grid4 mt7">
-          {ORDER.map((id) => (
-            <div key={id} className="tile tile--click" onClick={() => nav('/help/' + id)}>
+        <div className="field mt6" style={{ maxWidth: 420 }}>
+          <label htmlFor="helpSearch">Search help topics</label>
+          <input id="helpSearch" className="input" value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder="e.g. webhook, seats, watermark" />
+        </div>
+        {terms.length > 0 && (
+          <p className="helper mt3">{shown.length} topic{shown.length === 1 ? '' : 's'} for “{q.trim()}”</p>
+        )}
+        <div className="grid4 mt5">
+          {shown.map((id) => (
+            <button key={id} type="button" className="tile tile--click" style={{ textAlign: 'left', width: '100%' }}
+              onClick={() => nav('/help/' + id)}>
               <p className="h01">{TOPICS[id].title}</p>
               <p className="helper mt2">{TOPICS[id].intro.slice(0, 90)}…</p>
-            </div>
+            </button>
           ))}
         </div>
+        {terms.length > 0 && shown.length === 0 && (
+          <p className="body01 t2 mt5">
+            Nothing matched — try “webhook”, “seats”, or “format”, or{' '}
+            <Link to="/contact">send us a message</Link>.
+          </p>
+        )}
       </div>
     );
   }
@@ -332,7 +385,7 @@ export default function Help() {
 
       <div className="divider" style={{ margin: '32px 0 16px' }} />
       <p className="body01">
-        <a onClick={() => nav(t.page)}>← Back to {t.title.replace(/^Step \d+ — /, '')}</a>
+        <Link to={t.page}>← Back to {t.title.replace(/^Step \d+ — /, '')}</Link>
         {' · '}
         <Link to="/help">All help topics</Link>
         {' · '}
