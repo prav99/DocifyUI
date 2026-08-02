@@ -14,6 +14,22 @@ const CAT_DESC = {
   'Consumability': 'Whether individual sections hold up when retrieved out of context.'
 };
 
+// The header used to say "generated just now" for every document, however old
+// it was. Report the real age instead.
+function fmtAge(iso) {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  if (Number.isNaN(t)) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (secs < 90) return 'generated just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return 'generated ' + mins + ' min ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return 'generated ' + hrs + ' hour' + (hrs === 1 ? '' : 's') + ' ago';
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return 'generated ' + days + ' day' + (days === 1 ? '' : 's') + ' ago';
+  return 'generated ' + new Date(t).toLocaleDateString();
+}
+
 // Eases a percentage from its previous value to the new one — the visible
 // "your chances just went up" moment after each fix.
 function AnimPct({ value }) {
@@ -187,7 +203,7 @@ export default function Quality() {
 
   if (!report) return <div className="page"><p className="body01 t2">Loading quality report…</p></div>;
 
-  const FIX_STEPS = ['Locating the issue', 'Rewriting the content', 'Re-rendering every format', 'Re-scoring against the rubric'];
+  const FIX_STEPS = ['Locating the issue', 'Rewriting the content', 'Re-rendering the document and preview', 'Re-scoring against the rubric'];
 
   async function applyFix(issueId, opts = {}) {
     if (fixing[issueId] != null) return;
@@ -250,7 +266,7 @@ export default function Quality() {
         });
       }
       toast('success', fixAllStop.current ? 'Stopped' : 'All fixes applied',
-        'Overall ' + prevOverall + ' → ' + newOverall + ' · content and every export regenerated');
+        'Overall ' + prevOverall + ' → ' + newOverall + ' · document content and preview regenerated');
     } catch { /* per-fix toast already shown */ }
     finally { setFixingAll(false); fixAllStop.current = false; }
   }
@@ -320,7 +336,7 @@ export default function Quality() {
           {report.title}
           {fromAuto && gen
             ? ' · ' + (gen.repo || 'repo') + (gen.branch ? ' @ ' + gen.branch : '') + ' · ' + String(gen.format || '').toUpperCase() + ' · score ' + overall + '/100'
-            : ' · generated just now'}
+            : gen && gen.createdAt ? ' · ' + fmtAge(gen.createdAt) : ''}
         </p>
 
         <div className="judgeband mt7">
@@ -353,7 +369,7 @@ export default function Quality() {
         </div>
 
         <div className="tabs mt6">
-          {[['ai', 'Rubric findings'], ['overview', 'Scores'], ['links', 'Broken links'], ['style', 'Style guide']].map(([id, label]) => (
+          {[['ai', 'Rubric findings'], ['overview', 'Scores'], ['links', 'Links'], ['style', 'Style guide']].map(([id, label]) => (
             <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
@@ -387,7 +403,11 @@ export default function Quality() {
                         <span className="mono" style={{ fontSize: 15 }}><AnimPct value={d.score} /></span>
                       </div>
                       <div className="dimbar"><div className={'dimfill dimfill--' + cls} style={{ width: d.score + '%' }} /></div>
-                      <span className="helper">weight {Math.round(d.weight * 100)}% · {d.open} open{d.total ? ' of ' + d.total + ' checks' : ''}</span>
+                      {/* Link findings come from reading the document, not from
+                          a fixed set of checks — so they get a count, not a ratio. */}
+                      <span className="helper">weight {Math.round(d.weight * 100)}% · {d.id === 'links'
+                        ? d.open + ' finding' + (d.open === 1 ? '' : 's')
+                        : d.open + ' open' + (d.total ? ' of ' + d.total + ' checks' : '')}</span>
                       {clickable && <span className="dimlink">View {d.open} finding{d.open > 1 ? 's' : ''} →</span>}
                     </div>
                   );
@@ -444,7 +464,7 @@ export default function Quality() {
             <div className="qpipe">
               {[
                 ['01', 'Input', 'Generated document · style profile · optional PRDs and code summaries'],
-                ['02', 'Analysis', 'Rule-based rubric · style validation · readability checks · link engine'],
+                ['02', 'Analysis', 'Rule-based rubric · style validation · readability checks · link inspection'],
                 ['03', 'Scoring', 'Weighted dimension scores, issues, and one-click fix suggestions'],
                 ['04', 'Human in the loop', 'You review and apply or dismiss each fix — nothing publishes itself']
               ].map(([n, t, d2], i, arr) => (
@@ -459,30 +479,20 @@ export default function Quality() {
               ))}
             </div>
 
-            <h2 className="h02 mt7 mb3">Annotated preview</h2>
-            <p className="helper mb5">A sample of the generated content with findings marked inline. Green — correct terminology. Amber — broken link. Blue — well-chunked for AI retrieval.</p>
-            <div className="annot">
-              {'## Authentication\n\nAll requests require a '}
-              <span className="an-good">bearer token</span>
-              {' issued from the developer\nconsole. Tokens scope to a single project and expire after\n12 hours. See the '}
-              <span className="an-warn">token rotation guide</span>
-              <span className="antag antag--warn">404 — broken link</span>
-              {' for rotation policy.\n\n'}
-              <span className="an-ai">{'## Create a charge\n\nSend a POST request to /v1/charges with amount, currency,\nand source. The response returns a charge object with a\nstatus of pending, succeeded, or failed.'}</span>
-              <span className="antag antag--ai">Self-contained — retrieval-ready</span>
-              {'\n\nRefunds are issued against a '}
-              <span className="an-good">charge ID</span>
-              <span className="antag antag--good">consistent term</span>
-              {', never against raw\ncard details.'}
-            </div>
           </>
         )}
 
         {tab === 'links' && (
           <>
-            <p className="body01 t2 mb5">{report.links.length} of 47 links failed verification. Fix targets at the source, or let auto-regenerate re-link on next merge.</p>
-            {report.links.map((r) => (
-              <div key={r.url} className="issue" style={{ borderLeftColor: 'var(--support-error)' }}>
+            {/* Nothing here fetches a URL, so the count is findings from
+                reading the document — never a pass/fail out of a total. */}
+            <p className="body01 t2 mb5">
+              {(report.links || []).length
+                ? report.links.length + ' link finding' + (report.links.length === 1 ? '' : 's') + ' from reading the document text. Docify does not request the targets, so a link with no finding here has not been confirmed reachable.'
+                : 'No link findings in this document. Docify reads the links in the text but does not request the targets, so this is not confirmation that every link resolves.'}
+            </p>
+            {(report.links || []).map((r) => (
+              <div key={r.url} className="issue" style={{ borderLeftColor: r.status === '404' ? 'var(--support-error)' : 'var(--support-warning)' }}>
                 <div className="row row--between">
                   <span className="mono" style={{ fontSize: 13 }}>{r.url}</span>
                   <span className={'tag ' + (r.status === '404' ? 'tag--red' : 'tag--amber')}>{r.status}</span>
@@ -492,7 +502,7 @@ export default function Quality() {
               </div>
             ))}
             <div className="mt6">
-              <Notif kind="info">Link integrity is checked on every generation and on every merge when automation is on.</Notif>
+              <Notif kind="info">Link findings are recomputed from the document text on every generation, and on every merge when automation is on.</Notif>
             </div>
           </>
         )}
@@ -528,7 +538,7 @@ export default function Quality() {
           <>
             <div className="grid3">
               <Score label="LLM-readiness dimension" num={ai} helper="Recomputed live from open findings" kind={ai >= 85 ? 'good' : 'warn'} />
-              <Score label="Issues remaining" num={report.remaining} helper="Across both categories" kind="info" />
+              <Score label="Issues remaining" num={report.remaining} helper="Open rubric findings" kind="info" />
               <Score label="Fixes applied" num={report.fixedCount} helper="Applied to the working draft" kind="good" />
             </div>
 
@@ -671,7 +681,7 @@ export default function Quality() {
                           {iss.target ? <p className="label01 t2">{iss.target}</p> : null}
                           {iss.before ? <p className="diff-del mono">− {iss.before}</p> : null}
                           {iss.after ? <p className="diff-add mono">+ {iss.after}</p> : null}
-                          <p className="helper mt2">Applied to the document — content, preview, and all export formats were regenerated.</p>
+                          <p className="helper mt2">Applied to the document — the content and preview were regenerated, and every export is produced from the repaired text.</p>
                         </div>
                       )}
 
@@ -687,7 +697,7 @@ export default function Quality() {
             ))}
 
             <div className="mt6">
-              <Notif kind="info">Link integrity is evaluated separately — see the Broken links tab. It does not affect the AI-readiness score.</Notif>
+              <Notif kind="info">Link findings are listed separately — see the Links tab. They do not affect the AI-readiness score.</Notif>
             </div>
           </>
         )}

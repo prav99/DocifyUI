@@ -182,8 +182,15 @@ async function fetchProfile(provider, token) {
   return { email: email || (u.username || 'user') + '@users.noreply.bitbucket.org', name: u.display_name || u.username || '', handle: u.username || 'bitbucket' };
 }
 
-export function sign(userId) {
-  return jwt.sign({ uid: userId, typ: 'session' }, SECRET, { expiresIn: '7d' });
+// Sessions are stateless for 7 days, so the only way to revoke one is to make
+// it carry something the server can invalidate: `tv` is the account's
+// tokenVersion at signing time, checked against the column on every request.
+// A bare id signs version 0 — correct only for an account that has never
+// changed its password.
+export function sign(user) {
+  const uid = typeof user === 'string' ? user : user.id;
+  const tv = typeof user === 'string' ? 0 : Number(user.tokenVersion || 0);
+  return jwt.sign({ uid, typ: 'session', tv }, SECRET, { expiresIn: '7d' });
 }
 
 // OAuth round-trip state is signed with a SEPARATE key derived from the
@@ -221,6 +228,13 @@ export async function requireAuth(req, res, next) {
   // up. Loading the user here also spares handlers a second lookup.
   const user = await prisma.user.findUnique({ where: { id: p.uid } });
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  // Revocation check. A session signed before the last password change carries
+  // a stale `tv` and stops working immediately. Tokens issued before this claim
+  // existed have no `tv` and count as version 0, so sessions already in flight
+  // survive the deploy.
+  if (Number(p.tv || 0) !== Number(user.tokenVersion || 0)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   req.uid = user.id;
   req.user = user;
   next();

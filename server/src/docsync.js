@@ -7,8 +7,10 @@
       changed portion is documented.
    3. Semantic section matching     → every section of the REAL document is scored
       against the change signal; the best anchor wins, with ranked alternates.
-   4. A side-by-side diff + AI reasoning (why this section, confidence, commit,
-      files) is queued for human review.
+   4. A side-by-side diff + placement reasoning (why this section, match score,
+      commit, files) is queued for human review. Placement is computed by the
+      deterministic lexical scorer in this file — no model is involved in
+      choosing the section, and the payload says so.
    5. Approve applies the splice to the document body, preserving heading
       hierarchy, and cuts an immutable version. Reject discards. Edit-then-approve
       applies the reviewer's text.
@@ -25,7 +27,7 @@ import { rewriteText } from './adapters/rewrite.js';
 import { extractDocument } from './adapters/extract.js';
 import multer from 'multer';
 import { freshToken } from './auth.js';
-import { reserveDocumentQuota } from './quota.js';
+import { reserveDocumentQuota, releaseDocumentQuota } from './quota.js';
 
 // In-memory multipart upload (15 MB) for the multi-format document uploader.
 const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
@@ -469,17 +471,48 @@ async function runParsePipeline(docId) {
   }
 }
 
-/* ---------------- Serialization ---------------- */
+/* ---------------- Serialization ----------------
+   parseOutline / semanticProfile / scoreOutline are lexical engines: term
+   counts, regex concept bridges, path overlap. They are good, but they are not
+   a model, and the payload must not let a client present them as one. The
+   labels are attached here rather than stored, so rows written before this
+   also carry them. */
+const PARSED_STRUCTURE = {
+  engine: 'lexical',
+  label: 'Parsed structure',
+  disclosure: 'Structure, terminology, and tone come from counting terms and matching heading patterns in your document. No language model reads it.'
+};
+const PLACEMENT_REASONING = {
+  engine: 'lexical',
+  label: 'Placement reasoning',
+  disclosure: 'The section, the ranked alternates, and the match score are computed by Docify’s deterministic matcher — heading and file-path term overlap. No language model chooses the placement.',
+  confidenceBasis: 'Match score from term and concept overlap, not a model probability.'
+};
+
 function serializeDoc(d, { withContent = false } = {}) {
   return {
     id: d.id, name: d.name, format: d.format, repo: d.repo, branch: d.branch,
     docsProvider: d.docsProvider || '', docsRepo: d.docsRepo || '',
     docsBranch: d.docsBranch || '', docsPath: d.docsPath || '',
     status: d.status, progress: d.progress, error: d.error, cursor: d.cursor,
-    sections: j(d.sections, []), profile: j(d.profile, {}),
+    sections: j(d.sections, []), profile: { ...PARSED_STRUCTURE, ...j(d.profile, {}) },
     createdAt: d.createdAt, updatedAt: d.updatedAt,
     ...(withContent ? { content: d.content } : {})
   };
+}
+
+// Standardize proposals ARE model output (or a disclosed deterministic pass);
+// every other kind is placement, which is not.
+function reasoningPayload(u) {
+  const r = j(u.reasoning, {});
+  if (u.kind === 'restructure') {
+    return {
+      engine: r.simulated ? 'deterministic' : 'ai',
+      label: r.simulated ? 'Standardization report (no AI engine)' : 'Standardization report',
+      ...r
+    };
+  }
+  return { ...PLACEMENT_REASONING, ...r };
 }
 
 function serializeUpdate(u, docName) {
@@ -487,8 +520,11 @@ function serializeUpdate(u, docName) {
     id: u.id, docId: u.docId, docName: docName || undefined,
     commit: u.commit, message: u.message, author: u.author, branch: u.branch,
     files: j(u.files, []), kind: u.kind, anchor: j(u.anchor, {}),
-    confidence: u.confidence, reasoning: j(u.reasoning, {}), diff: j(u.diff, {}),
+    confidence: u.confidence, reasoning: reasoningPayload(u), diff: j(u.diff, {}),
     snippet: u.snippet, status: u.status, decidedAt: u.decidedAt,
+    // A restructure proposal's snippet IS the whole rewritten document, not a
+    // fragment spliced under a heading — the editor must replace, not append.
+    snippetScope: u.kind === 'restructure' ? 'document' : 'section',
     versionNumber: u.versionNumber, createdAt: u.createdAt
   };
 }

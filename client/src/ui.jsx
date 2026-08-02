@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, toast } from './store.jsx';
+import posthog from './posthog.js';
 
 /* ---------- Repository-hub contextual action ----------
    One consistent escape hatch wherever a repository is being selected:
@@ -266,6 +267,9 @@ function UserMenu({ user }) {
     setOpen(false);
     try { sessionStorage.removeItem('docgen_flow'); } catch { /* ignore */ }
     logout();
+    // Shared browsers: without a reset the next person to sign in keeps the
+    // previous user's analytics identity.
+    try { posthog.reset(); } catch { /* analytics must never block sign-out */ }
     toast('info', 'Logged out', 'See you soon');
     nav('/');
   };

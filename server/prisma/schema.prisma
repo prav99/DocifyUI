@@ -15,6 +15,10 @@ model User {
   email         String       @unique
   name          String       @default("")
   passwordHash  String?
+  // Bumped on every password change, set, or reset. Sessions carry the version
+  // they were signed with, so raising it revokes every token issued earlier —
+  // without this a leaked 7-day JWT survives the password change made to stop it.
+  tokenVersion  Int          @default(0)
   emailVerified Boolean      @default(false)
   // Set ONLY by a real verification event (email link or OTP). `emailVerified`
   // alone is not proof: signup auto-verifies when SMTP is unconfigured.
@@ -36,6 +40,23 @@ model User {
   syncDocs      SyncDoc[]
   identities    Identity[]
   usage         UsageEvent[]
+  resets        PasswordReset[]
+}
+
+// A pending "forgot password" link. Only the SHA-256 hash of the emailed token
+// is stored, so a database copy cannot be turned into an account takeover —
+// the plaintext exists only in the customer's inbox. Single use (usedAt) with
+// a short expiry; cascades with the User so deletion clears pending links.
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 // A federated sign-in identity (Google today; Microsoft/Apple/Okta later).

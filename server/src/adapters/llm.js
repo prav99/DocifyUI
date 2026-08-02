@@ -519,6 +519,12 @@ function escX(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Attribute values carry customer-supplied text (company, classification,
+// keywords); an unescaped quote there breaks the XML for the whole document.
+function escA(t) {
+  return escX(t).replace(/"/g, '&quot;');
+}
+
 function inlineHtml(t) {
   return escX(t)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
