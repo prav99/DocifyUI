@@ -5,7 +5,13 @@
 // SSRF guard: user-supplied URLs are fetched SERVER-side, so private and
 // loopback destinations must be rejected outright.
 export function assertPublicHost(hostname) {
-  const h = String(hostname || '').toLowerCase();
+  const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  // A single-label host ("intranet", "metadata") is never a public address,
+  // but a corporate DNS search domain will happily resolve it to one inside
+  // the network — so it is refused before it can be looked up.
+  if (h && !h.includes('.') && !h.includes(':')) {
+    throw new Error('URLs pointing to private or internal networks are not allowed');
+  }
   const priv =
     h === 'localhost' || h === '0.0.0.0' || h === '::1' || h.endsWith('.local') || h.endsWith('.internal') ||
     /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h) ||
@@ -19,8 +25,53 @@ export function normalizeSpecUrl(raw) {
   if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
   let u;
   try { u = new URL(s); } catch { throw new Error('That does not look like a valid URL'); }
+  if (!/^https?:$/.test(u.protocol)) throw new Error('Only http:// and https:// URLs can be fetched');
   assertPublicHost(u.hostname);
   return s;
+}
+
+const MAX_SPEC_BYTES = 5 * 1024 * 1024;
+
+// Checking the host once is not enough: fetch follows redirects on its own, so
+// a public URL that answers "302 → http://169.254.169.254/…" would be fetched
+// from inside the network with the guard already satisfied. Every hop is
+// resolved manually and re-checked.
+export async function fetchPublicUrl(url, headers = {}) {
+  let current = url;
+  for (let hop = 0; hop < 5; hop++) {
+    const u = new URL(current);
+    if (!/^https?:$/.test(u.protocol)) throw new Error('Only http:// and https:// URLs can be fetched');
+    assertPublicHost(u.hostname);
+    const r = await fetch(current, { headers, redirect: 'manual' });
+    const location = r.status >= 300 && r.status < 400 ? r.headers.get('location') : '';
+    if (!location) return r;
+    current = new URL(location, current).toString();
+  }
+  throw new Error('That URL redirects too many times — point Docify at the spec file itself');
+}
+
+// Specs are read into memory, so an unbounded response is an outage waiting to
+// happen. Stops as soon as the cap is passed instead of buffering the rest.
+async function readCapped(r) {
+  const declared = Number(r.headers.get('content-length'));
+  const tooBig = () => new Error('That specification is larger than 5 MB — Docify reads specs up to that size. Point at a single spec file rather than a bundle.');
+  if (Number.isFinite(declared) && declared > MAX_SPEC_BYTES) throw tooBig();
+  if (!r.body || typeof r.body.getReader !== 'function') {
+    const t = await r.text();
+    if (t.length > MAX_SPEC_BYTES) throw tooBig();
+    return t;
+  }
+  const reader = r.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > MAX_SPEC_BYTES) { try { await reader.cancel(); } catch { /* already closed */ } throw tooBig(); }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /* Minimal YAML reader — just enough to validate a spec without a dependency:
@@ -165,10 +216,15 @@ export async function loadSpecText(source, { repoFileFetcher } = {}) {
   if (source.url) {
     const specUrl = normalizeSpecUrl(source.url);
     let r;
-    try { r = await fetch(specUrl, { headers: { Accept: 'application/json, application/yaml, text/yaml, text/plain' } }); }
-    catch { throw new Error('Could not reach ' + specUrl); }
-    if (!r.ok) throw new Error('Could not fetch the spec (HTTP ' + r.status + ')' + (r.status === 401 || r.status === 403 ? ' — it appears to require authentication' : ''));
-    return r.text();
+    try { r = await fetchPublicUrl(specUrl, { Accept: 'application/json, application/yaml, text/yaml, text/plain' }); }
+    catch (e) {
+      // Guard rejections (private host, redirect loop, oversize) already carry
+      // a usable message — only a genuine network failure needs one adding.
+      if (/private|internal|redirect|larger than|http/i.test(e.message || '')) throw e;
+      throw new Error('Could not reach ' + specUrl + ' — check the address and that it is reachable from the public internet');
+    }
+    if (!r.ok) throw new Error('Could not fetch the spec (HTTP ' + r.status + ')' + (r.status === 401 || r.status === 403 ? ' — it appears to require authentication; paste the spec instead, or commit it to a connected repository' : ''));
+    return readCapped(r);
   }
   if (source.repo && source.path) {
     if (!repoFileFetcher) throw new Error('Repository fetching is not available here');
@@ -231,12 +287,13 @@ export async function inspectSpec(url) {
   const specUrl = normalizeSpecUrl(url);
   let r;
   try {
-    r = await fetch(specUrl, { headers: { Accept: 'application/json, application/yaml, text/yaml, text/plain' } });
-  } catch {
+    r = await fetchPublicUrl(specUrl, { Accept: 'application/json, application/yaml, text/yaml, text/plain' });
+  } catch (e) {
+    if (/private|internal|redirect|larger than|http/i.test(e.message || '')) throw e;
     throw new Error('Could not reach the spec URL — check the address and that it is publicly accessible');
   }
   if (!r.ok) throw new Error('Could not fetch the spec (HTTP ' + r.status + ') — check the URL' + (r.status === 401 || r.status === 403 ? '; it appears to require authentication' : ''));
-  const text = await r.text();
+  const text = await readCapped(r);
 
   // 1) JSON spec
   let spec = null;

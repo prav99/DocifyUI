@@ -231,12 +231,18 @@ export async function listJiraEpics(siteUrl, cred, project) {
 export async function fetchJiraIssuesContent(siteUrl, cred, keys, { maxIssues = 20, maxComments = 10 } = {}) {
   const site = normalizeSite(siteUrl);
   const out = [];
+  const failures = [];
   for (const key of keys.slice(0, maxIssues)) {
     try {
       const r = await fetch(site + '/rest/api/3/issue/' + encodeURIComponent(key) +
         '?fields=summary,description,issuetype,status,priority,assignee,reporter,labels,components,fixVersions,parent,issuelinks,created,updated&expand=renderedFields',
         { headers: { Authorization: basic(cred), Accept: 'application/json' } });
-      if (!r.ok) continue;
+      if (!r.ok) {
+        throw new Error(r.status === 401 ? 'Jira rejected the connected account — reconnect it under Sources'
+          : r.status === 403 ? 'the connected account is not permitted to read it'
+          : r.status === 404 ? 'not found, or not visible to the connected account'
+          : 'Jira returned HTTP ' + r.status);
+      }
       const d = await r.json();
       const f = d.fields || {};
       const lines = [
@@ -339,6 +345,7 @@ export async function fetchConfluenceContent(siteUrl, cred, ids, { includeChildr
   const queue = ids.slice(0, maxPages).map(String);
   const seen = new Set();
   const out = [];
+  const failures = [];
   while (queue.length && out.length < maxPages) {
     const id = queue.shift();
     if (seen.has(id)) continue;
@@ -359,8 +366,15 @@ export async function fetchConfluenceContent(siteUrl, cred, ids, { includeChildr
         const kids = await get(site + '/wiki/rest/api/content/' + encodeURIComponent(id) + '/child/page?limit=25', cred, 'Confluence').catch(() => null);
         if (kids && kids.results) queue.push(...kids.results.map((k) => String(k.id)));
       }
-    } catch { /* skip restricted pages; the rest still ground generation */ }
+    } catch (e) {
+      // A restricted page is skipped so the rest still ground generation, but
+      // it is recorded: "no content" and "you may not read this" are different
+      // answers and must not look the same.
+      failures.push('page ' + id + ': ' + e.message);
+      console.warn('[confluence] skipped page ' + id + ' — ' + e.message);
+    }
   }
+  if (!out.length && failures.length) throw new Error('Confluence content could not be read — ' + failures[0]);
   return out;
 }
 

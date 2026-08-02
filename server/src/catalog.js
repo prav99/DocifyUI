@@ -1,9 +1,13 @@
 // Static product catalog. Single source of truth served to the client at /api/catalog.
 
+// `desc` is shown to customers in the source picker, so it lists what Docify
+// ACTUALLY reads from each provider. Docify reads repository files (README and
+// source, including their comments) — it does not read wikis, merge requests,
+// or CI pipeline metadata, so those are not claimed here.
 export const SOURCES = [
-  { id: 'github', name: 'GitHub', desc: 'Repositories, READMEs, code comments, commit history', avail: true },
-  { id: 'gitlab', name: 'GitLab', desc: 'Projects, wikis, merge request context', avail: true },
-  { id: 'bitbucket', name: 'Bitbucket', desc: 'Repositories and pipelines metadata', avail: true },
+  { id: 'github', name: 'GitHub', desc: 'Repository files — README, source, and code comments', avail: true },
+  { id: 'gitlab', name: 'GitLab', desc: 'Project files — README, source, and code comments', avail: true },
+  { id: 'bitbucket', name: 'Bitbucket', desc: 'Repository files — README, source, and code comments', avail: true },
   { id: 'jira', name: 'Jira', desc: 'Issues, epics, release versions for changelogs', avail: true },
   { id: 'openapi', name: 'OpenAPI / Swagger', desc: 'Spec-first API reference generation', avail: true },
   { id: 'confluence', name: 'Confluence', desc: 'Existing pages as source material', avail: true },
@@ -85,30 +89,11 @@ export function formatAllowed(plan, formatId) {
   return allowed == null || allowed.includes(String(formatId));
 }
 
-export const CI_YAML = [
-  'name: docgen-regenerate',
-  'on:',
-  '  push:',
-  '    branches: [main]',
-  '',
-  'jobs:',
-  '  regenerate-docs:',
-  '    runs-on: ubuntu-latest',
-  '    steps:',
-  '      - uses: actions/checkout@v4',
-  '      - name: Regenerate documentation',
-  '        uses: docgen/generate-action@v2',
-  '        with:',
-  '          api-key: ${{ secrets.DOCGEN_API_KEY }}',
-  '          project: payments-api-reference',
-  '          formats: dita,markdown',
-  '          quality-gate: 85',
-  '      - name: Upload quality report',
-  '        uses: actions/upload-artifact@v4',
-  '        with:',
-  '          name: docgen-quality-report',
-  '          path: .docgen/report.html'
-].join('\n');
+// A CI_YAML sample used to live here: a GitHub Actions job calling
+// `docgen/generate-action@v2` with a `DOCGEN_API_KEY`. No such action and no
+// such API key exist — it was copy-pasteable config that could never run.
+// Removed rather than reworded. Automation is driven by webhooks today
+// (see the automation pipelines in api.js), which is real.
 
 export function docTypeName(track, id) {
   const list = DOCTYPES[track] || [];
