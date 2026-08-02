@@ -34,7 +34,7 @@ const PILLARS = [
         { p: 'The quality dashboard shows your overall score as a gauge with a ghost arc marking your potential score if every open finding is fixed. Each dimension card is clickable and drills straight into its findings.' },
         { ul: ['Dimension bars with weight, open findings, and live re-scoring after each fix', '"Will this land in AI assistants?" cards with per-model readiness and retrieval probability', 'A four-stage pipeline view: input → analysis → scoring → human in the loop', 'Fix all remaining — applies every fix sequentially while the dashboard re-scores'] }
       ]},
-      { slug: 'chatgpt-ranking-analysis', name: 'ChatGPT ranking analysis', sum: 'Predicted retrieval and citation probability for ChatGPT, from its retrieval profile.', body: [
+      { slug: 'chatgpt-ranking-analysis', name: 'ChatGPT readiness analysis', sum: 'A modeled readiness signal for ChatGPT, derived from your document\u2019s own quality dimensions \u2014 not a ranking guarantee.', body: [
         { p: 'ChatGPT\'s profile weighs LLM readiness heaviest (45%), then link integrity, readability, completeness, and consistency. Your dimension scores are blended through that profile into a readiness score, then mapped to a probability estimate — capped below 100% because certainty would be a false claim.' },
         { p: 'The estimate is recomputed the moment a fix lands, and the MOAT panel shows the ceiling: the probability you reach once all open findings are fixed. Expand the assistant card to see the full profile next to your current score on each dimension.' }
       ]},

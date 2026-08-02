@@ -1022,10 +1022,6 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .asst-chips{display:flex;flex-direction:column;gap:6px;align-items:flex-start;margin-top:4px}
 .asst-chip{font-family:inherit;font-size:12px;color:var(--link-primary);background:var(--background);border:1px solid var(--border-subtle);padding:7px 12px;cursor:pointer;transition:border-color .07s var(--ease)}
 .asst-chip:hover{border-color:var(--button-primary)}
-.asst-typing{display:inline-flex;gap:4px;padding:2px 0}
-.asst-typing i{width:6px;height:6px;border-radius:50%;background:var(--text-placeholder);animation:pulse 1s var(--ease) infinite}
-.asst-typing i:nth-child(2){animation-delay:.2s}
-.asst-typing i:nth-child(3){animation-delay:.4s}
 .asst-foot{font-size:11px;color:var(--text-secondary);letter-spacing:.32px;padding:8px 16px;border-top:1px solid var(--border-subtle);flex:none}
 .asst-inputrow{display:flex;flex:none;border-top:1px solid var(--border-subtle)}
 .asst-input{flex:1;font-family:inherit;font-size:14px;color:var(--text-primary);background:var(--field-01);border:none;padding:0 16px;height:48px}
