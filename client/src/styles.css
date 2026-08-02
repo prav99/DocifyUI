@@ -36,7 +36,14 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .topbar .logo{font-weight:600;font-size:14px;letter-spacing:.16px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text-primary);white-space:nowrap}
 .topbar .logo .mark{width:20px;height:20px;background:var(--button-primary);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600}
 .crumb{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.topnav{display:flex;gap:2px;margin-left:var(--sp-03)}
+/* The bar needs ~910px for the logo, seven links and the account control, but
+   the phone rules below only start at 600px. In between, the links pushed the
+   account button past the right edge and made every page scroll sideways.
+   The logo and account control hold their size; the nav takes what is left and
+   scrolls within itself. */
+.topnav{display:flex;gap:2px;margin-left:var(--sp-03);min-width:0;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.topnav::-webkit-scrollbar{display:none}
+.topbar .logo,.topbar-actions{flex-shrink:0}
 .topnav a{font-size:14px;color:var(--text-secondary);padding:0 12px;line-height:46px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap}
 .topnav a:hover{color:var(--text-primary);background:var(--layer-01)}
 .topnav a.on{color:var(--text-primary);border-bottom-color:var(--button-primary)}
@@ -233,7 +240,10 @@ a:hover{color:var(--link-hover);text-decoration:underline}
 .matrix th,.matrix td{border:1px solid var(--border-subtle);padding:var(--sp-04) var(--sp-05);font-size:14px;text-align:center}
 .matrix th{background:var(--layer-01);font-weight:600;font-size:12px;letter-spacing:.32px}
 .matrix td:first-child,.matrix th:first-child{text-align:left}
-.dtable{width:100%;border-collapse:collapse}
+/* Scrolls within itself at every width, not just on phones: a table whose
+   min-content is wider than its column pushed the whole PAGE sideways, so
+   every other section inherited a horizontal scrollbar. */
+.dtable{width:100%;border-collapse:collapse;display:block;overflow-x:auto}
 .dtable th{background:var(--layer-01);text-align:left;font-size:12px;font-weight:600;letter-spacing:.32px;padding:var(--sp-04) var(--sp-05);border-bottom:1px solid var(--border-subtle)}
 .dtable td{padding:var(--sp-04) var(--sp-05);border-bottom:1px solid var(--border-subtle);font-size:14px}
 .dtable tr:hover td{background:var(--layer-01)}
