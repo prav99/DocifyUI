@@ -689,23 +689,27 @@ export default function Landing() {
           <div className="featrow">
             <div>
               <p className="eyebrow eyebrow--blue mb3">GENERATE ON DEMAND</p>
-              <h2 className="feathead">Start with a finished draft, not a blank page</h2>
+              <h2 className="feathead">Start from a finished draft, not a blank page</h2>
               <p className="lead t2 mt5" style={{ maxWidth: 640 }}>
-                A first draft written by an engineer is senior time spent on excavation and structure,
-                not the product. Docify writes that draft from your real code. Select sources, choose
-                a document type, pick one or several output formats, and generate; preview each format
-                separately, run the AI quality review, edit inline, and export. The excavation hours
-                go away; the judgement stays with your team.
+                The slow part of documentation is the first draft: reading the code, working out what
+                belongs where, and getting the words down. Docify writes that draft from your own
+                repository, so your team starts at the review — where their judgement actually
+                counts — instead of at the empty page.
               </p>
-              <ol className="flowsteps mt5" aria-label="Generation workflow">
-                {[['1', 'Select sources', 'Repositories, endpoints, and issues from your catalogue'],
-                  ['2', 'Choose type & formats', 'API reference, user guide, release notes — in one or many formats'],
-                  ['3', 'Generate & preview', 'A real document per format, previewed separately'],
-                  ['4', 'Review, edit, export', 'Quality-checked, edited, and exported']].map(([n, t, d]) => (
+              <p className="helper mt3" style={{ maxWidth: 640 }}>Four steps, about three minutes:</p>
+              <ol className="flowsteps flowsteps--split mt3" aria-label="Generation workflow">
+                {[['1', 'Choose your sources', 'The repositories, API specs, or issues Docify should read'],
+                  ['2', 'Pick what to produce', 'One or more document types, in one or more output formats'],
+                  ['3', 'Generate and preview', 'Each format is written and previewed on its own'],
+                  ['4', 'Review and export', 'Read the quality report, edit inline, then download']].map(([n, t, d]) => (
                   <li key={n} className="flowstep"><span className="flowstep-n mono">{n}</span>
                     <span><strong>{t}</strong><br /><span className="t2">{d}</span></span></li>
                 ))}
               </ol>
+              <p className="helper mt4" style={{ maxWidth: 640 }}>
+                Nothing is published for you — Docify never writes to your repository. You download
+                the file and decide where it goes.
+              </p>
             </div>
             <div className="illuwrap"><IlluGenerate /></div>
           </div>

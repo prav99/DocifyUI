@@ -1144,6 +1144,11 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .flowstep strong{display:block;margin-bottom:3px}
 @media(max-width:900px){.flowsteps{grid-template-columns:1fr 1fr}}
 @media(max-width:480px){.flowsteps{grid-template-columns:1fr}}
+/* Inside a two-column feature row the list only has ~600px to work with, so
+   four columns become ~140px slivers on ANY screen — the media queries above
+   watch the viewport, which is still wide. Two columns keep each step legible. */
+.flowsteps--split{grid-template-columns:1fr 1fr}
+@media(max-width:560px){.flowsteps--split{grid-template-columns:1fr}}
 
 /* Trust & security grid */
 .trustgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:8px}
